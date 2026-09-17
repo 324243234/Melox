@@ -1,7 +1,9 @@
 package com.melox.player.ui.component.playback
 
 import android.graphics.Bitmap
+import android.graphics.BitmapShader
 import android.graphics.Canvas
+import android.graphics.Shader
 import android.graphics.Color as AndroidColor
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
@@ -30,7 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -73,16 +75,67 @@ private val DynamicFlowFallbackColor = Color(0xFF242424)
 internal class DynamicFlowBackgroundState {
     internal var displayedFrame: Bitmap? = null
         private set
-    internal var displayedImage = displayedFrame?.asImageBitmap()
-        private set
+    private var currentPaint: Paint? = null
+    private var previousPaint: Paint? = null
+    private var previousFrame: Bitmap? = null
+    private val shaderMatrix = Matrix()
     internal var elapsedMillis: Long = 0L
     internal var frameRevision by mutableIntStateOf(0)
         private set
 
     internal fun publishFrame(frame: Bitmap) {
         displayedFrame = frame
-        displayedImage = frame.asImageBitmap()
+        currentPaint = shaderPaint(frame)
+        previousPaint = null
+        previousFrame = null
         frameRevision += 1
+    }
+
+    internal fun beginTransition(frame: Bitmap) {
+        freezeTransition()
+        previousFrame = displayedFrame
+        previousPaint = currentPaint
+        displayedFrame = frame
+        currentPaint = shaderPaint(frame).apply {
+            alpha = if (previousPaint == null) 255 else 0
+        }
+        frameRevision += 1
+    }
+
+    internal fun updateTransition(progress: Float) {
+        currentPaint?.alpha = (progress.coerceIn(0f, 1f) * 255f).roundToInt()
+        frameRevision += 1
+    }
+
+    // A cancelled fade is flattened once, before its source buffers can be reused.
+    internal fun freezeTransition() {
+        val previous = previousFrame ?: return
+        val current = displayedFrame ?: return
+        val snapshot = Bitmap.createBitmap(
+            max(previous.width, current.width),
+            max(previous.height, current.height),
+            Bitmap.Config.ARGB_8888,
+        )
+        Canvas(snapshot).apply {
+            drawColor(DynamicFlowFallbackColor.toArgb())
+            drawTo(this, snapshot.width.toFloat(), snapshot.height.toFloat())
+        }
+        publishFrame(snapshot)
+    }
+
+    internal fun drawTo(canvas: Canvas, width: Float, height: Float) {
+        fun draw(frame: Bitmap?, paint: Paint?) {
+            if (frame == null || paint == null) return
+            shaderMatrix.setScale(width / frame.width, height / frame.height)
+            paint.shader.setLocalMatrix(shaderMatrix)
+            canvas.drawRect(0f, 0f, width, height, paint)
+        }
+        draw(previousFrame, previousPaint)
+        draw(displayedFrame, currentPaint)
+    }
+
+    private fun shaderPaint(frame: Bitmap) = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+        shader = BitmapShader(frame, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
     }
 }
 
@@ -113,6 +166,7 @@ internal fun DynamicFlowBackground(
 
     LaunchedEffect(artwork, artworkLoading, backgroundColor) {
         if (artworkLoading) return@LaunchedEffect
+        state.freezeTransition()
         frameBufferPool.resetHistory()
         snapshotFlow { viewportSize }.first { it.width > 0 && it.height > 0 }
         val cover = withContext(Dispatchers.Default) { artwork?.scaledForDynamicFlowSource() }
@@ -157,27 +211,10 @@ internal fun DynamicFlowBackground(
             return frame
         }
 
-        // Keep the exact visible mixture when a newer artwork cancels this handoff.
         val target = renderFrame()
         val previous = state.displayedFrame
         if (previous != null) {
-            val width = max(previous.width, target.width)
-            val height = max(previous.height, target.height)
-            val (fromPixels, toPixels) = withContext(Dispatchers.Default) {
-                fun pixels(bitmap: Bitmap): IntArray = IntArray(width * height).also { output ->
-                    when {
-                        bitmap.width == width && bitmap.height == height ->
-                            bitmap.getPixels(output, 0, width, 0, 0, width, height)
-                        bitmap.width == 1 && bitmap.height == 1 ->
-                            output.fill(bitmap.getPixel(0, 0))
-                        else -> Bitmap.createScaledBitmap(bitmap, width, height, true)
-                            .getPixels(output, 0, width, 0, 0, width, height)
-                    }
-                }
-                pixels(previous) to pixels(target)
-            }
-            val pixels = IntArray(fromPixels.size)
-            val transitionFrame = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            state.beginTransition(target)
             Animatable(0f).animateTo(
                 targetValue = 1f,
                 animationSpec = tween(
@@ -185,9 +222,7 @@ internal fun DynamicFlowBackground(
                     easing = PLAYER_TRACK_ARTWORK_CROSSFADE_EASING,
                 ),
             ) {
-                interpolateDynamicFlowPixels(fromPixels, toPixels, pixels, value)
-                transitionFrame.setPixels(pixels, 0, width, 0, 0, width, height)
-                state.publishFrame(transitionFrame)
+                state.updateTransition(value)
             }
         }
         state.publishFrame(if (
@@ -241,12 +276,7 @@ internal fun DynamicFlowBackground(
             // Snapshot observation stays in the draw phase, so frame publication
             // invalidates only this background node.
             state.frameRevision
-            state.displayedImage?.let { image ->
-                drawImage(
-                    image = image,
-                    dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()),
-                )
-            }
+            state.drawTo(drawContext.canvas.nativeCanvas, size.width, size.height)
         }
         Box(
             modifier = Modifier
@@ -262,27 +292,6 @@ internal fun DynamicFlowBackground(
                 ),
         )
     }
-}
-
-internal fun interpolateDynamicFlowPixels(
-    from: IntArray,
-    to: IntArray,
-    output: IntArray,
-    progress: Float,
-) {
-    for (index in output.indices) {
-        output[index] = interpolateDynamicFlowPixel(from[index], to[index], progress)
-    }
-}
-
-internal fun interpolateDynamicFlowPixel(from: Int, to: Int, progress: Float): Int {
-    val fraction = progress.coerceIn(0f, 1f)
-    fun channel(shift: Int): Int {
-        val start = (from ushr shift) and 0xff
-        val end = (to ushr shift) and 0xff
-        return (start + (end - start) * fraction).roundToInt()
-    }
-    return (0xff shl 24) or (channel(16) shl 16) or (channel(8) shl 8) or channel(0)
 }
 
 internal fun scaledDynamicFlowTimeMs(elapsedMillis: Long, speedTenths: Int): Long =
@@ -357,7 +366,7 @@ private fun createDynamicFlowFrameBitmap(
     )
 }
 
-private class DynamicFlowFrameBufferPool {
+internal class DynamicFlowFrameBufferPool {
     private val buffers = List(DYNAMIC_FLOW_FRAME_BUFFER_COUNT) { DynamicFlowFrameBuffer() }
     private var nextBufferIndex = 0
     private var previousCompleteFrame: Bitmap? = null
@@ -507,7 +516,8 @@ private class DynamicFlowFrameBuffer {
         )
 
         fillDynamicFlowMeshVertices(meshVertices, width, height, timeMillis, meshSeed)
-        warped.eraseColor(AndroidColor.TRANSPARENT)
+        // Keep mesh edges opaque so history blending cannot change their coverage.
+        warped.eraseColor(backgroundArgb or 0xff000000.toInt())
         warpedCanvas.drawBitmapMesh(
             source,
             DYNAMIC_FLOW_MESH_COLUMNS,

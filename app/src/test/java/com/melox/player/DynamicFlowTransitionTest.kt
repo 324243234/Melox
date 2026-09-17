@@ -1,7 +1,5 @@
 package com.melox.player
 
-import com.melox.player.ui.component.playback.interpolateDynamicFlowPixels
-import com.melox.player.ui.component.playback.interpolateDynamicFlowPixel
 import com.melox.player.ui.component.playback.fillDynamicFlowMeshVertices
 import com.melox.player.ui.component.playback.dynamicFlowBlurRadius
 import com.melox.player.ui.component.playback.dynamicFlowDownsampleFactor
@@ -22,55 +20,6 @@ class DynamicFlowTransitionTest {
             PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS,
             PLAYBACK_BACKGROUND_TRANSITION_DURATION_MILLIS,
         )
-    }
-
-    @Test
-    fun reusedOutputBufferIsFullyOverwrittenWithoutChangingEndpoints() {
-        val from = intArrayOf(0xffff0000.toInt(), 0xffaaaaaa.toInt())
-        val to = intArrayOf(0xff0000ff.toInt(), 0xffaaaaaa.toInt())
-        val originalFrom = from.copyOf()
-        val originalTo = to.copyOf()
-        val output = IntArray(2)
-        interpolateDynamicFlowPixels(from, to, output, 0.5f)
-        assertArrayEquals(intArrayOf(0xff800080.toInt(), 0xffaaaaaa.toInt()), output)
-        interpolateDynamicFlowPixels(from, to, output, 1f)
-        assertArrayEquals(to, output)
-        interpolateDynamicFlowPixels(from, to, output, 0f)
-        assertArrayEquals(from, output)
-        assertArrayEquals(originalFrom, from)
-        assertArrayEquals(originalTo, to)
-    }
-
-    @Test
-    fun transitionRetainsOpaqueEndpointsAndDoesNotExposeFallbackAtMidpoint() {
-        val red = 0xffff0000.toInt()
-        val blue = 0xff0000ff.toInt()
-        assertEquals(red, interpolateDynamicFlowPixel(red, blue, 0f))
-        assertEquals(blue, interpolateDynamicFlowPixel(red, blue, 1f))
-        assertEquals(0xff800080.toInt(), interpolateDynamicFlowPixel(red, blue, 0.5f))
-        for (step in 0..100) {
-            val pixel = interpolateDynamicFlowPixel(red, blue, step / 100f)
-            assertEquals(255, pixel ushr 24)
-            assertEquals(0, pixel ushr 8 and 0xff)
-        }
-    }
-
-    @Test
-    fun identicalFramesKeepTheirBrightnessThroughoutTransition() {
-        val gray = 0xffaaaaaa.toInt()
-        for (step in 0..100) {
-            assertEquals(gray, interpolateDynamicFlowPixel(gray, gray, step / 100f))
-        }
-    }
-
-    @Test
-    fun rapidRetargetStartsAtVisibleMixtureAndCanReachMissingArtworkFallback() {
-        val mixture = interpolateDynamicFlowPixel(
-            0xffff0000.toInt(), 0xff0000ff.toInt(), 0.25f,
-        )
-        val fallback = 0xff242424.toInt()
-        assertEquals(mixture, interpolateDynamicFlowPixel(mixture, fallback, 0f))
-        assertEquals(fallback, interpolateDynamicFlowPixel(mixture, fallback, 1f))
     }
 
     @Test
