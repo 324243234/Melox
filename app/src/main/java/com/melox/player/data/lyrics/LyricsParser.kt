@@ -35,13 +35,20 @@ internal object LyricsParser {
     )
 
     private val lrcTimestamp = Regex(
-        """\[(\d{1,3}):([0-5]?\d)(?:[.:](\d{1,3}))?]""",
+        """\[(\d{1,3}):([0-5]?\d)(?:[.:](\d{1,6}))?]""",
     )
     private val lrcOffset = Regex(
         """(?i)^\s*\[offset:\s*([+-]?\d+)\s*]\s*$""",
     )
     private val enhancedWordTimestamp = Regex(
-        """<(\d{1,3}):([0-5]?\d)(?:[.:](\d{1,3}))?>""",
+        """<(\d{1,3}):([0-5]?\d)(?:[.:](\d{1,6}))?>""",
+    )
+    private val splInlineTimestamp = Regex(
+        """(?:${lrcTimestamp.pattern}|${enhancedWordTimestamp.pattern})""",
+    )
+    private val lrcMetadata = Regex("""^\s*\[[^\d\]]+:[^\]]*]\s*$""")
+    private val timestampValue = Regex(
+        """^(\d{1,3}):([0-5]?\d)(?:[.:](\d{1,6}))?$""",
     )
 
     fun parse(
@@ -79,33 +86,110 @@ internal object LyricsParser {
             .lastOrNull()
             ?: 0L
         val entries = mutableListOf<RawLine>()
+        var lastPhysicalEntryIndices = emptyList<Int>()
+        var acceptsUntimedTranslation = false
         raw.lineSequence()
             .take(MAX_LYRIC_LINES)
             .forEach { line ->
                 if (lrcOffset.matches(line)) return@forEach
+                if (line.isBlank()) {
+                    acceptsUntimedTranslation = false
+                    return@forEach
+                }
                 val timestamps = lrcTimestamp.findAll(line).toList()
-                if (timestamps.isEmpty()) return@forEach
-                val payload = line.substring(timestamps.last().range.last + 1)
-                if (payload.isBlank()) return@forEach
-                timestamps.forEach { timestamp ->
+                if (timestamps.isEmpty()) {
+                    if (acceptsUntimedTranslation && !lrcMetadata.matches(line)) {
+                        val translation = line.trim().takeIf(String::isNotEmpty) ?: return@forEach
+                        lastPhysicalEntryIndices.forEach { entryIndex ->
+                            val entry = entries[entryIndex]
+                            entries[entryIndex] = entry.copy(
+                                translation = listOfNotNull(entry.translation, translation)
+                                    .joinToString("\n"),
+                            )
+                        }
+                    } else {
+                        acceptsUntimedTranslation = false
+                    }
+                    return@forEach
+                }
+                val firstTimestamp = timestamps.first()
+                if (line.substring(0, firstTimestamp.range.first).isNotBlank()) {
+                    acceptsUntimedTranslation = false
+                    return@forEach
+                }
+                var leadingTimestampCount = 1
+                while (leadingTimestampCount < timestamps.size) {
+                    val previous = timestamps[leadingTimestampCount - 1]
+                    val next = timestamps[leadingTimestampCount]
+                    if (!line.substring(previous.range.last + 1, next.range.first).isBlank()) break
+                    leadingTimestampCount++
+                }
+                val firstInlineSquareTimestamp = timestamps.getOrNull(leadingTimestampCount)
+                val delayedStartSeparator = if (leadingTimestampCount > 1) {
+                    line.substring(
+                        timestamps[leadingTimestampCount - 2].range.last + 1,
+                        timestamps[leadingTimestampCount - 1].range.first,
+                    )
+                } else {
+                    ""
+                }
+                val lastLeadingIsDelayedWordStart = firstInlineSquareTimestamp != null &&
+                    leadingTimestampCount > 1 &&
+                    (
+                        timestamps[leadingTimestampCount - 1].toTimeMs() ==
+                            timestamps.first().toTimeMs() ||
+                            delayedStartSeparator.isNotEmpty()
+                        )
+                val lineTimestamps = timestamps.take(
+                    if (lastLeadingIsDelayedWordStart) 1 else leadingTimestampCount,
+                )
+                val payload = line.substring(lineTimestamps.last().range.last + 1)
+                if (payload.isBlank()) {
+                    val explicitEndTimeMs = lineTimestamps.first().toTimeMs()
+                        ?.let { (it + offsetMs).coerceAtLeast(0L) }
+                        ?: return@forEach
+                    lastPhysicalEntryIndices.forEach { entryIndex ->
+                        val entry = entries[entryIndex]
+                        val words = entry.words.toMutableList().apply {
+                            if (isNotEmpty() && explicitEndTimeMs > last().startTimeMs) {
+                                this[lastIndex] = last().copy(explicitEndTimeMs = explicitEndTimeMs)
+                            }
+                        }
+                        entries[entryIndex] = entry.copy(
+                            explicitEndTimeMs = explicitEndTimeMs,
+                            words = words,
+                        )
+                    }
+                    acceptsUntimedTranslation = false
+                    return@forEach
+                }
+                val addedIndices = mutableListOf<Int>()
+                lineTimestamps.forEach { timestamp ->
                     val startTimeMs = timestamp.toTimeMs() ?: return@forEach
-                    val words = parseEnhancedWords(payload, startTimeMs)
+                    val words = parseTimedWords(payload, startTimeMs, splInlineTimestamp)
+                    val text = payload
+                        .replace(splInlineTimestamp, "")
+                        .trim()
+                        .takeIf(String::isNotEmpty)
+                        ?: return@forEach
+                    addedIndices += entries.size
                     entries += RawLine(
                         agent = DEFAULT_AGENT,
                         startTimeMs = (startTimeMs + offsetMs).coerceAtLeast(0L),
                         explicitEndTimeMs = null,
-                        text = payload
-                            .replace(enhancedWordTimestamp, "")
-                            .trim()
-                            .takeIf(String::isNotEmpty),
+                        text = text,
                         words = words.map { word ->
                             word.copy(
                                 startTimeMs = (word.startTimeMs + offsetMs).coerceAtLeast(0L),
+                                explicitEndTimeMs = word.explicitEndTimeMs
+                                    ?.let { (it + offsetMs).coerceAtLeast(0L) },
                             )
                         },
                         translation = null,
                     )
                 }
+                lastPhysicalEntryIndices = addedIndices
+                acceptsUntimedTranslation = addedIndices.isNotEmpty()
             }
         if (entries.isEmpty()) return null
 
@@ -115,9 +199,10 @@ internal object LyricsParser {
             .map { (_, sameTimeLines) ->
                 val primary = sameTimeLines.first()
                 primary.copy(
-                    translation = sameTimeLines
-                        .drop(1)
-                        .mapNotNull(RawLine::text)
+                    translation = buildList {
+                        primary.translation?.lineSequence()?.forEach(::add)
+                        sameTimeLines.drop(1).mapNotNullTo(this, RawLine::text)
+                    }
                         .distinct()
                         .joinToString("\n")
                         .takeIf(String::isNotBlank),
@@ -126,29 +211,69 @@ internal object LyricsParser {
         return buildDocument(grouped, LyricsFormat.LRC, source, durationMs)
     }
 
-    private fun parseEnhancedWords(payload: String, lineStartTimeMs: Long): List<RawWord> {
-        val timestamps = enhancedWordTimestamp.findAll(payload).toList()
+    private fun parseTimedWords(
+        payload: String,
+        lineStartTimeMs: Long,
+        timestampPattern: Regex,
+    ): List<RawWord> {
+        val timestamps = timestampPattern.findAll(payload).toList()
         if (timestamps.isEmpty()) return emptyList()
-        return buildList {
-            val prefix = payload.substring(0, timestamps.first().range.first)
-            prefix.toRawWord(lineStartTimeMs)?.let(::add)
-            timestamps.forEachIndexed { index, timestamp ->
-                val wordStart = timestamp.toTimeMs() ?: return@forEachIndexed
-                val textStart = timestamp.range.last + 1
-                val textEnd = timestamps.getOrNull(index + 1)?.range?.first ?: payload.length
-                payload.substring(textStart, textEnd).toRawWord(wordStart)?.let(::add)
+        val terminalEndTimeMs = timestamps.lastOrNull()
+            ?.takeIf { payload.substring(it.range.last + 1).isBlank() }
+            ?.toTimeMs()
+            ?.takeIf { it >= lineStartTimeMs }
+        val words = mutableListOf<RawWord>()
+        val pendingText = StringBuilder()
+        var wordStartTimeMs = lineStartTimeMs
+        var acceptedTimestamp = false
+        var textStart = 0
+        timestamps.forEach { timestamp ->
+            pendingText.append(payload, textStart, timestamp.range.first)
+            textStart = timestamp.range.last + 1
+            val timestampMs = timestamp.toTimeMs() ?: return@forEach
+            val isValid = timestampMs >= lineStartTimeMs &&
+                (terminalEndTimeMs == null || timestampMs <= terminalEndTimeMs) &&
+                (!acceptedTimestamp || timestampMs > wordStartTimeMs)
+            if (!isValid) return@forEach
+
+            val rawText = pendingText.toString()
+            if (rawText.isNotBlank()) {
+                words.appendWord(rawText, wordStartTimeMs, timestampMs)
+            } else if (rawText.isNotEmpty() && words.isNotEmpty()) {
+                words.appendWord(rawText, wordStartTimeMs)
             }
+            pendingText.clear()
+            wordStartTimeMs = timestampMs
+            acceptedTimestamp = true
         }
+        pendingText.append(payload, textStart, payload.length)
+        if (pendingText.isNotBlank()) {
+            words.appendWord(pendingText.toString(), wordStartTimeMs)
+        } else if (pendingText.isNotEmpty() && words.isNotEmpty()) {
+            words.appendWord(pendingText.toString(), wordStartTimeMs)
+        }
+        return words.takeIf { acceptedTimestamp } ?: emptyList()
     }
 
-    private fun String.toRawWord(startTimeMs: Long): RawWord? {
-        val visible = trim()
-        if (visible.isEmpty()) return null
-        return RawWord(
-            startTimeMs = startTimeMs,
-            explicitEndTimeMs = null,
-            text = visible,
-            hasTrailingSpace = lastOrNull()?.isWhitespace() == true,
+    private fun MutableList<RawWord>.appendWord(
+        rawText: String,
+        startTimeMs: Long,
+        endTimeMs: Long? = null,
+        trailingSpaceOutside: Boolean = false,
+    ) {
+        if (rawText.firstOrNull()?.isWhitespace() == true && isNotEmpty()) {
+            this[lastIndex] = last().copy(hasTrailingSpace = true)
+        }
+        val visible = rawText.trim()
+        if (visible.isEmpty()) return
+        add(
+            RawWord(
+                startTimeMs = startTimeMs,
+                explicitEndTimeMs = endTimeMs,
+                text = visible,
+                hasTrailingSpace = rawText.lastOrNull()?.isWhitespace() == true ||
+                    trailingSpaceOutside,
+            ),
         )
     }
 
@@ -216,20 +341,15 @@ internal object LyricsParser {
                             ?: span.attributeValue("dur")
                                 ?.let { parseTtmlTimeMs(it, timingContext) }
                                 ?.let(wordStart::plus)
-                        val visible = span.textContent.normalizeVisibleText()
-                        if (visible.isNotEmpty()) {
-                            add(
-                                RawWord(
-                                    startTimeMs = wordStart,
-                                    explicitEndTimeMs = wordEnd,
-                                    text = visible,
-                                    hasTrailingSpace = span.nextSibling
-                                        ?.takeIf { it.nodeType == Node.TEXT_NODE }
-                                        ?.nodeValue
-                                        ?.any(Char::isWhitespace) == true,
-                                ),
-                            )
-                        }
+                        appendWord(
+                            rawText = span.textContent.replace(Regex("""\s+"""), " "),
+                            startTimeMs = wordStart,
+                            endTimeMs = wordEnd,
+                            trailingSpaceOutside = span.nextSibling
+                                ?.takeIf { it.nodeType == Node.TEXT_NODE }
+                                ?.nodeValue
+                                ?.any(Char::isWhitespace) == true,
+                        )
                     }
                 }
             }
@@ -264,35 +384,31 @@ internal object LyricsParser {
         val sorted = rawLines.sortedBy(RawLine::startTimeMs)
         val lines = sorted.mapIndexed { index, rawLine ->
             val nextStartTimeMs = sorted.getOrNull(index + 1)?.startTimeMs
-            val timedWordEndTimeMs = rawLine.words
-                .mapIndexed { wordIndex, word ->
-                    val nextWordStartTimeMs = rawLine.words
-                        .getOrNull(wordIndex + 1)
-                        ?.startTimeMs
-                    word.explicitEndTimeMs
-                        ?.takeIf { it > word.startTimeMs }
-                        ?: nextWordStartTimeMs
-                        ?: word.startTimeMs + DEFAULT_WORD_DURATION_MS
-                }
-                .maxOrNull()
+            val lastWord = rawLine.words.lastOrNull()
+            val explicitLastWordEnd = lastWord?.explicitEndTimeMs
+                ?.takeIf { it > lastWord.startTimeMs }
             val fallbackEndTimeMs = when {
-                timedWordEndTimeMs != null && timedWordEndTimeMs > rawLine.startTimeMs -> {
-                    timedWordEndTimeMs
-                }
+                explicitLastWordEnd != null -> explicitLastWordEnd
                 nextStartTimeMs != null && nextStartTimeMs > rawLine.startTimeMs -> nextStartTimeMs
-                durationMs > rawLine.startTimeMs -> durationMs
+                durationMs > (lastWord?.startTimeMs ?: rawLine.startTimeMs) -> durationMs
+                lastWord != null -> lastWord.startTimeMs + DEFAULT_WORD_DURATION_MS
                 else -> rawLine.startTimeMs + DEFAULT_LINE_DURATION_MS
             }
-            val endTimeMs = rawLine.explicitEndTimeMs
-                ?.coerceAtMost(nextStartTimeMs ?: Long.MAX_VALUE)
+            val nextLineTailEnd = nextStartTimeMs?.takeIf {
+                lastWord != null && it > lastWord.startTimeMs
+            }
+            val endTimeMs = (nextLineTailEnd ?: rawLine.explicitEndTimeMs
                 ?.takeIf { it > rawLine.startTimeMs }
-                ?: fallbackEndTimeMs
+                ?: fallbackEndTimeMs)
+                .coerceAtMost(nextStartTimeMs ?: Long.MAX_VALUE)
             val words = rawLine.words.mapIndexed { wordIndex, word ->
                 val nextWordStart = rawLine.words.getOrNull(wordIndex + 1)?.startTimeMs
                 val fallbackWordEndTimeMs = (nextWordStart ?: endTimeMs)
                     .coerceAtMost(endTimeMs)
                     .coerceAtLeast(word.startTimeMs + MIN_WORD_DURATION_MS)
-                val wordEndTimeMs = word.explicitEndTimeMs
+                val wordEndTimeMs = if (wordIndex == rawLine.words.lastIndex && nextLineTailEnd != null) {
+                    nextLineTailEnd
+                } else word.explicitEndTimeMs
                     ?.coerceAtMost(nextWordStart ?: endTimeMs)
                     ?.coerceAtMost(endTimeMs)
                     ?.takeIf { it > word.startTimeMs }
@@ -322,9 +438,10 @@ internal object LyricsParser {
     }
 
     private fun MatchResult.toTimeMs(): Long? {
-        val minutes = groupValues[1].toLongOrNull() ?: return null
-        val seconds = groupValues[2].toLongOrNull() ?: return null
-        val fraction = fractionToMilliseconds(groupValues[3])
+        val match = timestampValue.matchEntire(value.substring(1, value.lastIndex)) ?: return null
+        val minutes = match.groupValues[1].toLongOrNull() ?: return null
+        val seconds = match.groupValues[2].toLongOrNull() ?: return null
+        val fraction = fractionToMilliseconds(match.groupValues[3])
         return minutes * 60_000L + seconds * 1_000L + fraction
     }
 

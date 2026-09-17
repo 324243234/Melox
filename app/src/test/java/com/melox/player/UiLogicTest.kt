@@ -181,7 +181,6 @@ import com.melox.player.ui.screen.playback.lyricLineVerticalPaddingDp
 import com.melox.player.ui.screen.playback.lyricOffscreenTranslationDistance
 import com.melox.player.ui.screen.playback.lyricPlaybackPositionMs
 import com.melox.player.ui.screen.playback.lyricProgrammaticTranslationStart
-import com.melox.player.ui.screen.playback.lyricRowRenderMode
 import com.melox.player.ui.screen.playback.lyricCenteringSpringStiffness
 import com.melox.player.ui.screen.playback.lyricScrollIsManual
 import com.melox.player.ui.screen.playback.lyricSeekUsesAnimatedCentering
@@ -192,7 +191,6 @@ import com.melox.player.ui.screen.playback.lyricTargetScrollOffset
 import com.melox.player.ui.screen.playback.lyricTranslationAlpha
 import com.melox.player.ui.screen.playback.lyricWordProgressActiveAlpha
 import com.melox.player.ui.screen.playback.lyricVerticalDragExceedsTouchSlop
-import com.melox.player.ui.screen.playback.LyricRowRenderMode
 import com.melox.player.ui.screen.playback.progressGestureIsDrag
 import com.melox.player.ui.screen.playback.playerHeaderArtistText
 import com.melox.player.ui.screen.playback.fitPlayerArtworkSize
@@ -796,34 +794,6 @@ class UiLogicTest {
     }
 
     @Test
-    fun lyricRowsOnlyMaskWhileTheirWordTimingIsActive() {
-        assertEquals(
-            LyricRowRenderMode.BEFORE,
-            lyricRowRenderMode(
-                positionMs = 999L,
-                firstStartTimeMs = 1_000L,
-                lastEndTimeMs = 2_000L,
-            ),
-        )
-        assertEquals(
-            LyricRowRenderMode.ACTIVE,
-            lyricRowRenderMode(
-                positionMs = 1_500L,
-                firstStartTimeMs = 1_000L,
-                lastEndTimeMs = 2_000L,
-            ),
-        )
-        assertEquals(
-            LyricRowRenderMode.COMPLETE,
-            lyricRowRenderMode(
-                positionMs = 2_000L,
-                firstStartTimeMs = 1_000L,
-                lastEndTimeMs = 2_000L,
-            ),
-        )
-    }
-
-    @Test
     fun lyricPlaybackAndTapUseCenteringButPreviewSnapsToTheTarget() {
         assertTrue(lyricSeekUsesAnimatedCentering(true, centerOffsetUnchanged = true))
         assertFalse(lyricSeekUsesAnimatedCentering(true, centerOffsetUnchanged = false))
@@ -1127,22 +1097,25 @@ class UiLogicTest {
 
     @Test
     fun wordMotionProvidesScaleOffsetAndGlow() {
-        val start = wordMotion(progress = 0f, durationMs = 2_000L, characterCount = 4)
-        val middle = wordMotion(progress = 0.5f, durationMs = 2_000L, characterCount = 4)
-        val end = wordMotion(progress = 1f, durationMs = 2_000L, characterCount = 4)
+        val start = wordMotion(progress = 0f, durationMs = 2_000L)
+        val middle = wordMotion(progress = 0.5f, durationMs = 2_000L)
+        val end = wordMotion(progress = 1f, durationMs = 2_000L)
 
         assertTrue(start.scale >= 1f)
         assertTrue(middle.scale > 1f)
-        assertTrue(start.offsetYPx > 0f)
+        assertEquals(0f, start.offsetYPx, 0f)
         assertTrue(middle.offsetYPx < start.offsetYPx)
         assertTrue(middle.glowRadius > 0f)
-        assertEquals(0f, end.glowRadius, 0.000001f)
+        assertTrue(middle.glowAlpha > 0f)
+        assertEquals(start.glowRadius, middle.glowRadius, 0f)
+        assertEquals(middle.glowRadius, end.glowRadius, 0f)
+        assertEquals(0f, end.glowAlpha, 0.000001f)
     }
 
     @Test
-    fun charactersStartAcrossTheFirstTwentyPercentOfAWord() {
+    fun charactersStartAcrossTheFirstThirtyTwoPercentOfASyllable() {
         assertEquals(
-            0.125f,
+            100f / 680f,
             characterProgress(
                 positionMs = 1_100L,
                 wordStartTimeMs = 1_000L,
@@ -1181,7 +1154,7 @@ class UiLogicTest {
             characterIndex = 2,
             characterCount = 3,
         )
-        assertEquals(0f, finalMotion.glowRadius, 0.000001f)
+        assertEquals(0f, finalMotion.glowAlpha, 0.000001f)
     }
 
     @Test
