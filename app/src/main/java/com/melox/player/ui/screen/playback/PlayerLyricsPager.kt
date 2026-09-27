@@ -81,6 +81,7 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontSynthesis
@@ -154,6 +155,7 @@ internal fun PlayerContentPager(
     lyrics: LyricsUiState,
     positionMs: Long,
     positionUpdateElapsedRealtimeMs: Long,
+    playbackIteration: Long,
     playbackSpeed: Float,
     previewPositionMs: Long?,
     isPlaying: Boolean,
@@ -196,6 +198,7 @@ internal fun PlayerContentPager(
                     lyrics = lyrics,
                     positionMs = positionMs,
                     positionUpdateElapsedRealtimeMs = positionUpdateElapsedRealtimeMs,
+                    playbackIteration = playbackIteration,
                     playbackSpeed = playbackSpeed,
                     previewPositionMs = previewPositionMs,
                     isPlaying = isPlaying,
@@ -226,6 +229,7 @@ internal fun SyncedLyrics(
     lyrics: LyricsUiState,
     positionMs: Long,
     positionUpdateElapsedRealtimeMs: Long,
+    playbackIteration: Long,
     playbackSpeed: Float,
     previewPositionMs: Long?,
     isPlaying: Boolean,
@@ -249,6 +253,12 @@ internal fun SyncedLyrics(
 ) {
     var displayedDocument by remember { mutableStateOf<LyricsDocument?>(null) }
     val lyricsAlpha = remember { Animatable(0f) }
+    var unavailableTextLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val alignmentProgress = animateFloatAsState(
+        targetValue = if (centerLyrics) 1f else 0f,
+        animationSpec = playerTextAlignmentSpec(),
+        label = "unavailableLyricsAlignment",
+    )
 
     LaunchedEffect(lyrics) {
         when (lyrics) {
@@ -306,6 +316,7 @@ internal fun SyncedLyrics(
                         document = document,
                         positionMs = positionMs,
                         positionUpdateElapsedRealtimeMs = positionUpdateElapsedRealtimeMs,
+                        playbackIteration = playbackIteration,
                         playbackSpeed = playbackSpeed,
                         previewPositionMs = previewPositionMs,
                         isPlaying = isPlaying && active,
@@ -328,17 +339,21 @@ internal fun SyncedLyrics(
                 }
             }
         } else if (lyrics is LyricsUiState.Unavailable) {
+            val lyricFontFamily = rememberLyricFontFamily(lyricFontWeight)
             Text(
                 text = stringResource(R.string.lyrics_unavailable),
-                modifier = Modifier.width(contentWidth),
+                modifier = Modifier.width(contentWidth)
+                    .animatedPlayerTextAlignment(unavailableTextLayout, alignmentProgress),
                 style = MiuixTheme.textStyles.title3.copy(
                     fontSize = (LYRIC_PRIMARY_FONT_SIZE_SP * lyricFontScale).sp,
                     lineHeight = (LYRIC_PRIMARY_LINE_HEIGHT_SP * lyricFontScale).sp,
+                    fontFamily = lyricFontFamily,
                     fontWeight = FontWeight(lyricFontWeight.coerceIn(1, 1000)),
                     fontSynthesis = FontSynthesis.None,
                 ),
                 color = controlColor.copy(alpha = 0.72f),
-                textAlign = if (centerLyrics) TextAlign.Center else TextAlign.Start,
+                textAlign = TextAlign.Start,
+                onTextLayout = { unavailableTextLayout = it },
             )
         }
     }
