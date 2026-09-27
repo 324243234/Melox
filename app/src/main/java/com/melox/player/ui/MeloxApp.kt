@@ -985,8 +985,8 @@ fun MeloxApp(
                             sectionIndexMap = musicPresentation.sectionIndexMap,
                             scanStatus = uiState.scanStatus,
                             currentTrackId = currentTrackId,
-                            query = songSearchQuery,
-                            sortConfig = musicSortConfig,
+                            query = musicPresentation.query,
+                            sortConfig = musicPresentation.sortConfig,
                             onPlayNext = viewModel::playNext,
                             onAppendToQueue = viewModel::appendToQueue,
                             onAddToPlaylist = { track ->
@@ -1152,9 +1152,11 @@ fun MeloxApp(
                                     LIBRARY_ALBUMS_TAB_INDEX -> AlbumLibraryScreen(
                                         displayedAlbums = albumPresentation.items,
                                         sectionIndexMap = albumPresentation.sectionIndexMap,
-                                        query = librarySearchQuery,
+                                        query = albumPresentation.query,
                                         scanStatus = uiState.scanStatus,
-                                        sortConfig = albumSortConfig,
+                                        sortConfig = albumPresentation.sortConfig.copy(
+                                            gridStyle = albumSortConfig.gridStyle,
+                                        ),
                                         onAlbumClick = { album ->
                                             dismissLibrarySearchFocus()
                                             selectedAlbumKey = album.key
@@ -1174,9 +1176,9 @@ fun MeloxApp(
                                     LIBRARY_ARTISTS_TAB_INDEX -> ArtistLibraryScreen(
                                         displayedArtists = artistPresentation.items,
                                         sectionIndexMap = artistPresentation.sectionIndexMap,
-                                        query = librarySearchQuery,
+                                        query = artistPresentation.query,
                                         scanStatus = uiState.scanStatus,
-                                        sortConfig = artistSortConfig,
+                                        sortConfig = artistPresentation.sortConfig,
                                         onArtistClick = { artist ->
                                             dismissLibrarySearchFocus()
                                             openTrackArtist(artist)
@@ -1191,9 +1193,9 @@ fun MeloxApp(
                                                     LIBRARY_FOLDERS_TAB_INDEX -> FolderLibraryScreen(
                                         displayedFolders = folderPresentation.items,
                                         sectionIndexMap = folderPresentation.sectionIndexMap,
-                                        query = librarySearchQuery,
+                                        query = folderPresentation.query,
                                         scanStatus = uiState.scanStatus,
-                                        sortConfig = folderSortConfig,
+                                        sortConfig = folderPresentation.sortConfig,
                                         onFolderClick = { folder ->
                                             dismissLibrarySearchFocus()
                                             selectedFolderKey = folder.key

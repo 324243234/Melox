@@ -97,6 +97,8 @@ data class MusicPresentationState(
     val items: List<MusicTrack> = emptyList(),
     val queueItems: List<MusicTrack> = emptyList(),
     val sectionIndexMap: Map<String, Int> = emptyMap(),
+    val query: String = "",
+    val sortConfig: MusicSortConfig = MusicSortConfig(),
 )
 
 data class AlbumPresentationState(
@@ -346,12 +348,14 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
             request.query.isBlank() &&
             (
                 request.sortConfig.field == MusicSortField.TITLE ||
+                    request.sortConfig.field == MusicSortField.ARTIST ||
                     request.sortConfig.field == MusicSortField.FILE_NAME
             )
         ) {
             buildMap {
                 items.forEachIndexed { index, track ->
                     val key = when (request.sortConfig.field) {
+                        MusicSortField.ARTIST -> createMusicSortKeys(track.artist).section
                         MusicSortField.FILE_NAME -> createMusicSortKeys(track.fileName).section
                         else -> track.titleSectionKey
                     }
@@ -365,6 +369,8 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
             items = items,
             queueItems = queueItems,
             sectionIndexMap = sectionIndexMap,
+            query = request.query,
+            sortConfig = request.sortConfig,
         )
     }
         .flowOn(Dispatchers.Default)
