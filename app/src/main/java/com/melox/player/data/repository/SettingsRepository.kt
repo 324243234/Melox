@@ -26,6 +26,7 @@ import com.melox.player.model.DefaultHomePage
 import com.melox.player.model.DynamicColorSource
 import com.melox.player.model.NavigationTransitionStyle
 import com.melox.player.model.PlaybackBackgroundStyle
+import com.melox.player.model.normalizePlaybackSpeed
 import com.melox.player.model.ThemeMode
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
@@ -76,6 +77,13 @@ class SettingsRepository(context: Context) {
                         )
                     }
                     ?: PlaybackBackgroundStyle.BLURRED_ARTWORK,
+                playbackSpeed = preferences[Keys.PlaybackSpeed]
+                    ?.let(::normalizePlaybackSpeed) ?: 1f,
+                highPrecisionOutput = preferences[Keys.HighPrecisionOutput] ?: true,
+                sleepTimerSeconds = preferences[Keys.SleepTimerSeconds]
+                    ?.coerceIn(0, 86_399) ?: 600,
+                autoExtendSleepTimer = preferences[Keys.AutoExtendSleepTimer] ?: false,
+                playbackPauseFade = preferences[Keys.PlaybackPauseFade] ?: false,
                 lyricFontScale = preferences[Keys.LyricFontScale]
                     ?.coerceIn(MIN_LYRIC_FONT_SCALE, MAX_LYRIC_FONT_SCALE)
                     ?: preferences[Keys.LegacyLyricFontScale]
@@ -173,6 +181,26 @@ class SettingsRepository(context: Context) {
         dataStore.edit { preferences ->
             preferences[Keys.PlaybackBackgroundStyle] = style.name
         }
+    }
+
+    suspend fun setPlaybackSpeed(speed: Float) {
+        dataStore.edit { it[Keys.PlaybackSpeed] = normalizePlaybackSpeed(speed) }
+    }
+
+    suspend fun setHighPrecisionOutput(enabled: Boolean) {
+        dataStore.edit { it[Keys.HighPrecisionOutput] = enabled }
+    }
+
+    suspend fun setSleepTimerSeconds(seconds: Int) {
+        dataStore.edit { it[Keys.SleepTimerSeconds] = seconds.coerceIn(0, 86_399) }
+    }
+
+    suspend fun setAutoExtendSleepTimer(enabled: Boolean) {
+        dataStore.edit { it[Keys.AutoExtendSleepTimer] = enabled }
+    }
+
+    suspend fun setPlaybackPauseFade(enabled: Boolean) {
+        dataStore.edit { it[Keys.PlaybackPauseFade] = enabled }
     }
 
     suspend fun setLyricFontScale(scale: Float) {
@@ -372,6 +400,11 @@ class SettingsRepository(context: Context) {
         val DynamicColorEnabled = booleanPreferencesKey("dynamic_color_enabled")
         val DynamicColorSource = stringPreferencesKey("dynamic_color_source")
         val PlaybackBackgroundStyle = stringPreferencesKey("playback_background_style")
+        val PlaybackSpeed = floatPreferencesKey("playback_speed")
+        val HighPrecisionOutput = booleanPreferencesKey("high_precision_output")
+        val SleepTimerSeconds = intPreferencesKey("sleep_timer_seconds")
+        val AutoExtendSleepTimer = booleanPreferencesKey("auto_extend_sleep_timer")
+        val PlaybackPauseFade = booleanPreferencesKey("playback_pause_fade")
         val LyricFontScale = floatPreferencesKey("lyric_font_scale_v2")
         val LegacyLyricFontScale = floatPreferencesKey("lyric_font_scale")
         val LyricFontWeight = intPreferencesKey("lyric_font_weight")

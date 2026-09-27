@@ -291,6 +291,23 @@
     <string name="lyrics_unavailable">暂无歌词</string>
     <string name="player_settings">播放页设置</string>
     <string name="player_settings_open">打开播放页设置</string>
+    <string name="playback_options_open">播放倍速与定时</string>
+    <string name="playback_sleep_timer">定时</string>
+    <string name="playback_sleep_timer_start">开始</string>
+    <string name="playback_sleep_timer_stop">停止</string>
+    <string name="playback_timer_auto_extend">延长到单首歌曲播完</string>
+    <string name="playback_timer_extension_title">延长定时关闭</string>
+    <string name="playback_timer_extension_interrupted">在延长定时期间手动暂停、切歌导致关闭定时</string>
+    <string name="playback_pause_fade">播放暂停时淡入淡出</string>
+    <string name="playback_high_precision_output">高精度输出</string>
+    <string name="playback_high_precision_output_summary">开启后部分歌曲无法调节倍速</string>
+    <string name="playback_timer_confirm">确认</string>
+    <string-array name="playback_speed_options">
+        <item>×0.25</item><item>×0.50</item><item>×0.75</item><item>×0.90</item>
+        <item>×0.95</item><item>×1.00</item><item>×1.05</item><item>×1.10</item>
+        <item>×1.25</item><item>×1.5</item><item>×1.75</item><item>×2.00</item>
+        <item>×2.50</item><item>×3.00</item>
+    </string-array>
     <string name="player_title_left_aligned">标题左对齐</string>
     <string name="lyrics_translation">歌词翻译</string>
     <string name="lyrics_size">歌词大小</string>

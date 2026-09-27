@@ -169,6 +169,8 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
     private val playlistRepository = PlaylistRepository(application)
     private val lyricsRepository = LyricsRepository(application)
     private val playbackController = PlaybackController(application)
+    private val mutableSleepTimerSelectionSeconds = MutableStateFlow(initialSettings.sleepTimerSeconds)
+    val sleepTimerSelectionSeconds: StateFlow<Int> = mutableSleepTimerSelectionSeconds
     private var scanJob: Job? = null
     private val hasInitialAudioPermission = hasAudioPermission()
     private val loadedSettings = settingsRepository.settings
@@ -212,6 +214,9 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
         initialValue = PlaylistUiState(),
     )
     val playbackState: StateFlow<PlaybackUiState> = playbackController.state
+    val sleepTimerState = playbackController.sleepTimerState
+    val autoExtendSleepTimer = playbackController.autoExtendSleepTimer
+    val playbackPauseFade = playbackController.playbackPauseFade
     val currentTrackId: StateFlow<Long?> = playbackState
         .map { state -> state.currentItem?.trackId }
         .distinctUntilChanged()
@@ -461,6 +466,10 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, FolderPresentationState())
 
     init {
+        playbackController.setHighPrecisionOutput(initialSettings.highPrecisionOutput)
+        playbackController.setPlaybackSpeed(initialSettings.playbackSpeed)
+        playbackController.setAutoExtendSleepTimer(initialSettings.autoExtendSleepTimer)
+        playbackController.setPlaybackPauseFade(initialSettings.playbackPauseFade)
         viewModelScope.launch {
             playlists.value = playlistRepository.load()
             playlistsLoaded.value = true
@@ -921,6 +930,41 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
     fun next() = playbackController.next()
 
     fun cyclePlaybackMode() = playbackController.cyclePlaybackMode()
+
+    fun setPlaybackSpeed(speed: Float) {
+        if (playbackController.state.value.floatOutputActive && speed != 1f) return
+        playbackController.setPlaybackSpeed(speed)
+        viewModelScope.launch { settingsRepository.setPlaybackSpeed(speed) }
+    }
+
+    val highPrecisionOutput = playbackController.highPrecisionOutput
+
+    fun setHighPrecisionOutput(enabled: Boolean) {
+        playbackController.setHighPrecisionOutput(enabled)
+        viewModelScope.launch { settingsRepository.setHighPrecisionOutput(enabled) }
+    }
+
+    fun setSleepTimerSelectionSeconds(seconds: Int) {
+        val value = seconds.coerceIn(0, 86_399)
+        mutableSleepTimerSelectionSeconds.value = value
+        viewModelScope.launch { settingsRepository.setSleepTimerSeconds(value) }
+    }
+
+    fun startSleepTimer(seconds: Int) = playbackController.startSleepTimer(seconds)
+
+    fun cancelSleepTimer() = playbackController.cancelSleepTimer()
+
+    fun acknowledgeSleepTimerInterruption() = playbackController.acknowledgeSleepTimerInterruption()
+
+    fun setAutoExtendSleepTimer(enabled: Boolean) {
+        playbackController.setAutoExtendSleepTimer(enabled)
+        viewModelScope.launch { settingsRepository.setAutoExtendSleepTimer(enabled) }
+    }
+
+    fun setPlaybackPauseFade(enabled: Boolean) {
+        playbackController.setPlaybackPauseFade(enabled)
+        viewModelScope.launch { settingsRepository.setPlaybackPauseFade(enabled) }
+    }
 
     fun playNext(track: MusicTrack) = playbackController.playNext(track)
 

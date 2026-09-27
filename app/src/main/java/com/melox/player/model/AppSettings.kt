@@ -43,6 +43,14 @@ enum class DefaultHomePage {
     LIBRARY,
 }
 
+val PLAYBACK_SPEED_VALUES = listOf(
+    0.25f, 0.50f, 0.75f, 0.90f, 0.95f, 1.00f, 1.05f,
+    1.10f, 1.25f, 1.50f, 1.75f, 2.00f, 2.50f, 3.00f,
+)
+
+fun normalizePlaybackSpeed(speed: Float): Float =
+    speed.takeIf(PLAYBACK_SPEED_VALUES::contains) ?: 1f
+
 /** User-controlled preferences stored by the settings repository. */
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -50,6 +58,11 @@ data class AppSettings(
     val dynamicColorSource: DynamicColorSource = DynamicColorSource.PLAYBACK_ARTWORK,
     val playbackBackgroundStyle: PlaybackBackgroundStyle =
         PlaybackBackgroundStyle.BLURRED_ARTWORK,
+    val playbackSpeed: Float = 1f,
+    val highPrecisionOutput: Boolean = true,
+    val sleepTimerSeconds: Int = 600,
+    val autoExtendSleepTimer: Boolean = false,
+    val playbackPauseFade: Boolean = false,
     val lyricFontScale: Float = 1f,
     val lyricFontWeight: Int = 400,
     val forceWordByWordLyrics: Boolean = false,

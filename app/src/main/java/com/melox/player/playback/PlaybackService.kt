@@ -24,9 +24,11 @@ import com.melox.player.MeloxApplication
 import com.melox.player.R
 import com.melox.player.data.playback.PlaybackSnapshotStore
 import com.melox.player.data.playback.MiniPlaybackSnapshotStore
+import com.melox.player.data.repository.SettingsRepository
 import com.melox.player.model.PlaybackMode
 import com.melox.player.model.PlaybackQueueItem
 import com.melox.player.model.PlaybackSnapshot
+import com.melox.player.model.PLAYBACK_SPEED_VALUES
 import com.google.common.util.concurrent.Futures
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,12 +45,27 @@ import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.atomic.AtomicLong
 
 /** Owns background audio playback and exposes it to Android system media controls. */
+internal const val ACTION_CLOSE_APPLICATION_COMMAND =
+    "com.melox.player.action.CLOSE_APPLICATION_COMMAND"
+internal const val ACTION_SET_PAUSE_FADE = "com.melox.player.action.SET_PAUSE_FADE"
+internal const val ACTION_SET_PLAYBACK_INTENT = "com.melox.player.action.SET_PLAYBACK_INTENT"
+internal const val ACTION_SET_PLAYBACK_SPEED = "com.melox.player.action.SET_PLAYBACK_SPEED"
+internal const val ACTION_SET_HIGH_PRECISION_OUTPUT = "com.melox.player.action.SET_HIGH_PRECISION_OUTPUT"
+internal const val EXTRA_PAUSE_FADE = "pause_fade"
+internal const val EXTRA_PLAYBACK_INTENT = "playback_intent"
+internal const val EXTRA_PLAYBACK_SPEED = "playback_speed"
+internal const val EXTRA_HIGH_PRECISION_OUTPUT = "high_precision_output"
+internal const val EXTRA_FLOAT_OUTPUT_ACTIVE = "float_output_active"
+internal const val EXTRA_CLOSE_AFTER_EXTENSION = "close_after_extension"
+internal const val EXTRA_EXTENSION_EXPECTED_INDEX = "extension_expected_index"
+
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var snapshotStore: PlaybackSnapshotStore
     private lateinit var miniSnapshotStore: MiniPlaybackSnapshotStore
+    private lateinit var settingsRepository: SettingsRepository
     private var snapshotDebounceJob: Job? = null
     private var snapshotRestorePending = false
     private var snapshotRestoreSeed: PlaybackSnapshot? = null
@@ -61,6 +78,43 @@ class PlaybackService : MediaSessionService() {
     private var isClosing = false
     private val cyclePlaybackModeCommand = SessionCommand(ACTION_CYCLE_PLAYBACK_MODE, Bundle.EMPTY)
     private val closeApplicationCommand = SessionCommand(ACTION_CLOSE_APPLICATION_COMMAND, Bundle.EMPTY)
+    private val pauseFadeCommand = SessionCommand(ACTION_SET_PAUSE_FADE, Bundle.EMPTY)
+    private val playbackIntentCommand = SessionCommand(ACTION_SET_PLAYBACK_INTENT, Bundle.EMPTY)
+    private val playbackSpeedCommand = SessionCommand(ACTION_SET_PLAYBACK_SPEED, Bundle.EMPTY)
+    private val highPrecisionOutputCommand = SessionCommand(ACTION_SET_HIGH_PRECISION_OUTPUT, Bundle.EMPTY)
+    private var playbackVolumeFade: PlaybackVolumeFade? = null
+    private var activePlayer: ExoPlayer? = null
+    private var highPrecisionOutput = true
+    private var floatOutputActive = false
+    private var outputGeneration = 0
+    private var pauseFadeEnabled = false
+    private var deferredPlaybackSpeed: Float? = null
+    private var deferredHighPrecisionOutput: Boolean? = null
+    private val playerListener = object : Player.Listener {
+        override fun onEvents(player: Player, events: Player.Events) {
+            if (player !== activePlayer) return
+            playbackVolumeFade?.onEvents()
+            if (floatOutputActive && player.playbackParameters.speed != 1f) {
+                player.setPlaybackSpeed(1f)
+                return
+            }
+            if (events.contains(Player.EVENT_REPEAT_MODE_CHANGED)) {
+                refreshMediaButtonPreferences(player.currentPlaybackMode())
+            }
+            if (events.contains(Player.EVENT_TIMELINE_CHANGED) ||
+                events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)
+            ) {
+                if (player.mediaItemCount == 0) setFloatOutputActive(false)
+                scheduleArtworkUpdate(player)
+            }
+            scheduleSnapshotWrite(
+                player = player,
+                immediate = events.contains(Player.EVENT_TIMELINE_CHANGED) ||
+                    events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) ||
+                    events.contains(Player.EVENT_REPEAT_MODE_CHANGED),
+            )
+        }
+    }
     private val mediaSessionCallback = object : MediaSession.Callback {
         override fun onConnectAsync(
             session: MediaSession,
@@ -76,6 +130,10 @@ class PlaybackService : MediaSessionService() {
                         if (controller.isTrusted) {
                             add(cyclePlaybackModeCommand)
                             add(closeApplicationCommand)
+                            add(pauseFadeCommand)
+                            add(playbackIntentCommand)
+                            add(playbackSpeedCommand)
+                            add(highPrecisionOutputCommand)
                         }
                     }.build(),
                 )
@@ -94,7 +152,40 @@ class PlaybackService : MediaSessionService() {
             }
 
             ACTION_CLOSE_APPLICATION_COMMAND -> {
-                closeApplication()
+                if (args.getBoolean(EXTRA_CLOSE_AFTER_EXTENSION)) {
+                    closeAfterExtendedTimer(args.getInt(EXTRA_EXTENSION_EXPECTED_INDEX, -1))
+                } else {
+                    closeApplication()
+                }
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+
+            ACTION_SET_PAUSE_FADE -> {
+                pauseFadeEnabled = args.getBoolean(EXTRA_PAUSE_FADE)
+                playbackVolumeFade?.setEnabled(pauseFadeEnabled)
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+
+            ACTION_SET_PLAYBACK_INTENT -> {
+                playbackVolumeFade?.requestPlaybackIntent(args.getBoolean(EXTRA_PLAYBACK_INTENT))
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+
+            ACTION_SET_PLAYBACK_SPEED -> {
+                val speed = args.getFloat(EXTRA_PLAYBACK_SPEED, 1f)
+                if (speed in PLAYBACK_SPEED_VALUES && (!floatOutputActive || speed == 1f)) {
+                    if (snapshotRestorePending) deferredPlaybackSpeed = speed
+                    else activePlayer?.setPlaybackSpeed(speed)
+                    Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                } else {
+                    Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
+                }
+            }
+
+            ACTION_SET_HIGH_PRECISION_OUTPUT -> {
+                val enabled = args.getBoolean(EXTRA_HIGH_PRECISION_OUTPUT, true)
+                if (snapshotRestorePending) deferredHighPrecisionOutput = enabled
+                else setHighPrecisionOutput(enabled)
                 Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
 
@@ -110,26 +201,13 @@ class PlaybackService : MediaSessionService() {
         setMediaNotificationProvider(notificationProvider)
         snapshotStore = PlaybackSnapshotStore(this)
         miniSnapshotStore = MiniPlaybackSnapshotStore(this)
+        settingsRepository = SettingsRepository(this)
         val startupSnapshot = miniSnapshotStore.load()
         snapshotRestoreSeed = startupSnapshot
         PlaybackModeMemory.set(startupSnapshot?.playbackMode ?: PlaybackMode.ORDER)
-        val renderersFactory = DefaultRenderersFactory(this)
-            .setEnableAudioFloatOutput(true)
-            .setEnableDecoderFallback(true)
-            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
-        val mediaSourceFactory = DefaultMediaSourceFactory(this, PlaybackExtractorsFactory())
-        val player = ExoPlayer.Builder(this, renderersFactory)
-            .setMediaSourceFactory(mediaSourceFactory)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                true,
-            )
-            .setHandleAudioBecomingNoisy(true)
-            .build()
-        player.setWakeMode(C.WAKE_MODE_LOCAL)
+        val player = createPlayer(highPrecisionOutput)
+        activePlayer = player
+        playbackVolumeFade = PlaybackVolumeFade(player, serviceScope)
         startupSnapshot?.let { snapshot ->
             player.setMediaItems(
                 snapshot.queue.map(PlaybackQueueItem::toMediaItem),
@@ -139,27 +217,6 @@ class PlaybackService : MediaSessionService() {
             player.shuffleModeEnabled = false
             player.repeatMode = snapshot.playbackMode.toPlayerRepeatMode()
         }
-        player.addListener(
-            object : Player.Listener {
-                override fun onEvents(player: Player, events: Player.Events) {
-                    if (events.contains(Player.EVENT_REPEAT_MODE_CHANGED)) {
-                        refreshMediaButtonPreferences(player.currentPlaybackMode())
-                    }
-                    if (
-                        events.contains(Player.EVENT_TIMELINE_CHANGED) ||
-                        events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)
-                    ) {
-                        scheduleArtworkUpdate(player)
-                    }
-                    scheduleSnapshotWrite(
-                        player = player,
-                        immediate = events.contains(Player.EVENT_TIMELINE_CHANGED) ||
-                            events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) ||
-                            events.contains(Player.EVENT_REPEAT_MODE_CHANGED),
-                    )
-                }
-            }
-        )
         restoreSnapshot(player, startupSnapshot)
         val sessionActivity = PendingIntent.getActivity(
             this,
@@ -171,6 +228,7 @@ class PlaybackService : MediaSessionService() {
         )
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(sessionActivity)
+            .setSessionExtras(Bundle().apply { putBoolean(EXTRA_FLOAT_OUTPUT_ACTIVE, false) })
             .setCallback(mediaSessionCallback)
             .setMediaButtonPreferences(mediaButtonPreferences(player.currentPlaybackMode()))
             .build()
@@ -179,7 +237,7 @@ class PlaybackService : MediaSessionService() {
         serviceScope.launch {
             while (isActive) {
                 delay(SNAPSHOT_INTERVAL_MS)
-                if (player.isPlaying) scheduleSnapshotWrite(player)
+                activePlayer?.takeIf(Player::isPlaying)?.let(::scheduleSnapshotWrite)
             }
         }
     }
@@ -198,6 +256,8 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        playbackVolumeFade?.release()
+        playbackVolumeFade = null
         mediaSession?.run {
             if (player.shouldPersistCurrentSnapshot()) {
                 persistSnapshotBlocking(player)
@@ -205,10 +265,93 @@ class PlaybackService : MediaSessionService() {
             player.release()
             release()
         }
+        activePlayer = null
         serviceScope.cancel()
         mediaSession = null
         (application as MeloxApplication).fairMemoryManager.savePlayback = null
         super.onDestroy()
+    }
+
+    private fun createPlayer(highPrecision: Boolean): ExoPlayer {
+        val generation = ++outputGeneration
+        val renderersFactory = PrecisionRenderersFactory(this, highPrecision) { active ->
+            serviceScope.launch {
+                if (generation == outputGeneration) setFloatOutputActive(active)
+            }
+        }
+            .setEnableDecoderFallback(true)
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+        return ExoPlayer.Builder(this, renderersFactory)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(this, PlaybackExtractorsFactory()))
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .build(),
+                true,
+            )
+            .setHandleAudioBecomingNoisy(true)
+            .build()
+            .apply {
+                setWakeMode(C.WAKE_MODE_LOCAL)
+                addListener(playerListener)
+            }
+    }
+
+    private fun setHighPrecisionOutput(enabled: Boolean) {
+        val oldPlayer = activePlayer ?: return
+        if (enabled == highPrecisionOutput) return
+        val session = mediaSession ?: return
+        val nextPlayer = createPlayer(enabled)
+        val items = (0 until oldPlayer.mediaItemCount).map(oldPlayer::getMediaItemAt)
+        val currentIndex = oldPlayer.currentMediaItemIndex
+        if (currentIndex in items.indices) {
+            nextPlayer.setMediaItems(items, currentIndex, oldPlayer.currentPosition.coerceAtLeast(0L))
+        } else if (items.isNotEmpty()) {
+            nextPlayer.setMediaItems(items)
+        }
+        nextPlayer.shuffleModeEnabled = oldPlayer.shuffleModeEnabled
+        nextPlayer.repeatMode = oldPlayer.repeatMode
+        nextPlayer.setPlaybackSpeed(oldPlayer.playbackParameters.speed)
+        val oldFade = playbackVolumeFade
+        val keepPlaying = oldPlayer.playWhenReady && oldFade?.hasPendingPause != true
+        val shouldPrepare = oldPlayer.playbackState != Player.STATE_IDLE && items.isNotEmpty()
+        nextPlayer.playWhenReady = keepPlaying
+        session.setPlayer(nextPlayer)
+        activePlayer = nextPlayer
+        highPrecisionOutput = enabled
+        setFloatOutputActive(false)
+        oldPlayer.pause()
+        oldFade?.release()
+        playbackVolumeFade = PlaybackVolumeFade(nextPlayer, serviceScope).apply {
+            setEnabled(pauseFadeEnabled)
+        }
+        oldPlayer.removeListener(playerListener)
+        oldPlayer.release()
+        artworkLoadJob?.cancel()
+        artworkLoadJob = null
+        requestedArtworkKey = null
+        if (shouldPrepare) {
+            nextPlayer.prepare()
+        }
+        scheduleArtworkUpdate(nextPlayer)
+        scheduleSnapshotWrite(nextPlayer, immediate = true)
+    }
+
+    private fun setFloatOutputActive(active: Boolean) {
+        if (floatOutputActive == active) return
+        floatOutputActive = active
+        mediaSession?.setSessionExtras(Bundle().apply {
+            putBoolean(EXTRA_FLOAT_OUTPUT_ACTIVE, active)
+        })
+        if (active && activePlayer?.playbackParameters?.speed != 1f) {
+            activePlayer?.setPlaybackSpeed(1f)
+            serviceScope.launch {
+                if (highPrecisionOutput && floatOutputActive) {
+                    settingsRepository.setPlaybackSpeed(1f)
+                }
+            }
+        }
     }
 
     private fun restoreSnapshot(
@@ -301,6 +444,14 @@ class PlaybackService : MediaSessionService() {
         snapshotRestorePending = false
         snapshotRestoreSeed = null
         scheduleSnapshotWrite(player, immediate = true)
+        deferredHighPrecisionOutput?.let { enabled ->
+            deferredHighPrecisionOutput = null
+            setHighPrecisionOutput(enabled)
+        }
+        deferredPlaybackSpeed?.let { speed ->
+            deferredPlaybackSpeed = null
+            if (!floatOutputActive || speed == 1f) activePlayer?.setPlaybackSpeed(speed)
+        }
     }
 
     private fun scheduleSnapshotWrite(
@@ -459,6 +610,26 @@ class PlaybackService : MediaSessionService() {
         Process.killProcess(Process.myPid())
     }
 
+    private fun closeAfterExtendedTimer(expectedIndex: Int) {
+        if (isClosing) return
+        isClosing = true
+        mediaSession?.player?.let { player ->
+            playbackVolumeFade?.setEnabled(false)
+            player.pause()
+            val currentIndex = player.currentMediaItemIndex
+            if (currentIndex in 0 until player.mediaItemCount) {
+                val targetIndex = nextItemIndexAfterExtendedTimer(
+                    currentIndex = currentIndex,
+                    expectedIndex = expectedIndex,
+                    itemCount = player.mediaItemCount,
+                )
+                player.seekToDefaultPosition(targetIndex)
+            }
+            if (player.shouldPersistCurrentSnapshot()) persistSnapshotBlocking(player)
+        }
+        Process.killProcess(Process.myPid())
+    }
+
     private fun refreshMediaButtonPreferences(mode: PlaybackMode) {
         mediaSession?.setMediaButtonPreferences(mediaButtonPreferences(mode))
     }
@@ -481,11 +652,19 @@ class PlaybackService : MediaSessionService() {
     private companion object {
         const val ACTION_CYCLE_PLAYBACK_MODE =
             "com.melox.player.action.CYCLE_PLAYBACK_MODE"
-        const val ACTION_CLOSE_APPLICATION_COMMAND =
-            "com.melox.player.action.CLOSE_APPLICATION_COMMAND"
         const val SNAPSHOT_DEBOUNCE_MS = 350L
         const val SNAPSHOT_INTERVAL_MS = 5_000L
     }
+}
+
+internal fun nextItemIndexAfterExtendedTimer(
+    currentIndex: Int,
+    expectedIndex: Int,
+    itemCount: Int,
+): Int = if (itemCount > 0 && currentIndex == expectedIndex) {
+    (currentIndex + 1) % itemCount
+} else {
+    currentIndex
 }
 
 private fun PlaybackMode.notificationIconResId(): Int = when (this) {

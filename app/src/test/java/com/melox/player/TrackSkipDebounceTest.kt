@@ -12,7 +12,10 @@ class TrackSkipDebounceTest {
         assertTrue(shouldAcceptTrackSkip(previous, 1_000L))
         previous = 1_000L
         assertFalse(shouldAcceptTrackSkip(previous, 1_100L))
-        assertFalse(shouldAcceptTrackSkip(previous, 1_199L))
-        assertTrue(shouldAcceptTrackSkip(previous, 1_200L))
+        assertFalse(shouldAcceptTrackSkip(previous, 1_299L))
+        assertTrue(shouldAcceptTrackSkip(previous, 1_300L))
+        previous = 1_300L
+        assertFalse(shouldAcceptTrackSkip(previous, 1_500L))
+        assertTrue(shouldAcceptTrackSkip(previous, 1_600L))
     }
 }

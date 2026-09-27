@@ -304,6 +304,23 @@
     <string name="lyrics_unavailable">No lyrics</string>
     <string name="player_settings">Player settings</string>
     <string name="player_settings_open">Open player settings</string>
+    <string name="playback_options_open">Playback speed and sleep timer</string>
+    <string name="playback_sleep_timer">Timer</string>
+    <string name="playback_sleep_timer_start">Start</string>
+    <string name="playback_sleep_timer_stop">Stop</string>
+    <string name="playback_timer_auto_extend">Extend until this song ends</string>
+    <string name="playback_timer_extension_title">Extended sleep timer</string>
+    <string name="playback_timer_extension_interrupted">Manually pausing or skipping a song during the extension cancels the sleep timer.</string>
+    <string name="playback_pause_fade">Fade in and out on play/pause</string>
+    <string name="playback_high_precision_output">High-precision output</string>
+    <string name="playback_high_precision_output_summary">Some songs cannot change speed while this is on</string>
+    <string name="playback_timer_confirm">Confirm</string>
+    <string-array name="playback_speed_options">
+        <item>×0.25</item><item>×0.50</item><item>×0.75</item><item>×0.90</item>
+        <item>×0.95</item><item>×1.00</item><item>×1.05</item><item>×1.10</item>
+        <item>×1.25</item><item>×1.5</item><item>×1.75</item><item>×2.00</item>
+        <item>×2.50</item><item>×3.00</item>
+    </string-array>
     <string name="player_title_left_aligned">Left-align title</string>
     <string name="lyrics_translation">Lyrics translation</string>
     <string name="lyrics_size">Lyrics size</string>
