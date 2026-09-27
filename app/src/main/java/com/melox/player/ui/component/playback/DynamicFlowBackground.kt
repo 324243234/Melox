@@ -93,12 +93,13 @@ internal class DynamicFlowBackgroundState {
 
     internal fun beginTransition(frame: Bitmap) {
         freezeTransition()
-        previousFrame = displayedFrame
-        previousPaint = currentPaint
+        val previous = displayedFrame ?: Bitmap.createBitmap(
+            1, 1, Bitmap.Config.ARGB_8888,
+        ).apply { eraseColor(DynamicFlowFallbackColor.toArgb()) }
+        previousFrame = previous
+        previousPaint = currentPaint ?: shaderPaint(previous)
         displayedFrame = frame
-        currentPaint = shaderPaint(frame).apply {
-            alpha = if (previousPaint == null) 255 else 0
-        }
+        currentPaint = shaderPaint(frame).apply { alpha = 0 }
         frameRevision += 1
     }
 
@@ -212,18 +213,15 @@ internal fun DynamicFlowBackground(
         }
 
         val target = renderFrame()
-        val previous = state.displayedFrame
-        if (previous != null) {
-            state.beginTransition(target)
-            Animatable(0f).animateTo(
-                targetValue = 1f,
-                animationSpec = tween(
-                    durationMillis = PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS,
-                    easing = PLAYER_TRACK_ARTWORK_CROSSFADE_EASING,
-                ),
-            ) {
-                state.updateTransition(value)
-            }
+        state.beginTransition(target)
+        Animatable(0f).animateTo(
+            targetValue = 1f,
+            animationSpec = tween(
+                durationMillis = PLAYBACK_BACKGROUND_TRANSITION_DURATION_MILLIS,
+                easing = PLAYER_TRACK_ARTWORK_CROSSFADE_EASING,
+            ),
+        ) {
+            state.updateTransition(value)
         }
         state.publishFrame(if (
             renderedSize != viewportSize || renderedDensity != currentDensityDpi

@@ -58,6 +58,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -66,6 +67,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.squircle.addSquircleRect
 import top.yukonga.miuix.kmp.squircle.isSquircleEnabled
 import top.yukonga.miuix.kmp.squircle.squircleClip
@@ -474,6 +476,53 @@ internal fun rememberArtworkBitmapPixels(
 )
 
 @Composable
+internal fun rememberFullPlayerArtworkBitmapPixels(
+    contentUri: String,
+    dateModifiedEpochSeconds: Long,
+    fileSizeBytes: Long,
+    targetSizePx: Int,
+    enabled: Boolean,
+): Bitmap? {
+    val context = LocalContext.current.applicationContext
+    val normalizedTargetSizePx = fullPlayerArtworkTargetSizePx(targetSizePx)
+    val cacheKey = remember(
+        contentUri,
+        dateModifiedEpochSeconds,
+        fileSizeBytes,
+        normalizedTargetSizePx,
+    ) {
+        "full-player|" + createArtworkCacheKey(
+            contentUri = contentUri,
+            dateModifiedEpochSeconds = dateModifiedEpochSeconds,
+            fileSizeBytes = fileSizeBytes,
+            targetSizePx = normalizedTargetSizePx,
+        )
+    }
+    var retainedBitmap by remember(contentUri) { mutableStateOf<Bitmap?>(null) }
+    val bitmap = produceState<Bitmap?>(
+        initialValue = retainedBitmap,
+        key1 = cacheKey,
+        key2 = enabled,
+    ) {
+        value = if (enabled) {
+            loadFullPlayerArtworkBitmap(
+                context = context,
+                contentUri = contentUri,
+                dateModifiedEpochSeconds = dateModifiedEpochSeconds,
+                fileSizeBytes = fileSizeBytes,
+                targetSizePx = normalizedTargetSizePx,
+            )
+        } else {
+            null
+        }
+    }.value
+    LaunchedEffect(bitmap, enabled) {
+        retainedBitmap = if (enabled) bitmap ?: retainedBitmap else null
+    }
+    return bitmap ?: retainedBitmap
+}
+
+@Composable
 private fun rememberArtworkBitmapForTargetSize(
     contentUri: String,
     dateModifiedEpochSeconds: Long,
@@ -563,6 +612,51 @@ internal suspend fun loadArtworkBitmap(
     )
     return when (val result = ArtworkCache.getOrLoad(context.applicationContext, cacheKey) {
         loadArtworkThumbnail(
+            context = context.applicationContext,
+            contentUri = contentUri,
+            targetSizePx = normalizedTargetSizePx,
+        )
+    }) {
+        is ArtworkResult.Loaded -> result.bitmap
+        ArtworkResult.Missing -> null
+    }
+}
+
+internal fun getArtworkBitmapFromMemoryCache(cacheKey: String): Bitmap? =
+    (ArtworkCache.get(cacheKey) as? ArtworkResult.Loaded)?.bitmap
+
+internal suspend fun loadArtworkBitmapFromCache(
+    context: Context,
+    cacheKey: String,
+): Bitmap? = withContext(Dispatchers.IO) {
+    (ArtworkCache.getCached(
+        context = context.applicationContext,
+        key = cacheKey,
+        includeDisk = true,
+    ) as? ArtworkResult.Loaded)?.bitmap
+}
+
+internal suspend fun loadFullPlayerArtworkBitmap(
+    context: Context,
+    contentUri: String,
+    dateModifiedEpochSeconds: Long,
+    fileSizeBytes: Long,
+    targetSizePx: Int,
+): Bitmap? {
+    if (contentUri.isBlank()) return null
+    val normalizedTargetSizePx = fullPlayerArtworkTargetSizePx(targetSizePx)
+    val cacheKey = "full-player|" + createArtworkCacheKey(
+        contentUri = contentUri,
+        dateModifiedEpochSeconds = dateModifiedEpochSeconds,
+        fileSizeBytes = fileSizeBytes,
+        targetSizePx = normalizedTargetSizePx,
+    )
+    return when (val result = ArtworkCache.getOrLoad(
+        context = context.applicationContext,
+        key = cacheKey,
+        useDiskCache = false,
+    ) {
+        loadEmbeddedArtworkThumbnail(
             context = context.applicationContext,
             contentUri = contentUri,
             targetSizePx = normalizedTargetSizePx,
@@ -695,6 +789,18 @@ internal fun normalizeArtworkTargetSize(targetSizePx: Int): Int {
         ?: ARTWORK_SIZE_BUCKETS.last()
 }
 
+internal fun fullPlayerArtworkTargetSizePx(
+    displayedSizePx: Int,
+    maxMemoryBytes: Long = Runtime.getRuntime().maxMemory(),
+): Int {
+    val requested = displayedSizePx.coerceAtLeast(1)
+    val bitmapBudgetBytes = (maxMemoryBytes / FULL_PLAYER_ARTWORK_HEAP_FRACTION)
+        .coerceAtLeast(4L)
+    val memoryLimitedEdge = sqrt(bitmapBudgetBytes / 4.0).toInt().coerceAtLeast(1)
+    val maximumEdge = minOf(FULL_PLAYER_ARTWORK_MAX_SIZE_PX, memoryLimitedEdge)
+    return minOf(requested, maximumEdge)
+}
+
 private fun loadArtworkThumbnail(
     context: Context,
     contentUri: String,
@@ -728,6 +834,34 @@ private fun loadArtworkThumbnail(
             ?.let(ArtworkExtractionResult::Loaded)
             ?: ArtworkExtractionResult.Missing
     } catch (_: Exception) {
+        ArtworkExtractionResult.Failed
+    } catch (_: OutOfMemoryError) {
+        ArtworkExtractionResult.Failed
+    } finally {
+        runCatching(retriever::release)
+    }
+}
+
+private fun loadEmbeddedArtworkThumbnail(
+    context: Context,
+    contentUri: String,
+    targetSizePx: Int,
+): ArtworkExtractionResult {
+    val uri = contentUri.toUri()
+    val retriever = MediaMetadataRetriever()
+    return try {
+        val artworkData = runCatching {
+            retriever.setDataSource(context, uri)
+            retriever.embeddedPicture
+        }.getOrNull()
+            ?: readEmbeddedArtworkData(context, contentUri)
+            ?: return ArtworkExtractionResult.Missing
+        decodeSampledBitmap(artworkData, targetSizePx)
+            ?.let(ArtworkExtractionResult::Loaded)
+            ?: ArtworkExtractionResult.Missing
+    } catch (_: Exception) {
+        ArtworkExtractionResult.Failed
+    } catch (_: OutOfMemoryError) {
         ArtworkExtractionResult.Failed
     } finally {
         runCatching(retriever::release)
@@ -783,7 +917,10 @@ private fun decodeSampledBitmap(data: ByteArray, targetSizePx: Int): Bitmap? {
         data,
         0,
         data.size,
-        BitmapFactory.Options().apply { inSampleSize = sampleSize },
+        BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inScaled = false
+        },
     ) ?: return null
 
     return decoded.toBoundedThumbnail(thumbnailSizePx)
@@ -884,29 +1021,32 @@ private object ArtworkCache {
     suspend fun getOrLoad(
         context: Context,
         key: String,
+        useDiskCache: Boolean = true,
         loader: () -> ArtworkExtractionResult,
     ): ArtworkResult {
         get(key)?.let { return it }
 
         val newRequest = loaderScope.async(start = CoroutineStart.LAZY) {
             try {
-                ArtworkDiskCache.get(context, key)?.let { cachedResult ->
-                    remember(key, cachedResult)
-                    return@async cachedResult
+                if (useDiskCache) {
+                    ArtworkDiskCache.get(context, key)?.let { cachedResult ->
+                        remember(key, cachedResult)
+                        return@async cachedResult
+                    }
                 }
 
                 when (val extracted = loader()) {
                     is ArtworkExtractionResult.Loaded -> {
                         val result = ArtworkResult.Loaded(extracted.bitmap)
                         remember(key, result)
-                        ArtworkDiskCache.put(context, key, result)
+                        if (useDiskCache) ArtworkDiskCache.put(context, key, result)
                         result
                     }
 
                     ArtworkExtractionResult.Missing -> {
                         val result = ArtworkResult.Missing
                         remember(key, result)
-                        ArtworkDiskCache.put(context, key, result)
+                        if (useDiskCache) ArtworkDiskCache.put(context, key, result)
                         result
                     }
 
@@ -1088,3 +1228,5 @@ private const val DISK_ACCESS_TOUCH_INTERVAL_MILLIS = 60L * 60L * 1000L
 private const val HEX_DIGITS = "0123456789abcdef"
 private val ARTWORK_SIZE_BUCKETS =
     intArrayOf(64, 96, 128, 192, 256, 384, 512, 640, 768, 1024, 1280, 1536, 2048)
+private const val FULL_PLAYER_ARTWORK_MAX_SIZE_PX = 8000
+private const val FULL_PLAYER_ARTWORK_HEAP_FRACTION = 8L

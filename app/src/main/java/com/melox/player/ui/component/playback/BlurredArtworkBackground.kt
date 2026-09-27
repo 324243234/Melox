@@ -46,7 +46,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import kotlin.random.Random
 
-private const val PLAYBACK_BACKGROUND_BLUR_SIZE_PX = 128
+internal const val PLAYBACK_BACKGROUND_BLUR_SIZE_PX = 128
 private const val PLAYBACK_BACKGROUND_BLUR_RADIUS = 25
 private const val KEN_BURNS_TRANSITION_DURATION_MILLIS = 12_000
 private const val BLURRED_ARTWORK_CACHE_SCHEMA_VERSION = 2
@@ -257,7 +257,7 @@ private fun rememberBlurredArtworkLayerBlend(
         if (targetLayer?.key == currentLayer?.key && progress.value >= 1f) {
             return@LaunchedEffect
         }
-        if (!animateTransition || currentLayer == null && startingFrames.isEmpty()) {
+        if (!animateTransition) {
             startingFrames = emptyList()
             currentLayer = targetLayer
             progress.snapTo(1f)

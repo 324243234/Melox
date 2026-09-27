@@ -153,21 +153,43 @@ internal data class ArtworkBlend(
     val currentBitmap: Bitmap?,
 )
 
+internal fun artworkCrossfadeDurationMillis(
+    currentContentKey: Any?,
+    targetContentKey: Any?,
+    contentChangeDurationMillis: Int,
+    sameContentDurationMillis: Int?,
+): Int = if (targetContentKey == currentContentKey) {
+    sameContentDurationMillis ?: contentChangeDurationMillis
+} else {
+    contentChangeDurationMillis
+}
+
 @Composable
 internal fun rememberArtworkBlend(
     targetBitmap: Bitmap?,
     animate: Boolean,
+    durationMillis: Int = PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS,
+    contentKey: Any? = targetBitmap,
+    sameContentDurationMillis: Int? = null,
 ): ArtworkBlend {
     var startingFrames by remember {
         mutableStateOf<List<WeightedCrossfadeFrame<Bitmap>>>(emptyList())
     }
     var currentBitmap by remember { mutableStateOf(targetBitmap) }
+    var currentContentKey by remember { mutableStateOf(contentKey) }
     val progress = remember { Animatable(1f) }
 
-    LaunchedEffect(targetBitmap, animate) {
+    LaunchedEffect(
+        targetBitmap,
+        animate,
+        durationMillis,
+        contentKey,
+        sameContentDurationMillis,
+    ) {
         if (!animate) {
             startingFrames = emptyList()
             currentBitmap = targetBitmap
+            currentContentKey = contentKey
             progress.snapTo(1f)
             return@LaunchedEffect
         }
@@ -180,12 +202,19 @@ internal fun rememberArtworkBlend(
             progress = progress.value,
             sameValue = { first, second -> first === second },
         )
+        val resolvedDurationMillis = artworkCrossfadeDurationMillis(
+            currentContentKey = currentContentKey,
+            targetContentKey = contentKey,
+            contentChangeDurationMillis = durationMillis,
+            sameContentDurationMillis = sameContentDurationMillis,
+        )
         currentBitmap = targetBitmap
+        currentContentKey = contentKey
         progress.snapTo(0f)
         progress.animateTo(
             targetValue = 1f,
             animationSpec = tween(
-                durationMillis = PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS,
+                durationMillis = resolvedDurationMillis,
                 easing = PLAYER_TRACK_ARTWORK_CROSSFADE_EASING,
             ),
         )
@@ -210,10 +239,17 @@ internal fun PlayerArtwork(
     cornerRadius: Dp,
     sharedArtworkVisible: Boolean,
     onArtworkBoundsChanged: (Rect) -> Unit,
+    onArtworkDisplaySizeChanged: (Int) -> Unit = {},
 ) {
     val artworkContainerSize = size + PLAYER_ARTWORK_CONTAINER_EXPANSION
     val artworkContentSize =
         (artworkContainerSize - artworkPadding * 2f).coerceAtLeast(0.dp)
+    // The playing state expands the artwork content back to the measured size.
+    // Decode for that maximum visible edge so padding motion never triggers new requests.
+    val artworkDisplaySizePx = with(LocalDensity.current) { size.roundToPx() }
+    SideEffect {
+        onArtworkDisplaySizeChanged(artworkDisplaySizePx)
+    }
     val density = LocalDensity.current
     var artworkLayoutBounds by remember { mutableStateOf(Rect.Zero) }
     val artworkWindowSize = LocalWindowInfo.current.containerSize
