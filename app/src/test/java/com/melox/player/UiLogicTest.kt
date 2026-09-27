@@ -79,6 +79,8 @@ import com.melox.player.playback.toInitialPlaybackState
 import com.melox.player.ui.component.library.findAlphabetTargetIndex
 import com.melox.player.ui.component.library.fitArtworkDimensions
 import com.melox.player.ui.component.library.formatDuration
+import com.melox.player.ui.component.library.fullPlayerArtworkTargetSizePx
+import com.melox.player.ui.screen.playback.artworkCrossfadeDurationMillis
 import com.melox.player.ui.component.library.playbackArtworkShadowBounds
 import com.melox.player.ui.component.library.artworkCacheFileStem
 import com.melox.player.ui.component.library.createArtworkCacheKey
@@ -1097,9 +1099,44 @@ class UiLogicTest {
         assertEquals(28f, LYRIC_PRIMARY_LINE_HEIGHT_SP, 0f)
         assertEquals(16f, LYRIC_TRANSLATION_FONT_SIZE_SP, 0f)
         assertEquals(22f, LYRIC_TRANSLATION_LINE_HEIGHT_SP, 0f)
-        assertEquals(16.8f, LYRIC_PRIMARY_FONT_SIZE_SP * 0.7f, 0.0001f)
+        assertEquals(16f, LYRIC_PRIMARY_FONT_SIZE_SP * 0.6666667f, 0.0001f)
         assertEquals(24f, LYRIC_PRIMARY_FONT_SIZE_SP, 0.0001f)
-        assertEquals(31.2f, LYRIC_PRIMARY_FONT_SIZE_SP * 1.3f, 0.0001f)
+        assertEquals(48f, LYRIC_PRIMARY_FONT_SIZE_SP * 2f, 0.0001f)
+        assertEquals(
+            2f / 3f,
+            LYRIC_TRANSLATION_FONT_SIZE_SP / LYRIC_PRIMARY_FONT_SIZE_SP,
+            0.0001f,
+        )
+    }
+
+    @Test
+    fun fullPlayerArtworkResolutionFollowsDisplayNeedAndMemoryBudget() {
+        val largeHeap = 3L * 1024L * 1024L * 1024L
+
+        assertEquals(1800, fullPlayerArtworkTargetSizePx(1800, largeHeap))
+        assertEquals(3999, fullPlayerArtworkTargetSizePx(3999, largeHeap))
+        assertEquals(4000, fullPlayerArtworkTargetSizePx(4000, largeHeap))
+        assertEquals(4001, fullPlayerArtworkTargetSizePx(4001, largeHeap))
+        assertEquals(8000, fullPlayerArtworkTargetSizePx(9000, largeHeap))
+        assertEquals(
+            4096,
+            fullPlayerArtworkTargetSizePx(
+                displayedSizePx = 8000,
+                maxMemoryBytes = 512L * 1024L * 1024L,
+            ),
+        )
+    }
+
+    @Test
+    fun fullPlayerArtworkKeepsTrackTransitionAndShortensResolutionUpgrade() {
+        assertEquals(
+            500,
+            artworkCrossfadeDurationMillis("track-a", "track-b", 500, 100),
+        )
+        assertEquals(
+            100,
+            artworkCrossfadeDurationMillis("track-a", "track-a", 500, 100),
+        )
     }
 
     @Test
@@ -2154,6 +2191,7 @@ class UiLogicTest {
             musicTrack(
                 id = 1L,
                 title = "Bravo",
+                artist = "Zed",
                 dateAddedEpochSeconds = 30L,
                 fileName = "c.mp3",
                 fileSizeBytes = 300L,
@@ -2162,6 +2200,7 @@ class UiLogicTest {
             musicTrack(
                 id = 2L,
                 title = "Alpha",
+                artist = "Alpha",
                 dateAddedEpochSeconds = 10L,
                 fileName = "b.mp3",
                 fileSizeBytes = 100L,
@@ -2170,6 +2209,7 @@ class UiLogicTest {
             musicTrack(
                 id = 3L,
                 title = "Charlie",
+                artist = "Mia",
                 dateAddedEpochSeconds = 20L,
                 fileName = "a.mp3",
                 fileSizeBytes = 200L,
@@ -2178,6 +2218,7 @@ class UiLogicTest {
         )
 
         assertEquals(listOf(2L, 1L, 3L), tracks.sortedIds(MusicSortField.TITLE))
+        assertEquals(listOf(2L, 3L, 1L), tracks.sortedIds(MusicSortField.ARTIST))
         assertEquals(listOf(2L, 3L, 1L), tracks.sortedIds(MusicSortField.DATE_ADDED))
         assertEquals(listOf(3L, 2L, 1L), tracks.sortedIds(MusicSortField.FILE_NAME))
         assertEquals(listOf(2L, 3L, 1L), tracks.sortedIds(MusicSortField.FILE_SIZE))
@@ -3713,6 +3754,17 @@ class UiLogicTest {
     }
 
     @Test
+    fun floatingBottomBarToggleRetainsLiquidGlassPreference() {
+        val settings = AppSettings(floatingBottomBar = false, liquidGlass = true)
+
+        assertEquals(BottomBarStyle.NORMAL, settings.bottomBarStyle)
+        assertEquals(
+            BottomBarStyle.LIQUID_GLASS,
+            settings.copy(floatingBottomBar = true).bottomBarStyle,
+        )
+    }
+
+    @Test
     fun queueOperationIndicesAreDeterministicAndBoundsChecked() {
         assertEquals(0, nextQueueInsertionIndex(currentIndex = 0, itemCount = 0))
         assertEquals(1, nextQueueInsertionIndex(currentIndex = 0, itemCount = 3))
@@ -4103,12 +4155,13 @@ private fun musicTrack(
     fileSizeBytes: Long,
     durationMs: Long,
     dateModifiedEpochSeconds: Long = 0L,
+    artist: String? = null,
 ): MusicTrack {
     val sortKeys = createMusicSortKeys(title)
     return MusicTrack(
         id = id,
         title = title,
-        artist = null,
+        artist = artist,
         album = null,
         durationMs = durationMs,
         dateAddedEpochSeconds = dateAddedEpochSeconds,

@@ -333,6 +333,7 @@
     <string name="lyrics_blur_summary">Blur inactive lyrics</string>
     <string name="lyrics_center">Center lyrics</string>
     <string name="lyrics_hide_controls">Hide controls on lyrics page</string>
+    <string name="lyrics_hide_controls_summary">After hiding controls, double-tap the title area to play/pause, swipe to change song, or long-press to open this dialog</string>
 
     <string name="about_version">%1$s</string>
     <string name="about_project_title">Project repository</string>

@@ -320,6 +320,7 @@
     <string name="lyrics_blur_summary">模糊非当前歌词</string>
     <string name="lyrics_center">歌词居中</string>
     <string name="lyrics_hide_controls">歌词页隐藏控制</string>
+    <string name="lyrics_hide_controls_summary">隐藏控制后，可双击标题区播放/暂停，滑动切歌，长按呼出本弹窗</string>
 
     <string name="about_version">%1$s</string>
     <string name="about_project_title">项目仓库</string>

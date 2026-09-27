@@ -345,7 +345,10 @@ fun MeloxApp(
         ThemeMode.DARK -> true
     }
     val dynamicFlowBackgroundState = rememberDynamicFlowBackgroundState()
-    PlaybackArtworkPrefetchEffect(viewModel = viewModel)
+    PlaybackArtworkPrefetchEffect(
+        viewModel = viewModel,
+        playbackBackgroundStyle = settings.playbackBackgroundStyle,
+    )
     // API level alone is insufficient: liquid glass also needs RuntimeShader support at runtime.
     val liquidGlassSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
         isRuntimeShaderSupported()
@@ -2243,6 +2246,11 @@ private fun FullPlayerHost(
 ) {
     val playback by viewModel.playbackState.collectAsStateWithLifecycle()
     val lyrics by viewModel.lyricsState.collectAsStateWithLifecycle()
+    val sleepTimerState by viewModel.sleepTimerState.collectAsStateWithLifecycle()
+    val sleepTimerSelectionSeconds by viewModel.sleepTimerSelectionSeconds.collectAsStateWithLifecycle()
+    val autoExtendSleepTimer by viewModel.autoExtendSleepTimer.collectAsStateWithLifecycle()
+    val playbackPauseFade by viewModel.playbackPauseFade.collectAsStateWithLifecycle()
+    val highPrecisionOutput by viewModel.highPrecisionOutput.collectAsStateWithLifecycle()
     val currentTrack = remember(tracks, playback.currentItem?.trackId) {
         val trackId = playback.currentItem?.trackId
         tracks.firstOrNull { it.id == trackId }
@@ -2275,6 +2283,19 @@ private fun FullPlayerHost(
         onNext = viewModel::next,
         onSeek = viewModel::seekTo,
         onCyclePlaybackMode = viewModel::cyclePlaybackMode,
+        onPlaybackSpeedChange = viewModel::setPlaybackSpeed,
+        highPrecisionOutput = highPrecisionOutput,
+        onHighPrecisionOutputChange = viewModel::setHighPrecisionOutput,
+        sleepTimerState = sleepTimerState,
+        sleepTimerSeconds = sleepTimerSelectionSeconds,
+        onSleepTimerSecondsChange = viewModel::setSleepTimerSelectionSeconds,
+        autoExtendSleepTimer = autoExtendSleepTimer,
+        onAutoExtendSleepTimerChange = viewModel::setAutoExtendSleepTimer,
+        playbackPauseFade = playbackPauseFade,
+        onPlaybackPauseFadeChange = viewModel::setPlaybackPauseFade,
+        onStartSleepTimer = viewModel::startSleepTimer,
+        onCancelSleepTimer = viewModel::cancelSleepTimer,
+        onAcknowledgeSleepTimerInterruption = viewModel::acknowledgeSleepTimerInterruption,
         onOpenQueue = onOpenQueue,
         onPlayNext = viewModel::playNext,
         onAppendToQueue = viewModel::appendToQueue,
@@ -2372,6 +2393,7 @@ private fun playerSheetArtworkIsOffscreen(
 @Composable
 private fun PlaybackArtworkPrefetchEffect(
     viewModel: MeloxViewModel,
+    playbackBackgroundStyle: PlaybackBackgroundStyle,
 ) {
     val playback by viewModel.compactPlaybackState.collectAsStateWithLifecycle()
     val applicationContext = LocalContext.current.applicationContext
@@ -2388,6 +2410,7 @@ private fun PlaybackArtworkPrefetchEffect(
         playback.queue,
         artworkPrefetchSizePx,
         placeholderArtworkResId,
+        playbackBackgroundStyle,
     ) {
         if (playback.queue.isEmpty() || playback.currentIndex !in playback.queue.indices) {
             return@LaunchedEffect
@@ -2398,6 +2421,17 @@ private fun PlaybackArtworkPrefetchEffect(
             (playback.currentIndex - 1 + playback.queue.size) % playback.queue.size,
         ).distinct().forEach { index ->
             val item = playback.queue[index]
+            if (index == playback.currentIndex &&
+                playbackBackgroundStyle == PlaybackBackgroundStyle.BLURRED_ARTWORK
+            ) {
+                prefetchPlaybackBackground(
+                    context = applicationContext,
+                    contentUri = item.contentUri,
+                    dateModifiedEpochSeconds = item.dateModifiedEpochSeconds,
+                    fileSizeBytes = item.fileSizeBytes,
+                    placeholderArtworkResId = placeholderArtworkResId,
+                )
+            }
             prefetchPlaybackArtworkResource(
                 context = applicationContext,
                 contentUri = item.contentUri,
@@ -2405,6 +2439,8 @@ private fun PlaybackArtworkPrefetchEffect(
                 fileSizeBytes = item.fileSizeBytes,
                 targetSizePx = artworkPrefetchSizePx,
                 placeholderArtworkResId = placeholderArtworkResId,
+                includeBlurredArtwork =
+                    playbackBackgroundStyle == PlaybackBackgroundStyle.BLURRED_ARTWORK,
             )
         }
     }

@@ -141,6 +141,7 @@ import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.More
+import top.yukonga.miuix.kmp.icon.extended.SearchDevice
 import top.yukonga.miuix.kmp.icon.extended.Playlist
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
@@ -159,6 +160,7 @@ internal fun PlayerDetails(
     onSeek: (Long) -> Unit,
     onPreviewPositionChange: (Long?) -> Unit,
     onCyclePlaybackMode: () -> Unit,
+    onOpenPlaybackOptions: () -> Unit,
     onOpenLyricsSettings: () -> Unit,
     onOpenQueue: () -> Unit,
     onOpenTrackActions: () -> Unit,
@@ -256,6 +258,13 @@ internal fun PlayerDetails(
                         imageVector = MiuixIcons.Tune,
                         contentDescription = stringResource(R.string.player_settings_open),
                         modifier = Modifier.size(24.dp),
+                        tint = secondaryControlColor,
+                    )
+                }
+                IconButton(onClick = onOpenPlaybackOptions) {
+                    Icon(
+                        imageVector = MiuixIcons.SearchDevice,
+                        contentDescription = stringResource(R.string.playback_options_open),
                         tint = secondaryControlColor,
                     )
                 }

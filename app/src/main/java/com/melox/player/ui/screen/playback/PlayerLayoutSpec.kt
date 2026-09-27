@@ -11,7 +11,7 @@ internal data class PlayerVerticalSpacing(
     val progressToPrimary: Dp = PLAYER_PROGRESS_TO_PRIMARY_SPACING,
     val controlGroup: Dp = PLAYER_CONTROL_GROUP_SPACING,
     val headerToArtwork: Dp = PLAYER_HEADER_TO_CONTENT_SPACING,
-    val panelBottom: Dp = PLAYER_PANEL_BOTTOM_SPACING,
+    val panelBottom: Dp = PLAYER_CONTROL_ROW_BOTTOM_NO_SAFE_AREA_SPACING,
 )
 
 internal data class PlayerPrimaryControlLayout(
@@ -179,7 +179,7 @@ internal fun playerUnboundedContentWidth(availableWidth: Dp): Dp =
 internal fun playerVerticalSpacing(
     availableHeight: Dp,
     preferredArtworkSize: Dp,
-    panelBottom: Dp = PLAYER_PANEL_BOTTOM_SPACING,
+    panelBottom: Dp = PLAYER_CONTROL_ROW_BOTTOM_NO_SAFE_AREA_SPACING,
 ): PlayerVerticalSpacing = PlayerVerticalSpacing(
     artworkToProgress = PLAYER_ARTWORK_PROGRESS_SPACING,
     progressToPrimary = PLAYER_PROGRESS_TO_PRIMARY_SPACING,
@@ -187,6 +187,15 @@ internal fun playerVerticalSpacing(
     headerToArtwork = PLAYER_HEADER_TO_CONTENT_SPACING,
     panelBottom = panelBottom,
 )
+
+internal fun playerControlsBottomPadding(safeBottom: Dp): Dp {
+    val bottomSafeArea = safeBottom.coerceAtLeast(0.dp)
+    return if (bottomSafeArea > 0.dp) {
+        bottomSafeArea + PLAYER_CONTROL_ROW_BOTTOM_SAFE_AREA_SPACING
+    } else {
+        PLAYER_CONTROL_ROW_BOTTOM_NO_SAFE_AREA_SPACING
+    }
+}
 
 // Landscape uses its dedicated cover/content relationship and 8 dp artwork gaps.
 internal fun landscapePlayerSpacing(): PlayerVerticalSpacing = PlayerVerticalSpacing(
@@ -248,8 +257,10 @@ internal val PLAYER_WIDE_PREFERRED_GROUP_WIDTH =
 internal val PLAYER_WIDE_LYRICS_CONTENT_SIDE_INSET = 32.dp
 // 宽屏播放页：双栏区域的上下内边距。
 internal val PLAYER_LANDSCAPE_VERTICAL_PADDING = 24.dp
-// 播放页：功能行到页面底边的固定间距。
-internal val PLAYER_CONTENT_BOTTOM_SPACING = 32.dp
+// 播放页：有系统安全区时，功能控制行与该安全区之间的固定间距。
+internal val PLAYER_CONTROL_ROW_BOTTOM_SAFE_AREA_SPACING = 12.dp
+// 播放页：无系统安全区时，功能控制行到页面底边的固定间距。
+internal val PLAYER_CONTROL_ROW_BOTTOM_NO_SAFE_AREA_SPACING = 32.dp
 // 紧凑横屏播放页：标题区域下边缘到主控制区上边缘的间距。
 internal val COMPACT_LANDSCAPE_HEADER_TO_CONTROLS_SPACING = 36.dp
 
@@ -302,8 +313,6 @@ internal val PLAYER_PRIMARY_CONTROL_MIN_TOUCH_GAP = 12.dp
 internal val PLAYER_PROGRESS_TO_PRIMARY_SPACING = 32.dp
 // 播放页控制区：主控制行下边缘到功能行上边缘的间距。
 internal val PLAYER_CONTROL_GROUP_SPACING = 20.dp
-// 播放页控制区：功能行下边缘到播放面板底边的间距。
-internal val PLAYER_PANEL_BOTTOM_SPACING = 32.dp
 // 播放页进度条区域：未触摸时实际指示条高度。
 internal val PLAYER_PROGRESS_IDLE_HEIGHT = 6.dp
 // 播放页进度条区域：拖动进度条的触摸目标高度。

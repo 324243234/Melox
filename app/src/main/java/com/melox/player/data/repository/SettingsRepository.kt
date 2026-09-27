@@ -282,7 +282,6 @@ class SettingsRepository(context: Context) {
     suspend fun setFloatingBottomBar(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[Keys.FloatingBottomBar] = enabled
-            preferences[Keys.LiquidGlass] = false
         }
     }
 

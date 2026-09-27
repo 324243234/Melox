@@ -16,6 +16,7 @@ import com.melox.player.ui.screen.playback.landscapePlayerSpacing
 import com.melox.player.ui.screen.playback.landscapePlayerArtworkSize
 import com.melox.player.ui.screen.playback.landscapePlayerArtworkAlignmentSize
 import com.melox.player.ui.screen.playback.playerContentWidth
+import com.melox.player.ui.screen.playback.playerControlsBottomPadding
 import com.melox.player.ui.screen.playback.playerArtworkContentSize
 import com.melox.player.ui.screen.playback.playerArtworkAlignmentContentSize
 import com.melox.player.ui.screen.playback.playerArtworkSizeForContent
@@ -255,6 +256,12 @@ class PlayerResponsiveLayoutTest {
         assertEquals(344.dp, fitPlayerArtworkSize(344.dp, 376.dp))
         assertEquals(343.dp, fitPlayerArtworkSize(344.dp, 375.dp))
         assertEquals(0.dp, fitPlayerArtworkSize(344.dp, 32.dp))
+    }
+
+    @Test
+    fun playerControlsBottomPaddingUsesTheSafeAreaWhenAvailable() {
+        assertEquals(32.dp, playerControlsBottomPadding(0.dp))
+        assertEquals(36.dp, playerControlsBottomPadding(24.dp))
     }
 
     @Test
