@@ -1,6 +1,7 @@
 package com.melox.player.playback
 
 import android.net.Uri
+import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.ParserException
 import androidx.media3.common.util.ParsableByteArray
@@ -231,6 +232,7 @@ internal class FlacMetadataMaskState(
         metadataFinished = false
     }
 
+    @OptIn(UnstableApi::class)
     fun maskHeaders(
         target: ByteArray,
         targetOffset: Int,

@@ -338,10 +338,6 @@ private val CrossActivityPredictive: NavTransition = navGraphicsTransition(
  *   overlay), wall-clock card/scrim fades, gesture-progress shaping, and the stiff reference
  *   cancel spring.
  *
- * Lives in the example app — NOT in miuix-nav — as a demonstration that the public customization
- * surface (`navDirectionalTransition` + `navGraphicsTransition` + `NavMotion` + `NavSettle` +
- * [top.yukonga.miuix.kmp.nav.transition.NavTransitionScope]) is sufficient to express the
- * complete platform transition pair, both channels included, entirely outside the library.
  *
  * Values sourced from the reference: `MAX_SCALE = 0.9`, the 96dp entering start offset, the 8dp
  * display-bounds margin, the fling-bounce spring constants, and the vertical-follow formula
