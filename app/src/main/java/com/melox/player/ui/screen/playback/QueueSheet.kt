@@ -55,6 +55,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.melox.player.R
+import com.melox.player.ui.component.bottomSheetGlassModifier
+import com.melox.player.ui.component.bottomSheetMaterialColor
 import com.melox.player.data.library.displayArtistName
 import com.melox.player.model.PlaybackQueueItem
 import com.melox.player.model.PlaybackUiState
@@ -73,7 +75,6 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Show
-import top.yukonga.miuix.kmp.layout.BottomSheetDefaults
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -303,7 +304,6 @@ fun QueueSheet(
             draftQueue = playback.queue
         }
     }
-    val sheetBackground = BottomSheetDefaults.backgroundColor()
     val queueListBottomPadding = WindowInsets.navigationBars
         .asPaddingValues()
         .calculateBottomPadding() + 12.dp
@@ -378,6 +378,7 @@ fun QueueSheet(
 
     OverlayBottomSheet(
         show = show,
+        modifier = bottomSheetGlassModifier(),
         title = stringResource(R.string.playback_queue),
         insideMargin = DpSize(0.dp, 0.dp),
         startAction = {
@@ -422,7 +423,7 @@ fun QueueSheet(
                 }
             }
         },
-        backgroundColor = sheetBackground,
+        backgroundColor = bottomSheetMaterialColor(),
         enableWindowDim = true,
         onDismissRequest = onDismiss,
     ) {

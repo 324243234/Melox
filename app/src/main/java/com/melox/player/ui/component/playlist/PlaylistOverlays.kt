@@ -32,6 +32,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.melox.player.R
+import com.melox.player.ui.component.bottomSheetCardColor
+import com.melox.player.ui.component.bottomSheetGlassModifier
+import com.melox.player.ui.component.bottomSheetMaterialColor
 import com.melox.player.model.LocalPlaylist
 import com.melox.player.model.MusicTrack
 import com.melox.player.ui.component.library.PlaybackArtwork
@@ -79,6 +82,8 @@ fun PlaylistPickerOverlay(
 
     OverlayBottomSheet(
         show = tracks != null,
+        modifier = bottomSheetGlassModifier(),
+        backgroundColor = bottomSheetMaterialColor(),
         title = stringResource(R.string.playlist_picker_title),
         startAction = {
             IconButton(onClick = onDismiss) {
@@ -137,7 +142,7 @@ fun PlaylistPickerOverlay(
                         .fillMaxWidth()
                         .padding(bottom = bottomPadding),
                     colors = CardDefaults.defaultColors(
-                        color = MiuixTheme.colorScheme.secondaryContainer,
+                        color = bottomSheetCardColor(),
                     ),
                 ) {
                     displayedPlaylists.forEach { playlist ->
