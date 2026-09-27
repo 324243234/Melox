@@ -201,11 +201,11 @@
     <string name="settings_default_home_title">默认主页</string>
     <string name="settings_theme_settings_title">主题设置</string>
     <string name="settings_theme_settings_summary">自定义外观</string>
-    <string name="settings_about_title">关于</string>
+    <string name="settings_about_title">关于应用</string>
     <string name="settings_theme_mode_title">主题模式</string>
     <string name="theme_mode_system">跟随系统</string>
-    <string name="theme_mode_light">浅色</string>
-    <string name="theme_mode_dark">深色</string>
+    <string name="theme_mode_light">浅色模式</string>
+    <string name="theme_mode_dark">深色模式</string>
     <string name="settings_playback_background_title">播放页背景</string>
     <string name="settings_playback_background_blurred_artwork">模糊封面</string>
     <string name="settings_playback_background_dynamic_flow">动态流光</string>

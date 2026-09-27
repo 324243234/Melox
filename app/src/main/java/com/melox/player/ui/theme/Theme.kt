@@ -59,20 +59,19 @@ fun MeloxTheme(
                 settings.dynamicColorSource == DynamicColorSource.PLAYBACK_ARTWORK,
     )
     // Recreate the controller when the effective Miuix color source changes.
-    val controller = remember(colorSchemeMode, dynamicKeyColor, isDark) {
+    val controller = remember(colorSchemeMode, dynamicKeyColor) {
         ThemeController(
             colorSchemeMode = colorSchemeMode,
             keyColor = dynamicKeyColor,
-            isDark = isDark,
         )
     }
+    // Read the controller directly, as in the official theme, before caching animation state.
+    val targetColors = controller.currentColors()
+    val animatedColors = rememberAnimatedThemeColors(
+        targetColors = targetColors,
+        target = paletteTarget,
+    )
     MiuixTheme(controller = controller) {
-        val targetColors = MiuixTheme.colorScheme
-        val targetColorsSnapshot = remember(paletteTarget) { targetColors.copy() }
-        val animatedColors = rememberAnimatedThemeColors(
-            targetColors = targetColorsSnapshot,
-            target = paletteTarget,
-        )
         // Keep the outer Monet mode in the composition while overriding its colors with the
         // interpolated palette. Miuix components therefore retain their dynamic-color styling.
         MiuixTheme(
@@ -87,8 +86,12 @@ private fun rememberAnimatedThemeColors(
     targetColors: Colors,
     target: ThemePaletteTarget,
 ): Colors {
-    var displayedColors by remember { mutableStateOf(targetColors) }
-    var previousTarget by remember { mutableStateOf(target) }
+    var displayedColors by remember(target.colorSchemeMode, target.isDark, target.animateArtworkChanges) {
+        mutableStateOf(targetColors)
+    }
+    var previousTarget by remember(target.colorSchemeMode, target.isDark, target.animateArtworkChanges) {
+        mutableStateOf(target)
+    }
 
     LaunchedEffect(target) {
         val startColors = displayedColors
@@ -110,7 +113,7 @@ private fun rememberAnimatedThemeColors(
         }
         displayedColors = targetColors
     }
-    return displayedColors
+    return if (target.animateArtworkChanges) displayedColors else targetColors
 }
 
 private fun ThemePaletteTarget.shouldAnimateFrom(previous: ThemePaletteTarget): Boolean =

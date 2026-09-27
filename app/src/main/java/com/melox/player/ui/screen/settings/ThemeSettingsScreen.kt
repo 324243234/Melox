@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
@@ -107,11 +108,7 @@ fun ThemeSettingsScreen(
     var selectedThemeMode by remember(settings.themeMode) {
         mutableStateOf(settings.themeMode)
     }
-    val themeModes = listOf(
-        ThemeMode.SYSTEM to stringResource(R.string.theme_mode_system),
-        ThemeMode.LIGHT to stringResource(R.string.theme_mode_light),
-        ThemeMode.DARK to stringResource(R.string.theme_mode_dark),
-    )
+    val systemDark = isSystemInDarkTheme()
     val playbackBackgroundStyles = listOf(
         PlaybackBackgroundStyle.BLURRED_ARTWORK to
             stringResource(R.string.settings_playback_background_blurred_artwork),
@@ -168,25 +165,36 @@ fun ThemeSettingsScreen(
                 overscrollEffect = null,
             ) {
                 item {
+                    ThemeModeSelector(
+                        themeMode = selectedThemeMode,
+                        systemDark = systemDark,
+                        onThemeModeChange = { mode ->
+                            if (mode != selectedThemeMode) {
+                                selectedThemeMode = mode
+                                onThemeModeChange(mode)
+                            }
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                    )
+                }
+                item {
+                    ThemeCard {
+                        SwitchPreference(
+                            title = stringResource(R.string.theme_mode_system),
+                            checked = selectedThemeMode == ThemeMode.SYSTEM,
+                            onCheckedChange = { checked ->
+                                val mode = themeModeFollowingSystem(checked, systemDark)
+                                selectedThemeMode = mode
+                                onThemeModeChange(mode)
+                            },
+                        )
+                    }
+                }
+                item {
                     SmallTitle(text = stringResource(R.string.settings_section_appearance))
                 }
                 item {
                     ThemeCard {
-                        OverlayDropdownPreference(
-                            items = themeModes.map { it.second },
-                            selectedIndex = themeModes.indexOfFirst {
-                                it.first == selectedThemeMode
-                            }.coerceAtLeast(0),
-                            title = stringResource(R.string.settings_theme_mode_title),
-                            onSelectedIndexChange = { index ->
-                                themeModes.getOrNull(index)?.first?.let { themeMode ->
-                                    if (themeMode != selectedThemeMode) {
-                                        selectedThemeMode = themeMode
-                                        onThemeModeChange(themeMode)
-                                    }
-                                }
-                            },
-                        )
                         SwitchPreference(
                             checked = blurChecked && blurSupported,
                             onCheckedChange = { checked ->
@@ -226,7 +234,6 @@ fun ThemeSettingsScreen(
                             checked = floatingBottomBarChecked,
                             onCheckedChange = { checked ->
                                 floatingBottomBarChecked = checked
-                                liquidGlassChecked = false
                                 onFloatingBottomBarChange(checked)
                             },
                             title = stringResource(R.string.settings_floating_bottom_bar_title),
