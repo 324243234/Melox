@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -37,6 +38,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.melox.player.R
+import com.melox.player.ui.component.bottomSheetCardColor
+import com.melox.player.ui.component.bottomSheetGlassModifier
+import com.melox.player.ui.component.bottomSheetMaterialColor
 import com.melox.player.data.library.ArtistGroup
 import com.melox.player.data.library.artistGroupKey
 import com.melox.player.data.library.displayArtistName
@@ -59,6 +63,7 @@ import top.yukonga.miuix.kmp.icon.extended.ContactsCircle
 import top.yukonga.miuix.kmp.icon.extended.Edit
 import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Playlist
+import top.yukonga.miuix.kmp.icon.extended.Share
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
@@ -87,7 +92,10 @@ fun TrackActionsOverlay(
     val musicTagEditorNotFoundMessage =
         stringResource(R.string.music_tag_editor_not_found)
     val lyricoNotFoundMessage = stringResource(R.string.lyrico_not_found)
+    val shareTitle = stringResource(R.string.music_share)
     var retainedTrack by remember { mutableStateOf(track) }
+    var artworkPreview by remember { mutableStateOf<ArtworkPreviewRequest?>(null) }
+    var artworkPreviewPresented by remember { mutableStateOf(false) }
     var songInfoTrack by remember { mutableStateOf<MusicTrack?>(null) }
     var retainedSongInfoTrack by remember { mutableStateOf<MusicTrack?>(null) }
     var artistListTrack by remember { mutableStateOf<MusicTrack?>(null) }
@@ -138,6 +146,8 @@ fun TrackActionsOverlay(
         .asPaddingValues()
         .calculateBottomPadding()
     LaunchedEffect(track?.id) {
+        artworkPreview = null
+        artworkPreviewPresented = false
         if (track != null) {
             retainedTrack = track
             songInfoTrack = null
@@ -158,6 +168,9 @@ fun TrackActionsOverlay(
     }
     OverlayBottomSheet(
         show = track != null,
+        allowDismiss = artworkPreview == null,
+        modifier = bottomSheetGlassModifier(),
+        backgroundColor = bottomSheetMaterialColor(),
         enableWindowDim = true,
         onDismissRequest = onDismiss,
         onDismissFinished = {
@@ -173,7 +186,7 @@ fun TrackActionsOverlay(
                         .fillMaxWidth()
                         .padding(bottom = 12.dp),
                     colors = CardDefaults.defaultColors(
-                        color = MiuixTheme.colorScheme.secondaryContainer,
+                        color = bottomSheetCardColor(),
                     ),
                 ) {
                     MusicTrackSummary(
@@ -188,12 +201,22 @@ fun TrackActionsOverlay(
                             ),
                         artworkSize = TrackActionSummaryArtworkSize,
                         artworkCornerRadius = TrackActionSummaryArtworkCornerRadius,
+                        artworkContent = {
+                            PreviewableTrackArtwork(
+                                track = selectedTrack,
+                                size = TrackActionSummaryArtworkSize,
+                                cornerRadius = TrackActionSummaryArtworkCornerRadius,
+                                hidden = artworkPreviewPresented,
+                                onPreview = { artworkPreview = it },
+                            )
+                        },
                     )
                 }
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth(),
                     colors = CardDefaults.defaultColors(
-                        color = MiuixTheme.colorScheme.secondaryContainer,
+                        color = bottomSheetCardColor(),
                     ),
                 ) {
                     TrackAction(
@@ -289,6 +312,27 @@ fun TrackActionsOverlay(
                         },
                     )
                     TrackAction(
+                        icon = {
+                            Icon(
+                                imageVector = MiuixIcons.Share,
+                                contentDescription = null,
+                                modifier = Modifier.size(TrackActionIconSize).graphicsLayer {
+                                    scaleX = 24f / 22f
+                                    scaleY = scaleX
+                                },
+                                tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                            )
+                        },
+                        text = shareTitle,
+                        onClick = {
+                            if (shareTrackFile(context, selectedTrack, shareTitle)) {
+                                onDismiss()
+                            } else {
+                                Toast.makeText(context, R.string.music_share_failed, Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                    )
+                    TrackAction(
                         icon = MiuixIcons.Info,
                         text = stringResource(R.string.music_song_info),
                         onClick = {
@@ -303,6 +347,8 @@ fun TrackActionsOverlay(
 
     OverlayBottomSheet(
         show = songInfoTrack != null,
+        modifier = bottomSheetGlassModifier(),
+        backgroundColor = bottomSheetMaterialColor(),
         title = stringResource(R.string.music_song_info),
         startAction = {
             BottomSheetCloseButton(onClick = { songInfoTrack = null })
@@ -320,7 +366,7 @@ fun TrackActionsOverlay(
                         .fillMaxWidth()
                         .padding(bottom = 12.dp),
                     colors = CardDefaults.defaultColors(
-                        color = MiuixTheme.colorScheme.secondaryContainer,
+                        color = bottomSheetCardColor(),
                     ),
                 ) {
                     SongInfoRow(stringResource(R.string.song_info_title), infoTrack.title)
@@ -332,9 +378,10 @@ fun TrackActionsOverlay(
                     )
                 }
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth(),
                     colors = CardDefaults.defaultColors(
-                        color = MiuixTheme.colorScheme.secondaryContainer,
+                        color = bottomSheetCardColor(),
                     ),
                 ) {
                     SongInfoRow(
@@ -378,6 +425,8 @@ fun TrackActionsOverlay(
 
     OverlayBottomSheet(
         show = artistListTrack != null,
+        modifier = bottomSheetGlassModifier(),
+        backgroundColor = bottomSheetMaterialColor(),
         title = stringResource(R.string.participating_artists),
         startAction = {
             BottomSheetCloseButton(onClick = { artistListTrack = null })
@@ -391,9 +440,10 @@ fun TrackActionsOverlay(
                 bottomPadding = navigationBarBottomPadding + 12.dp,
             ) {
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth(),
                     colors = CardDefaults.defaultColors(
-                        color = MiuixTheme.colorScheme.secondaryContainer,
+                        color = bottomSheetCardColor(),
                     ),
                 ) {
                     participatingArtistGroups(
@@ -414,6 +464,13 @@ fun TrackActionsOverlay(
                 }
             }
         }
+    }
+    artworkPreview?.let { request ->
+        ArtworkPreviewOverlay(
+            request = request,
+            onPresented = { artworkPreviewPresented = it },
+            onClosed = { artworkPreview = null },
+        )
     }
 }
 

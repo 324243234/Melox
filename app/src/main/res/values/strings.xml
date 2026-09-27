@@ -1,4 +1,14 @@
 <resources>
+    <string name="music_share">Share</string>
+    <string name="music_share_failed">Could not share this song file</string>
+    <string name="artwork_preview">View artwork</string>
+    <string name="artwork_dimensions">%1$d × %2$d</string>
+    <string name="artwork_download">Download artwork</string>
+    <string name="artwork_share">Share artwork</string>
+    <string name="artwork_saved">Artwork saved to the Melox album</string>
+    <string name="artwork_save_permission_denied">Storage permission is needed to save artwork to the gallery</string>
+    <string name="artwork_unavailable">Original artwork is unavailable</string>
+    <string name="artwork_export_failed">Could not save or share artwork</string>
     <string name="selection_selected_count">%1$d selected</string>
     <string name="selection_choose_songs">Select songs</string>
     <string name="selection_select_all">Select all</string>

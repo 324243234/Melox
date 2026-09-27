@@ -186,6 +186,7 @@ internal fun MusicTrackSummary(
     descriptionMode: MusicTrackDescriptionMode = MusicTrackDescriptionMode.ArtistAndAlbum,
     artworkSize: Dp = 48.dp,
     artworkCornerRadius: Dp = 6.dp,
+    artworkContent: (@Composable () -> Unit)? = null,
 ) {
     Row(
         modifier = modifier,
@@ -198,6 +199,7 @@ internal fun MusicTrackSummary(
             descriptionMode = descriptionMode,
             artworkSize = artworkSize,
             artworkCornerRadius = artworkCornerRadius,
+            artworkContent = artworkContent,
         )
     }
 }
@@ -212,6 +214,7 @@ private fun RowScope.MusicTrackLeadingContent(
     artworkOverlayText: String? = null,
     enabled: Boolean = true,
     descriptionOverride: String? = null,
+    artworkContent: (@Composable () -> Unit)? = null,
 ) {
     val title = track.title ?: stringResource(R.string.music_unknown_title)
     val artist = displayArtistName(track.artist) ?: stringResource(R.string.music_unknown_artist)
@@ -261,7 +264,9 @@ private fun RowScope.MusicTrackLeadingContent(
         }
     }
 
-    if (artworkOverlayText == null) {
+    if (artworkContent != null) {
+        artworkContent()
+    } else if (artworkOverlayText == null) {
         TrackArtwork(
             contentUri = track.contentUri,
             dateModifiedEpochSeconds = track.dateModifiedEpochSeconds,
