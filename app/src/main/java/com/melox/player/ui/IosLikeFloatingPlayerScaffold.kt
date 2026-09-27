@@ -29,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -56,6 +57,7 @@ internal fun IosLikeFloatingPlayerScaffold(
     effectsSupported: Boolean,
     isDark: Boolean,
     showNavigation: Boolean,
+    playerNavigationOffset: () -> Float,
     miniPlayer: @Composable (MiniPlayerChrome) -> Unit,
     backdropRefreshSignal: () -> Float,
     content: @Composable (PaddingValues) -> Unit,
@@ -159,6 +161,7 @@ internal fun IosLikeFloatingPlayerScaffold(
                         )
                     }
                     AnimatedVisibility(
+                        modifier = Modifier.graphicsLayer { translationY = playerNavigationOffset() },
                         visible = showNavigation,
                         enter = slideInVertically(
                             animationSpec = tween(280),

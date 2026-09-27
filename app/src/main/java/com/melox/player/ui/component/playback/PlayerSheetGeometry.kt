@@ -28,7 +28,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -40,9 +45,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -76,6 +83,66 @@ internal fun sharedContainerRect(
         right = lerp(source.right, target.right, fraction),
         bottom = lerp(source.bottom, target.bottom, fraction),
     )
+}
+
+internal data class PlayerSheetInputTransform(
+    val hostBounds: Rect,
+    val visibleBounds: Rect,
+) {
+    val scale: Float = visibleBounds.width / hostBounds.width
+    val translationX: Float = visibleBounds.left - hostBounds.left
+    val translationY: Float = visibleBounds.top - hostBounds.top
+
+    fun localRect(bounds: Rect): Rect = Rect(
+        left = (bounds.left - hostBounds.left - translationX) / scale,
+        top = (bounds.top - hostBounds.top - translationY) / scale,
+        right = (bounds.right - hostBounds.left - translationX) / scale,
+        bottom = (bounds.bottom - hostBounds.top - translationY) / scale,
+    )
+}
+
+internal fun playerSheetInputTransform(
+    source: Rect,
+    target: Rect,
+    progress: Float,
+): PlayerSheetInputTransform? {
+    if (!source.isUsable() || !target.isUsable()) return null
+    return PlayerSheetInputTransform(
+        hostBounds = target,
+        visibleBounds = sharedContainerRect(source, target, progress),
+    )
+}
+
+internal fun Modifier.playerSheetInputLayer(
+    transform: PlayerSheetInputTransform,
+    miniPlayerBounds: Rect?,
+): Modifier = graphicsLayer {
+    transformOrigin = TransformOrigin(0f, 0f)
+    scaleX = transform.scale
+    scaleY = transform.scale
+    translationX = transform.translationX
+    translationY = transform.translationY
+    clip = true
+    shape = PlayerSheetInputShape(
+        bounds = transform.localRect(transform.visibleBounds),
+        excludedBounds = miniPlayerBounds?.let(transform::localRect),
+    )
+}
+
+private class PlayerSheetInputShape(
+    private val bounds: Rect,
+    private val excludedBounds: Rect?,
+) : Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density,
+    ): Outline {
+        val excluded = excludedBounds ?: return Outline.Rectangle(bounds)
+        val outer = Path().apply { addRect(bounds) }
+        val inner = Path().apply { addRect(excluded) }
+        return Outline.Generic(Path.combine(PathOperation.Difference, outer, inner))
+    }
 }
 
 internal fun sharedContainerRenderRect(
@@ -275,6 +342,29 @@ internal fun sharedMiniPlayerContentOffset(
     y = contentBounds.top - sourcePlayerBounds.top,
 )
 
+internal fun sharedMiniPlayerControlsRenderRect(
+    sourcePlayerBounds: Rect,
+    animatedPlayerBounds: Rect,
+    contentBounds: Rect,
+    controlsBounds: Rect,
+): Rect {
+    val offset = sharedMiniPlayerContentOffset(
+        sourcePlayerBounds = sourcePlayerBounds,
+        animatedPlayerBounds = animatedPlayerBounds,
+        contentBounds = contentBounds,
+    )
+    val controlsX = sharedMiniPlayerControlsTranslationX(
+        sourcePlayerBounds = sourcePlayerBounds,
+        animatedPlayerBounds = animatedPlayerBounds,
+        controlsBounds = controlsBounds,
+    )
+    val left = animatedPlayerBounds.left + offset.x +
+        controlsBounds.left - contentBounds.left + controlsX
+    val top = animatedPlayerBounds.top + offset.y +
+        controlsBounds.top - contentBounds.top
+    return Rect(left, top, left + controlsBounds.width, top + controlsBounds.height)
+}
+
 internal fun Rect.isUsable(): Boolean = width > 0f && height > 0f
 
 internal fun lerp(start: Float, stop: Float, fraction: Float): Float =
@@ -289,4 +379,9 @@ internal fun easeOutCubic(value: Float): Float {
     val clamped = value.coerceIn(0f, 1f)
     val inverse = 1f - clamped
     return 1f - inverse * inverse * inverse
+}
+
+internal fun playerNavigationOffset(source: Rect, target: Rect, progress: Float): Float {
+    if (source.isEmpty || target.isEmpty) return 0f
+    return sharedContainerRect(source, target, progress).bottom - source.bottom
 }

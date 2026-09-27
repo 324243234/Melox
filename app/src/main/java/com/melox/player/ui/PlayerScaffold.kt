@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -94,6 +95,7 @@ internal fun PlayerScaffold(
     selectedTab: Int,
     onTabSelected: (Int) -> Unit,
     showNavigation: Boolean,
+    playerNavigationOffset: () -> Float,
     showNavigationRailOnSecondary: Boolean = false,
     persistedNavigationRailExpanded: Boolean = true,
     onNavigationRailExpandedChange: (Boolean) -> Unit = {},
@@ -347,6 +349,7 @@ internal fun PlayerScaffold(
             effectsSupported = liquidGlassSupported,
             isDark = isDark,
             showNavigation = showNavigation,
+            playerNavigationOffset = playerNavigationOffset,
             miniPlayer = miniPlayer,
             backdropRefreshSignal = backdropRefreshSignal,
             content = { padding -> content(padding, false) },
@@ -359,6 +362,7 @@ internal fun PlayerScaffold(
             blurEnabled = blurEnabled,
             isDark = isDark,
             showNavigation = showNavigation,
+            playerNavigationOffset = playerNavigationOffset,
             miniPlayer = miniPlayer,
             backdropRefreshSignal = backdropRefreshSignal,
             content = { padding -> content(padding, false) },
@@ -447,6 +451,7 @@ private fun BasePlayerScaffold(
     blurEnabled: Boolean,
     isDark: Boolean,
     showNavigation: Boolean,
+    playerNavigationOffset: () -> Float,
     miniPlayer: @Composable (MiniPlayerChrome) -> Unit,
     backdropRefreshSignal: () -> Float,
     content: @Composable (PaddingValues) -> Unit,
@@ -481,6 +486,7 @@ private fun BasePlayerScaffold(
                     )
                 }
                 AnimatedVisibility(
+                    modifier = Modifier.graphicsLayer { translationY = playerNavigationOffset() },
                     visible = showNavigation,
                     enter = slideInVertically(
                         animationSpec = tween(NAVIGATION_ENTER_DURATION_MILLIS),

@@ -8,6 +8,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
@@ -29,6 +30,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -54,9 +56,11 @@ import com.melox.player.ui.component.library.PlaybackArtworkFrame
 import com.melox.player.ui.component.library.playbackArtworkShadow
 import com.melox.player.ui.component.library.playbackArtworkCornerRadius
 import com.melox.player.ui.component.library.rememberArtworkBitmap
+import com.melox.player.ui.component.library.rememberFullPlayerArtworkBitmapPixels
 import com.melox.player.ui.component.library.rememberPlaceholderArtworkBitmap
 import com.melox.player.ui.component.liquid.miuixFloatingBarShadow
 import com.melox.player.ui.component.liquid.miniPlayerSurface
+import com.melox.player.ui.screen.playback.rememberArtworkBlend
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import androidx.compose.runtime.saveable.Saver
@@ -123,6 +127,81 @@ internal fun Modifier.recordPlayerContentLayer(
         this@drawWithContent.drawContent()
     }
     this@drawWithContent.drawContent()
+}
+
+@Composable
+internal fun PlayerSheetMiniControlsInputOverlay(
+    transition: PlayerSheetTransitionState,
+    hasItem: Boolean,
+    normalChrome: Boolean,
+    onTogglePlayPause: () -> Unit,
+    onOpenQueue: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (!transition.sharedLayersReady || !transition.isTransitionActive ||
+        transition.progress >= PLAYER_MINI_CONTENT_FADE_END_PROGRESS
+    ) return
+    val source = transition.miniPlayerBounds
+    val content = transition.miniPlayerContentBounds
+    val controls = transition.miniPlayerControlsBounds
+    if (!source.isUsable() || !content.isUsable() || !controls.isUsable()) return
+
+    val bounds = sharedContainerRect(source, transition.fullPlayerBounds, transition.progress)
+    val renderedControls = sharedMiniPlayerControlsRenderRect(
+        sourcePlayerBounds = source,
+        animatedPlayerBounds = bounds,
+        contentBounds = content,
+        controlsBounds = controls,
+    )
+    val density = LocalDensity.current
+    val playOffset = with(density) { (-6).dp.toPx() }
+    val queueOffset = with(density) { (if (normalChrome) 0.dp else (-2).dp).toPx() }
+    val controlSize = with(density) { 40.dp.toPx() }
+    val currentOnTogglePlayPause by rememberUpdatedState(onTogglePlayPause)
+    val currentOnOpenQueue by rememberUpdatedState(onOpenQueue)
+
+    Box(
+        modifier = modifier
+            .offset { IntOffset(bounds.left.roundToInt(), bounds.top.roundToInt()) }
+            .size(
+                width = with(density) { bounds.width.toDp() },
+                height = with(density) { bounds.height.toDp() },
+            )
+            .graphicsLayer {
+                clip = true
+                shape = RectangleShape
+            },
+    ) {
+        if (hasItem) {
+            Box(
+                modifier = Modifier
+                    .offset {
+                        IntOffset(
+                            (renderedControls.left - bounds.left + playOffset).roundToInt(),
+                            (renderedControls.top - bounds.top).roundToInt(),
+                        )
+                    }
+                    .size(40.dp)
+                    .pointerInput(Unit) {
+                        detectTapGestures { currentOnTogglePlayPause() }
+                    },
+            )
+        }
+        Box(
+            modifier = Modifier
+                .offset {
+                    IntOffset(
+                        (renderedControls.left - bounds.left + controlSize + queueOffset)
+                            .roundToInt(),
+                        (renderedControls.top - bounds.top).roundToInt(),
+                    )
+                }
+                .size(40.dp)
+                .pointerInput(Unit) {
+                    detectTapGestures { currentOnOpenQueue() }
+                },
+        )
+    }
 }
 
 /**
@@ -335,19 +414,36 @@ internal fun PlayerSheetArtworkOverlay(
 ) {
     val item = playback.currentItem ?: return
     val progress = transition.progress
+    val source = transition.overlayMiniArtworkBounds
+    val target = transition.overlayFullArtworkBounds
+    val targetSizePx = maxOf(target.width, target.height).roundToInt()
     val artworkBitmap = rememberArtworkBitmap(
         contentUri = item.contentUri,
         dateModifiedEpochSeconds = item.dateModifiedEpochSeconds,
         fileSizeBytes = item.fileSizeBytes,
         size = PLAYER_FULL_ARTWORK_REQUEST_SIZE,
     )
-    val bitmap = artworkBitmap ?: rememberPlaceholderArtworkBitmap(
+    val fullPlayerArtwork = rememberFullPlayerArtworkBitmapPixels(
+        contentUri = item.contentUri,
+        dateModifiedEpochSeconds = item.dateModifiedEpochSeconds,
+        fileSizeBytes = item.fileSizeBytes,
+        targetSizePx = targetSizePx.coerceAtLeast(1),
+        enabled = targetSizePx > 0,
+    )
+    val fallbackBitmap = artworkBitmap ?: rememberPlaceholderArtworkBitmap(
         PLAYER_FULL_ARTWORK_REQUEST_SIZE,
     )
+    val artworkBlend = rememberArtworkBlend(
+        targetBitmap = fullPlayerArtwork ?: fallbackBitmap,
+        animate = true,
+        contentKey = item.contentUri,
+        durationMillis = PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS,
+        sameContentDurationMillis = PLAYER_ARTWORK_RESOLUTION_CROSSFADE_DURATION_MILLIS,
+    )
+    val bitmap = artworkBlend.currentBitmap
+    val artworkLayerAlphas = sourceOverAlphas(artworkBlend.frames.map { it.alpha })
     val density = LocalDensity.current
     if (!enabled || !transition.separateArtworkOverlayReady || !transition.isTransitionActive) return
-    val source = transition.overlayMiniArtworkBounds
-    val target = transition.overlayFullArtworkBounds
     val sourceArtworkBounds = bitmap?.let {
         fittedArtworkRect(source, it.width, it.height)
     }
@@ -443,19 +539,22 @@ internal fun PlayerSheetArtworkOverlay(
                     translationY = frameBounds.top - targetBounds.top
                 },
         ) {
-            Image(
-                bitmap = bitmap.asImageBitmap(),
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .playbackArtworkShadow(
-                        cornerRadius = localCornerRadius,
-                        alpha = progress,
-                    )
-                    .squircleClip(localCornerRadius),
-                contentScale = ContentScale.Fit,
-                filterQuality = FilterQuality.High,
-            )
+            artworkBlend.frames.forEachIndexed { index, frame ->
+                Image(
+                    bitmap = frame.value.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .playbackArtworkShadow(
+                            cornerRadius = localCornerRadius,
+                            alpha = progress,
+                        )
+                        .squircleClip(localCornerRadius)
+                        .graphicsLayer { alpha = artworkLayerAlphas[index] },
+                    contentScale = ContentScale.Fit,
+                    filterQuality = FilterQuality.High,
+                )
+            }
         }
     }
 }

@@ -119,6 +119,7 @@ import com.melox.player.model.ScanStatus
 import com.melox.player.model.ThemeMode
 import com.melox.player.model.MusicTrack
 import com.melox.player.ui.component.BlurredBar
+import com.melox.player.ui.component.LocalBottomSheetBlurBackdrop
 import com.melox.player.ui.component.LocalTopBarBlurSettings
 import com.melox.player.ui.component.TopBarBlurSettings
 import com.melox.player.ui.component.miuixBarColor
@@ -138,15 +139,20 @@ import com.melox.player.ui.component.library.selectedItemsInDisplayedOrder
 import com.melox.player.ui.component.library.toggleAllTrackSelection
 import com.melox.player.ui.component.playlist.PlaylistNameDialog
 import com.melox.player.ui.component.playlist.PlaylistPickerOverlay
+import com.melox.player.ui.component.playback.playerNavigationOffset
+import com.melox.player.ui.component.playback.playerSheetInputLayer
+import com.melox.player.ui.component.playback.playerSheetInputTransform
 import com.melox.player.ui.component.playback.MiniPlayer
 import com.melox.player.ui.component.playback.DynamicFlowBackgroundState
 import com.melox.player.ui.component.playback.PLAYER_FULL_ARTWORK_REQUEST_SIZE
 import com.melox.player.ui.component.playback.PlayerSheetArtworkOverlay
 import com.melox.player.ui.component.playback.PlayerSheetContentOverlay
+import com.melox.player.ui.component.playback.PlayerSheetMiniControlsInputOverlay
 import com.melox.player.ui.component.playback.sharedArtworkTargetIsOnscreen
 import com.melox.player.ui.component.playback.playerSheetUsesFullPlayerStatusBar
 import com.melox.player.ui.component.playback.playerSheetResidentHostTranslationY
 import com.melox.player.ui.component.playback.prefetchPlaybackArtworkResource
+import com.melox.player.ui.component.playback.prefetchPlaybackBackground
 import com.melox.player.ui.component.playback.rememberDynamicFlowBackgroundState
 import com.melox.player.ui.component.playback.rememberPlayerSheetTransitionState
 import com.melox.player.ui.navigation.PredictiveNavDisplay
@@ -1473,20 +1479,34 @@ fun MeloxApp(
             currentRoute = AppRoute.ROOT
             playerPagerState.animateToPage(selectedTab)
         }
-        Scaffold(
-            containerColor = MiuixTheme.colorScheme.surface,
-            popupHost = {
-                MiuixPopupHost()
-            },
-        ) { _ ->
+        CompositionLocalProvider(
+            LocalTopBarBlurSettings provides TopBarBlurSettings(
+                blurEnabled = settings.blurEnabled,
+                progressiveEnabled = settings.progressiveTopBarBlurEnabled,
+            ),
+        ) {
+            val bottomSheetBackdrop = rememberBlurBackdrop()
+            // Overlay content is composed by the root popup host.
             CompositionLocalProvider(
-                LocalTopBarBlurSettings provides TopBarBlurSettings(
-                    blurEnabled = settings.blurEnabled,
-                    progressiveEnabled = settings.progressiveTopBarBlurEnabled,
-                ),
+                LocalBottomSheetBlurBackdrop provides bottomSheetBackdrop,
             ) {
-                Box(modifier = Modifier.fillMaxSize()) {
+                Scaffold(
+                    containerColor = MiuixTheme.colorScheme.surface,
+                    popupHost = { MiuixPopupHost() },
+                ) { _ ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(bottomSheetBackdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
+                ) {
                     PlayerScaffold(
+                            playerNavigationOffset = {
+                                playerNavigationOffset(
+                                    source = playerTransition.miniPlayerBounds,
+                                    target = playerTransition.fullPlayerBounds,
+                                    progress = playerTransition.progress,
+                                )
+                            },
                             selectedTab = playerPagerState.selectedPage,
                             onTabSelected = onNavigationTabSelected,
                             showNavigation = shouldShowNavigation(
@@ -1949,10 +1969,22 @@ fun MeloxApp(
                         closePlayer()
                     }
                     if (playerTransition.fullPlayerHostMounted) {
+                        val fullPlayerInputTransform = if (
+                            playerTransition.sharedLayersReady &&
+                            playerTransition.isTransitionActive
+                        ) {
+                            playerSheetInputTransform(
+                                source = playerTransition.miniPlayerBounds,
+                                target = playerTransition.fullPlayerBounds,
+                                progress = playerTransition.progress,
+                            )
+                        } else {
+                            null
+                        }
                         val fullPlayerHostTranslationY = playerSheetResidentHostTranslationY(
                             miniPlayerAcceptsInput = playerTransition.miniPlayerAcceptsInput,
                             windowHeight = windowSize.height,
-                        )
+                        ).takeIf { fullPlayerInputTransform == null } ?: 0f
                         FullPlayerHost(
                             viewModel = viewModel,
                             tracks = uiState.tracks,
@@ -1990,7 +2022,11 @@ fun MeloxApp(
                             initialArtworkPageSelected =
                                 playerTransition.fullPlayerArtworkPageSelected,
                             onPlayerDragStart = playerTransition::beginFullPlayerDrag,
-                            onPlayerDrag = playerTransition::dragBy,
+                            onPlayerDrag = { amount ->
+                                playerTransition.dragBy(
+                                    amount * (fullPlayerInputTransform?.scale ?: 1f),
+                                )
+                            },
                             onPlayerDragEnd = playerTransition::endDrag,
                             onPlayerDragCancel = playerTransition::cancelDrag,
                             onBackgroundLayerRecorded = { generation, size ->
@@ -2008,26 +2044,30 @@ fun MeloxApp(
                                 )
                             },
                             onPlayerBoundsChanged = { bounds ->
-                                playerTransition.updateFullPlayerBounds(
-                                    androidx.compose.ui.geometry.Rect(
-                                        left = bounds.left,
-                                        top = bounds.top - fullPlayerHostTranslationY,
-                                        right = bounds.right,
-                                        bottom = bounds.bottom - fullPlayerHostTranslationY,
-                                    ),
-                                    windowSize,
-                                )
+                                if (fullPlayerInputTransform == null) {
+                                    playerTransition.updateFullPlayerBounds(
+                                        androidx.compose.ui.geometry.Rect(
+                                            left = bounds.left,
+                                            top = bounds.top - fullPlayerHostTranslationY,
+                                            right = bounds.right,
+                                            bottom = bounds.bottom - fullPlayerHostTranslationY,
+                                        ),
+                                        windowSize,
+                                    )
+                                }
                             },
                             onArtworkBoundsChanged = { bounds ->
-                                playerTransition.updateFullArtworkBounds(
-                                    androidx.compose.ui.geometry.Rect(
-                                        left = bounds.left,
-                                        top = bounds.top - fullPlayerHostTranslationY,
-                                        right = bounds.right,
-                                        bottom = bounds.bottom - fullPlayerHostTranslationY,
-                                    ),
-                                    windowSize,
-                                )
+                                if (fullPlayerInputTransform == null) {
+                                    playerTransition.updateFullArtworkBounds(
+                                        androidx.compose.ui.geometry.Rect(
+                                            left = bounds.left,
+                                            top = bounds.top - fullPlayerHostTranslationY,
+                                            right = bounds.right,
+                                            bottom = bounds.bottom - fullPlayerHostTranslationY,
+                                        ),
+                                        windowSize,
+                                    )
+                                }
                             },
                             onArtworkPageSelectedChanged =
                                 playerTransition::updateFullPlayerArtworkPageSelected,
@@ -2038,11 +2078,31 @@ fun MeloxApp(
                                 .zIndex(
                                     if (playerTransition.fullPlayerDrawsAboveRoot) 1f else -1f,
                                 )
-                                .graphicsLayer {
-                                    translationY = fullPlayerHostTranslationY
-                                },
+                                .then(
+                                    if (fullPlayerInputTransform != null) {
+                                        Modifier.playerSheetInputLayer(
+                                            transform = fullPlayerInputTransform,
+                                            miniPlayerBounds = playerTransition.miniPlayerBounds
+                                                .takeIf {
+                                                    playerTransition.miniPlayerAcceptsInput
+                                                },
+                                        )
+                                    } else {
+                                        Modifier.graphicsLayer {
+                                            translationY = fullPlayerHostTranslationY
+                                        }
+                                    },
+                                ),
                         )
                     }
+                    PlayerSheetMiniControlsInputOverlay(
+                        transition = playerTransition,
+                        hasItem = compactPlayback.currentItem != null,
+                        normalChrome = miniPlayerUsesNormalChrome,
+                        onTogglePlayPause = viewModel::togglePlayPause,
+                        onOpenQueue = { showQueue = true },
+                        modifier = Modifier.zIndex(2f),
+                    )
                     PlayerSheetContentOverlay(
                         transition = playerTransition,
                         miniPlayerContentLayer = miniPlayerContentLayer,
@@ -2133,6 +2193,7 @@ fun MeloxApp(
                         }
                     },
                 )
+            }
             }
         }
     }

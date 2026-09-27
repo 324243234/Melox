@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import com.melox.player.model.PlaybackUiState
 import com.melox.player.model.BottomBarStyle
 import com.melox.player.ui.MiniPlayerChrome
@@ -65,10 +66,11 @@ import top.yukonga.miuix.kmp.basic.DividerDefaults
 import top.yukonga.miuix.kmp.utils.getRoundedCorner
 
 // Duration of the artwork crossfade when the current track changes.
-internal const val PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS = 500
-// Keeps the playback-background transition aligned with the artwork crossfade.
-internal const val PLAYBACK_BACKGROUND_TRANSITION_DURATION_MILLIS =
-    PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS
+internal const val PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS = 400
+// A same-track resolution upgrade should finish near the start of the sheet motion.
+internal const val PLAYER_ARTWORK_RESOLUTION_CROSSFADE_DURATION_MILLIS = 100
+// Backgrounds fade from the current visible layer, including the first fallback color.
+internal const val PLAYBACK_BACKGROUND_TRANSITION_DURATION_MILLIS = 400
 // Progress at which the mini-player layers have fully handed off to the full player.
 internal const val PLAYER_LAYER_HANDOFF_END_PROGRESS = 0.2f
 // Progress at which the mini-player's recorded content finishes fading out.
@@ -523,7 +525,8 @@ internal fun rememberPlayerSheetVerticalDragModifier(
                 currentOnDragStart()
             },
             onVerticalDrag = { change, dragAmount ->
-                velocityTracker.addPosition(change.uptimeMillis, change.position)
+                // The host moves under the pointer; track original event coordinates.
+                velocityTracker.addPointerInputChange(change)
                 currentOnDrag(dragAmount)
                 change.consume()
             },
