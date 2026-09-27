@@ -311,7 +311,7 @@
     <string name="player_title_left_aligned">标题左对齐</string>
     <string name="lyrics_translation">歌词翻译</string>
     <string name="lyrics_size">歌词大小</string>
-    <string name="lyrics_size_value">%1$d%%</string>
+    <string name="lyrics_size_value">%1$dsp</string>
     <string name="lyrics_weight">歌词字重</string>
     <string name="lyrics_weight_value">%1$d</string>
     <string name="lyrics_force_word_by_word">强制逐字歌词</string>

@@ -211,12 +211,12 @@ internal fun fitPlayerArtworkSize(preferredSize: Dp, availableHeight: Dp): Dp =
         availableHeight - PLAYER_ARTWORK_VERTICAL_FOOTPRINT_EXPANSION,
     ).coerceAtLeast(0.dp)
 
-// 歌词设置区域：最小歌词字号缩放（70%）。
-internal const val MIN_LYRIC_FONT_SCALE = 0.7f
+// 歌词设置区域：最小歌词字号缩放（16 sp / 24 sp）。
+internal const val MIN_LYRIC_FONT_SCALE = 0.6666667f
 // 歌词设置区域：默认歌词字号缩放（100%）。
 internal const val DEFAULT_LYRIC_FONT_SCALE = 1f
-// 歌词设置区域：最大歌词字号缩放（130%）。
-internal const val MAX_LYRIC_FONT_SCALE = 1.3f
+// 歌词设置区域：最大歌词字号缩放（48 sp / 24 sp）。
+internal const val MAX_LYRIC_FONT_SCALE = 2f
 // 歌词设置区域：最小歌词字重。
 internal const val MIN_LYRIC_FONT_WEIGHT = 100
 // 歌词设置区域：最大歌词字重。

@@ -230,28 +230,28 @@ class UiLogicTest {
     @Test
     fun sliderTapUsesTrackBoundsStepsKeyPointsAndLayoutDirection() {
         assertEquals(
-            0.85f,
+            1f,
             sliderValueAtPosition(
                 positionX = 82.5f,
                 width = 300,
                 height = 30,
-                valueRange = 0.7f..1.3f,
+                valueRange = 0.6666667f..2f,
                 steps = 0,
-                keyPoints = listOf(0.7f, 1f, 1.3f),
+                keyPoints = listOf(1f),
                 magnetThreshold = 0.02f,
                 reverseDirection = false,
             ),
             0.0001f,
         )
         assertEquals(
-            1f,
+            1.3333333f,
             sliderValueAtPosition(
                 positionX = 150f,
                 width = 300,
                 height = 30,
-                valueRange = 0.7f..1.3f,
+                valueRange = 0.6666667f..2f,
                 steps = 0,
-                keyPoints = listOf(0.7f, 1f, 1.3f),
+                keyPoints = listOf(1f),
                 magnetThreshold = 0.02f,
                 reverseDirection = false,
             ),
@@ -271,6 +271,22 @@ class UiLogicTest {
             ),
             0f,
         )
+        (0..8).forEach { index ->
+            assertEquals(
+                100f + index * 100f,
+                sliderValueAtPosition(
+                    positionX = 15f + index * 270f / 8f,
+                    width = 300,
+                    height = 30,
+                    valueRange = 100f..900f,
+                    steps = 7,
+                    keyPoints = null,
+                    magnetThreshold = 0.02f,
+                    reverseDirection = false,
+                ),
+                0f,
+            )
+        }
         assertEquals(
             0.75f,
             sliderValueAtPosition(
@@ -1058,8 +1074,8 @@ class UiLogicTest {
     fun legacyLyricFontScaleMapsOldEightyPercentToNewHundredPercent() {
         assertEquals(1f, migrateLegacyLyricFontScale(0.8f), 0f)
         assertEquals(1.25f, migrateLegacyLyricFontScale(1f), 0f)
-        assertEquals(0.7f, migrateLegacyLyricFontScale(0.4f), 0f)
-        assertEquals(1.3f, migrateLegacyLyricFontScale(1.2f), 0f)
+        assertEquals(0.6666667f, migrateLegacyLyricFontScale(0.4f), 0.0000001f)
+        assertEquals(1.5f, migrateLegacyLyricFontScale(1.2f), 0f)
     }
 
     @Test
@@ -1069,6 +1085,10 @@ class UiLogicTest {
         assertEquals(200, normalizeLyricFontWeight(150))
         assertEquals(400, normalizeLyricFontWeight(400))
         assertEquals(900, normalizeLyricFontWeight(950))
+        (1..9).forEach { step ->
+            val weight = step * 100
+            assertEquals(weight, normalizeLyricFontWeight(weight))
+        }
     }
 
     @Test

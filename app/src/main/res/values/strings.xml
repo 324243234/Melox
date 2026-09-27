@@ -324,7 +324,7 @@
     <string name="player_title_left_aligned">Left-align title</string>
     <string name="lyrics_translation">Lyrics translation</string>
     <string name="lyrics_size">Lyrics size</string>
-    <string name="lyrics_size_value">%1$d%%</string>
+    <string name="lyrics_size_value">%1$dsp</string>
     <string name="lyrics_weight">Lyrics weight</string>
     <string name="lyrics_weight_value">%1$d</string>
     <string name="lyrics_force_word_by_word">Force word-by-word lyrics</string>
