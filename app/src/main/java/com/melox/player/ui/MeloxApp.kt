@@ -168,6 +168,7 @@ import com.melox.player.ui.screen.settings.SettingsScreen
 import com.melox.player.ui.screen.settings.ScanMusicScreen
 import com.melox.player.ui.screen.settings.MusicStatisticsScreen
 import com.melox.player.ui.screen.settings.AboutScreen
+import com.melox.player.ui.screen.settings.SponsorScreen
 import com.melox.player.ui.screen.settings.ThemeSettingsScreen
 import com.melox.player.ui.screen.settings.BlockedFoldersScreen
 import com.melox.player.ui.viewmodel.MeloxViewModel
@@ -238,6 +239,7 @@ private enum class AppRoute {
     PLAYLISTS,
     PLAYLIST_DETAIL,
     BLOCKED_FOLDERS,
+    SPONSOR,
 }
 
 @Serializable
@@ -1398,6 +1400,11 @@ fun MeloxApp(
                         depth = 2,
                     ),
                 )
+                currentRoute == AppRoute.SPONSOR -> listOf(
+                    root,
+                    AppNavDestination(AppRoute.ABOUT, depth = 1),
+                    AppNavDestination(AppRoute.SPONSOR, depth = 2),
+                )
                 currentRoute == AppRoute.PLAYLIST_DETAIL &&
                     playlistParentRoute == AppRoute.PLAYLISTS -> listOf(
                     root,
@@ -1446,6 +1453,8 @@ fun MeloxApp(
                 returnToArtistParentAlbum(null)
             } else if (currentRoute == AppRoute.BLOCKED_FOLDERS) {
                 currentRoute = AppRoute.SCAN_SETTINGS
+            } else if (currentRoute == AppRoute.SPONSOR) {
+                currentRoute = AppRoute.ABOUT
             } else if (
                 currentRoute == AppRoute.PLAYLIST_DETAIL &&
                 playlistParentRoute == AppRoute.PLAYLISTS
@@ -1669,6 +1678,14 @@ fun MeloxApp(
                                                         )
 
                                                     AppRoute.ABOUT -> AboutScreen(
+                                                        bottomContentPadding = routeBottomPadding,
+                                                        onBack = navigateBack,
+                                                        onOpenSponsor = {
+                                                            currentRoute = AppRoute.SPONSOR
+                                                        },
+                                                    )
+
+                                                    AppRoute.SPONSOR -> SponsorScreen(
                                                         bottomContentPadding = routeBottomPadding,
                                                         onBack = navigateBack,
                                                     )

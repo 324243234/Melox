@@ -308,7 +308,10 @@
     <string name="lyrics_hide_controls">Hide controls on lyrics page</string>
 
     <string name="about_version">%1$s</string>
-    <string name="about_project_title">Project address</string>
-    <string name="about_developer_title">Developer</string>
-    <string name="about_telegram_title">Join Telegram channel</string>
+    <string name="about_project_title">Project repository</string>
+    <string name="about_join_group_title">Join group</string>
+    <string name="about_sponsor_title">Sponsor support</string>
+    <string name="about_github_label">Github</string>
+    <string name="about_telegram_label">Telegram</string>
+    <string name="sponsor_code_description">Sponsorship code</string>
 </resources>

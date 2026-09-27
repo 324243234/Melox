@@ -71,6 +71,7 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 fun AboutScreen(
     bottomContentPadding: Dp,
     onBack: () -> Unit,
+    onOpenSponsor: () -> Unit,
 ) {
     val scrollBehavior = MiuixScrollBehavior()
     val listState = rememberLazyListState()
@@ -92,7 +93,7 @@ fun AboutScreen(
         }
     }
     val collapsed by remember {
-        derivedStateOf { scrollProgress >= 0.999f }
+        derivedStateOf { scrollProgress == 1f }
     }
     val topBarBackdrop = rememberBlurBackdrop()
     val barBackdrop = if (collapsed) topBarBackdrop else null
@@ -103,7 +104,7 @@ fun AboutScreen(
     }
 
     Scaffold(
-            topBar = {
+        topBar = {
             BlurredBar(
                 backdrop = barBackdrop,
                 blurEnabled = barBackdrop != null,
@@ -127,7 +128,7 @@ fun AboutScreen(
                 )
             }
         },
-        ) { padding ->
+    ) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -139,6 +140,7 @@ fun AboutScreen(
                 scrollBehavior = scrollBehavior,
                 scrollProgress = { scrollProgress },
                 bottomContentPadding = bottomContentPadding,
+                onOpenSponsor = onOpenSponsor,
             )
         }
     }
@@ -151,6 +153,7 @@ private fun AboutContent(
     scrollBehavior: top.yukonga.miuix.kmp.basic.ScrollBehavior,
     scrollProgress: () -> Float,
     bottomContentPadding: Dp,
+    onOpenSponsor: () -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
     val density = LocalDensity.current
@@ -261,21 +264,33 @@ private fun AboutContent(
                     ) {
                         ArrowPreference(
                             title = stringResource(R.string.about_project_title),
+                            endActions = {
+                                Text(
+                                    text = stringResource(R.string.about_github_label),
+                                    fontSize = MiuixTheme.textStyles.body2.fontSize,
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                )
+                            },
                             onClick = {
                                 uriHandler.openUri(PROJECT_URL)
                             },
                         )
                         ArrowPreference(
-                            title = stringResource(R.string.about_developer_title),
+                            title = stringResource(R.string.about_join_group_title),
+                            endActions = {
+                                Text(
+                                    text = stringResource(R.string.about_telegram_label),
+                                    fontSize = MiuixTheme.textStyles.body2.fontSize,
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                )
+                            },
                             onClick = {
-                                uriHandler.openUri(DEVELOPER_GITHUB_URL)
+                                uriHandler.openUri(TELEGRAM_URL)
                             },
                         )
                         ArrowPreference(
-                            title = stringResource(R.string.about_telegram_title),
-                            onClick = {
-                                uriHandler.openUri(TELEGRAM_CHANNEL_URL)
-                            },
+                            title = stringResource(R.string.about_sponsor_title),
+                            onClick = onOpenSponsor,
                         )
                     }
                 }
@@ -285,8 +300,7 @@ private fun AboutContent(
 }
 
 private const val PROJECT_URL = "https://github.com/Inefy-03/Melox"
-private const val DEVELOPER_GITHUB_URL = "https://github.com/Inefy-03"
-private const val TELEGRAM_CHANNEL_URL = "https://t.me/MeloxPlayerUpdate"
+private const val TELEGRAM_URL = "https://t.me/MeloxPlayerUpdate"
 
 @Composable
 private fun AboutHeader(

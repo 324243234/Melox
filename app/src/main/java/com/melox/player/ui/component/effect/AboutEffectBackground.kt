@@ -7,6 +7,7 @@ import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Spacer
@@ -51,7 +52,10 @@ internal fun AboutEffectBackground(
         Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
         !shaderSupported
     ) {
-        Box(modifier = modifier, content = content)
+        Box(
+            modifier = modifier.background(MiuixTheme.colorScheme.surface),
+            content = content,
+        )
         return
     }
     AboutRuntimeEffectBackground(
@@ -233,7 +237,7 @@ private class AboutEffectPainter {
     }
 
     private fun updateBounds(width: Float, height: Float) {
-        val effectHeight = height * 0.5f
+        val effectHeight = height * 0.8f
         val heightRatio = effectHeight / height
         if (width <= height) {
             bounds[0] = 0f
@@ -379,7 +383,11 @@ private class AboutEffectNode(
     override fun ContentDrawScope.draw() {
         drawRect(surface)
         val effectAlpha = alpha()
-        if (effectAlpha > 0f) {
+        if (effectAlpha <= 0f) {
+            animationJob?.cancel()
+            animationJob = null
+        } else {
+            if (animationJob == null) startAnimation()
             painter.update(
                 width = size.width,
                 height = size.height,
