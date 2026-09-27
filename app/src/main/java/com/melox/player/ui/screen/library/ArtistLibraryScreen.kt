@@ -1,5 +1,7 @@
 package com.melox.player.ui.screen.library
 
+import com.melox.player.ui.component.library.PreserveSortScrollPosition
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -55,6 +57,17 @@ fun ArtistLibraryScreen(
     indexBottomSpacing: Dp = 12.dp,
 ) {
     val layoutDirection = LocalLayoutDirection.current
+    PreserveSortScrollPosition(
+        sortKey = sortConfig,
+        query = query,
+        itemCount = displayedArtists.size,
+        scrollState = listState,
+    ) {
+        listState.requestScrollToItem(
+            listState.firstVisibleItemIndex,
+            listState.firstVisibleItemScrollOffset,
+        )
+    }
     val sections = remember(sortConfig.descending) {
         if (sortConfig.descending) AlphabetSections.asReversed() else AlphabetSections
     }

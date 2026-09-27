@@ -63,6 +63,7 @@ import com.melox.player.ui.component.BlurredBar
 import com.melox.player.ui.component.library.AlphabetSections
 import com.melox.player.ui.component.library.AlphabetSideBar
 import com.melox.player.ui.component.library.MusicTrackRow
+import com.melox.player.ui.component.library.PreserveSortScrollPosition
 import com.melox.player.ui.component.library.SelectionActionsAnimatedContent
 import com.melox.player.ui.component.library.SelectionNavigationIconAnimatedContent
 import com.melox.player.ui.component.library.TrackActionsOverlay
@@ -162,7 +163,7 @@ fun PlaylistDetailScreen(
     var showRemoveSelectedConfirm by rememberSaveable(playlist.id) {
         mutableStateOf(false)
     }
-    var customDraftTracks by remember(playlist.id) {
+    var customDraftTracks by remember(playlist.id, sortConfig) {
         mutableStateOf(persistedDisplayedTracks)
     }
     var draggedEntryId by remember(playlist.id) { mutableStateOf<String?>(null) }
@@ -205,6 +206,12 @@ fun PlaylistDetailScreen(
         persistedDisplayedTracks
     }
     val displayedEntryIds = displayedTracks.map { item -> item.entry.id }
+    PreserveSortScrollPosition(sortConfig, query, displayedTracks.size, listState) {
+        listState.requestScrollToItem(
+            listState.firstVisibleItemIndex,
+            listState.firstVisibleItemScrollOffset,
+        )
+    }
     val sectionIndexMap = remember(displayedTracks, sortConfig.field) {
         if (
             sortConfig.field == PlaylistSortField.TITLE ||

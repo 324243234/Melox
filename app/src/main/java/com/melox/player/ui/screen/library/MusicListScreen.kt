@@ -1,5 +1,7 @@
 package com.melox.player.ui.screen.library
 
+import com.melox.player.ui.component.library.PreserveSortScrollPosition
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -80,6 +82,17 @@ fun MusicListScreen(
     onSelectionModeChange: ((Boolean) -> Unit)? = null,
 ) {
     val layoutDirection = LocalLayoutDirection.current
+    PreserveSortScrollPosition(
+        sortKey = sortConfig,
+        query = query,
+        itemCount = displayedTracks.size,
+        scrollState = listState,
+    ) {
+        listState.requestScrollToItem(
+            listState.firstVisibleItemIndex,
+            listState.firstVisibleItemScrollOffset,
+        )
+    }
     var selectedTrack by remember { mutableStateOf<MusicTrack?>(null) }
     val listContentPadding = PaddingValues(
         start = contentPadding.calculateStartPadding(layoutDirection),
@@ -170,6 +183,7 @@ fun MusicListScreen(
             displayedTracks.isNotEmpty() &&
             (
                 sortConfig.field == MusicSortField.TITLE ||
+                    sortConfig.field == MusicSortField.ARTIST ||
                     sortConfig.field == MusicSortField.FILE_NAME
             ) &&
             query.isBlank()

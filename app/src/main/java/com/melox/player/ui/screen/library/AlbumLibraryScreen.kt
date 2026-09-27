@@ -1,5 +1,7 @@
 package com.melox.player.ui.screen.library
 
+import com.melox.player.ui.component.library.PreserveSortScrollPosition
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -74,6 +76,18 @@ fun AlbumLibraryScreen(
     navigationRailExpanded: Boolean = false,
 ) {
     val layoutDirection = LocalLayoutDirection.current
+    PreserveSortScrollPosition(
+        sortKey = sortConfig.field to sortConfig.descending,
+        query = query,
+        itemCount = displayedAlbums.size,
+        scrollState = gridState,
+        layoutKey = sortConfig.gridStyle,
+    ) {
+        gridState.requestScrollToItem(
+            gridState.firstVisibleItemIndex,
+            gridState.firstVisibleItemScrollOffset,
+        )
+    }
     val supportsIndex = sortConfig.field == AlbumSortField.ALBUM ||
         sortConfig.field == AlbumSortField.ALBUM_ARTIST
     val sections = remember(sortConfig.descending) {

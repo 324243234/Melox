@@ -105,6 +105,7 @@ fun FolderDetailScreen(
         buildMap {
             displayedTracks.forEachIndexed { index, track ->
                 val key = when (sortConfig.field) {
+                    MusicSortField.ARTIST -> createMusicSortKeys(track.artist).section
                     MusicSortField.FILE_NAME -> createMusicSortKeys(track.fileName).section
                     else -> track.titleSectionKey
                 }

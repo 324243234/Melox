@@ -1,5 +1,7 @@
 package com.melox.player.ui.screen.library
 
+import com.melox.player.ui.component.library.PreserveSortScrollPosition
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -78,6 +80,17 @@ fun FolderLibraryScreen(
 ) {
     var pendingBlockFolder by remember { mutableStateOf<FolderGroup?>(null) }
     val layoutDirection = LocalLayoutDirection.current
+    PreserveSortScrollPosition(
+        sortKey = sortConfig,
+        query = query,
+        itemCount = displayedFolders.size,
+        scrollState = listState,
+    ) {
+        listState.requestScrollToItem(
+            listState.firstVisibleItemIndex,
+            listState.firstVisibleItemScrollOffset,
+        )
+    }
     val sections = remember(sortConfig.descending) {
         if (sortConfig.descending) AlphabetSections.asReversed() else AlphabetSections
     }

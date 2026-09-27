@@ -9,6 +9,8 @@ enum class MusicSortField {
     FILE_NAME,
     FILE_SIZE,
     DURATION,
+    // Keep this appended so persisted ordinal values from older versions remain stable.
+    ARTIST,
 }
 
 data class MusicSortConfig(
@@ -37,6 +39,12 @@ internal fun sortMusicTracks(
 internal fun musicTrackComparator(config: MusicSortConfig): Comparator<MusicTrack> {
     val comparator = when (config.field) {
         MusicSortField.TITLE -> compareBy<MusicTrack>(MusicTrack::titleSortKey)
+            .thenBy(MusicTrack::id)
+
+        MusicSortField.ARTIST -> compareBy<MusicTrack> {
+            createMusicSortKeys(it.artist).value
+        }
+            .thenBy(MusicTrack::titleSortKey)
             .thenBy(MusicTrack::id)
 
         MusicSortField.DATE_ADDED -> compareBy<MusicTrack>(MusicTrack::dateAddedEpochSeconds)

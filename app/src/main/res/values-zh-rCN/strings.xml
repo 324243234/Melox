@@ -64,6 +64,7 @@
     <string name="music_unknown_artist">未知艺术家</string>
     <string name="music_sort_action">歌曲排序</string>
     <string name="music_sort_title">标题</string>
+    <string name="music_sort_artist">艺术家</string>
     <string name="music_sort_date_added">添加时间</string>
     <string name="music_sort_file_name">文件名</string>
     <string name="music_sort_file_size">文件大小</string>

@@ -34,9 +34,10 @@ fun MusicSortButton(
     var showPopup by remember { mutableStateOf(false) }
     val sortEntries = listOf(
         MusicSortField.TITLE to stringResource(R.string.music_sort_title),
-        MusicSortField.DATE_ADDED to stringResource(R.string.music_sort_date_added),
+        MusicSortField.ARTIST to stringResource(R.string.music_sort_artist),
         MusicSortField.FILE_NAME to stringResource(R.string.music_sort_file_name),
         MusicSortField.FILE_SIZE to stringResource(R.string.music_sort_file_size),
+        MusicSortField.DATE_ADDED to stringResource(R.string.music_sort_date_added),
         MusicSortField.DURATION to stringResource(R.string.music_sort_duration),
     )
     val optionSize = sortEntries.size + 1

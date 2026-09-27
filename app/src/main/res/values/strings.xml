@@ -66,6 +66,7 @@
     <string name="music_unknown_artist">Unknown artist</string>
     <string name="music_sort_action">Sort songs</string>
     <string name="music_sort_title">Title</string>
+    <string name="music_sort_artist">Artist</string>
     <string name="music_sort_date_added">Date added</string>
     <string name="music_sort_file_name">File name</string>
     <string name="music_sort_file_size">File size</string>
