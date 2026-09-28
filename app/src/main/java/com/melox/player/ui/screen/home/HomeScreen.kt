@@ -116,6 +116,7 @@ fun HomeScreen(
     scanStatus: ScanStatus,
     blurEnabled: Boolean,
     onOpenPlaylists: () -> Unit,
+    onOpenScanSettings: () -> Unit,
     onCreatePlaylist: () -> Unit,
     onPlaylistClick: (LocalPlaylist) -> Unit,
     onRecommendationClick: (MusicTrack, List<MusicTrack>) -> Unit,
@@ -159,6 +160,8 @@ fun HomeScreen(
             item(key = "home_recommendation_empty") {
                 HomeEmptyRecommendationState(
                     scanStatus = scanStatus,
+                    hasScannedMusic = false,
+                    onOpenScanSettings = onOpenScanSettings,
                 )
             }
         } else {
@@ -255,6 +258,19 @@ fun HomeScreen(
                         }
                     }
                 }
+
+                else -> {
+                    item(key = "home_recommendation_title") {
+                        HomeSectionTitle(R.string.home_recommendation_title)
+                    }
+                    item(key = "home_recommendation_empty") {
+                        HomeEmptyRecommendationState(
+                            scanStatus = scanStatus,
+                            hasScannedMusic = true,
+                            onOpenScanSettings = onOpenScanSettings,
+                        )
+                    }
+                }
             }
 
         }
@@ -329,23 +345,18 @@ private fun HomeEmptyPlaylistCard(
             title = stringResource(R.string.home_playlist_empty_title),
             description = stringResource(R.string.home_playlist_empty_description),
         )
-        HorizontalDivider(modifier = Modifier.padding(horizontal = 20.dp))
-        BasicComponent(
-            insideMargin = PaddingValues(horizontal = 20.dp),
+        HomeEmptyActionRow(
+            label = stringResource(R.string.playlist_create_title),
             onClick = onCreatePlaylist,
-        ) {
-            Text(
-                text = stringResource(R.string.playlist_create_title),
-                style = MiuixTheme.textStyles.button,
-                color = MiuixTheme.colorScheme.primary,
-            )
-        }
+        )
     }
 }
 
 @Composable
 private fun HomeEmptyRecommendationState(
     scanStatus: ScanStatus,
+    hasScannedMusic: Boolean,
+    onOpenScanSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     when (scanStatus.toMusicLibraryPlaceholder()) {
@@ -374,12 +385,39 @@ private fun HomeEmptyRecommendationState(
                 imageVector = MiuixIcons.Create,
                 title = if (scanStatus is ScanStatus.Error) {
                     stringResource(R.string.music_scan_failed)
+                } else if (hasScannedMusic) {
+                    stringResource(R.string.home_recommendation_unavailable_title)
                 } else {
                     stringResource(R.string.home_recommendation_empty_title)
                 },
-                description = stringResource(R.string.home_recommendation_empty_description),
+                description = stringResource(
+                    if (hasScannedMusic) R.string.home_recommendation_unavailable_description
+                    else R.string.home_recommendation_empty_description,
+                ),
+            )
+            HomeEmptyActionRow(
+                label = stringResource(R.string.scan_music_page_title),
+                onClick = onOpenScanSettings,
             )
         }
+    }
+}
+
+@Composable
+private fun HomeEmptyActionRow(
+    label: String,
+    onClick: () -> Unit,
+) {
+    HorizontalDivider(modifier = Modifier.padding(horizontal = 20.dp))
+    BasicComponent(
+        insideMargin = PaddingValues(horizontal = 20.dp),
+        onClick = onClick,
+    ) {
+        Text(
+            text = label,
+            style = MiuixTheme.textStyles.button,
+            color = MiuixTheme.colorScheme.primary,
+        )
     }
 }
 

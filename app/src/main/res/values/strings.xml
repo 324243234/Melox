@@ -33,6 +33,8 @@
     <string name="home_recommendation_title">Recommendations</string>
     <string name="home_recommendation_empty_title">No music yet</string>
     <string name="home_recommendation_empty_description">Random recommendations will appear after music is scanned</string>
+    <string name="home_recommendation_unavailable_title">No recommendations yet</string>
+    <string name="home_recommendation_unavailable_description">Songs need artwork to appear in recommendations</string>
     <string name="home_recently_added_title">Recently added</string>
     <string name="home_playlists_title">Playlists</string>
     <string name="home_playlist_empty_title">No playlists yet</string>

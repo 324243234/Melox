@@ -859,6 +859,9 @@ fun MeloxApp(
                             onOpenPlaylists = {
                                 currentRoute = AppRoute.PLAYLISTS
                             },
+                            onOpenScanSettings = {
+                                currentRoute = AppRoute.SCAN_SETTINGS
+                            },
                             onCreatePlaylist = {
                                 if (playlistState.loaded) {
                                     playlistCreateRequest = PlaylistCreateRequest(
