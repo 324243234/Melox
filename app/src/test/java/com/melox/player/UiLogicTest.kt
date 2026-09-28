@@ -44,6 +44,7 @@ import com.melox.player.data.playback.toStartupPlaybackPreview
 import com.melox.player.data.repository.migrateLegacyLyricFontScale
 import com.melox.player.data.repository.normalizeLyricFontWeight
 import com.melox.player.data.repository.resolveAlbumGridStyleOrdinal
+import com.melox.player.data.repository.LyricsRequest
 import com.melox.player.model.AppSettings
 import com.melox.player.model.AudioQuality
 import com.melox.player.model.BottomBarStyle
@@ -53,7 +54,10 @@ import com.melox.player.model.NavigationTransitionStyle
 import com.melox.player.model.LyricLine
 import com.melox.player.model.LyricsDocument
 import com.melox.player.model.LyricsFormat
+import com.melox.player.model.LyricsSidecarFormatPriority
 import com.melox.player.model.LyricsSource
+import com.melox.player.model.LyricsSourcePriority
+import com.melox.player.model.LyricsUiState
 import com.melox.player.model.PlaybackMode
 import com.melox.player.model.PlaybackBackgroundStyle
 import com.melox.player.model.PlaybackQueueItem
@@ -93,6 +97,9 @@ import com.melox.player.ui.component.library.responsiveGridColumnCount
 import com.melox.player.ui.component.library.snapshotArtworkDiskCacheEntries
 import com.melox.player.ui.component.playback.hasDifferentMetadataSwipeTarget
 import com.melox.player.ui.component.playback.hasExpectedMiniMetadataSwipeTarget
+import com.melox.player.ui.viewmodel.shouldPublishLyricsResolution
+import com.melox.player.ui.viewmodel.shouldShowLyricsLoading
+import com.melox.player.ui.viewmodel.resolveLyricsStates
 import com.melox.player.ui.component.playback.KenBurnsFrame
 import com.melox.player.ui.component.playback.DYNAMIC_FLOW_ARTWORK_SATURATION
 import com.melox.player.ui.component.playback.DYNAMIC_FLOW_BACKGROUND_DARKEN_AMOUNT
@@ -217,6 +224,8 @@ import java.io.IOException
 import java.util.zip.CRC32
 import java.util.zip.CheckedOutputStream
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
@@ -397,6 +406,11 @@ class UiLogicTest {
         assertFalse(settings.centerLyrics)
         assertFalse(settings.leftAlignPlayerTitle)
         assertTrue(settings.showLyricsTranslation)
+        assertEquals(LyricsSourcePriority.EMBEDDED, settings.lyricsSourcePriority)
+        assertEquals(
+            LyricsSidecarFormatPriority.LRC,
+            settings.lyricsSidecarFormatPriority,
+        )
         assertEquals(true, settings.blurEnabled)
         assertFalse(settings.progressiveTopBarBlurEnabled)
         assertFalse(settings.hideBottomBar)
@@ -733,6 +747,68 @@ class UiLogicTest {
         assertEquals(0, document.currentLineIndex(1_999L))
         assertEquals(-1, document.currentLineIndex(2_000L))
         assertEquals(1, document.currentLineIndex(4_000L))
+    }
+
+    @Test
+    fun lyricPriorityChangePublishesOnlyWhenTheResolvedSourceChanges() {
+        val embeddedFirst = LyricsRequest(
+            mediaId = "1",
+            contentUri = "content://media/external_primary/audio/media/1",
+            fileName = "Song.flac",
+            folderPath = "/Music/Album",
+            durationMs = 10_000L,
+            sourcePriority = LyricsSourcePriority.EMBEDDED,
+            sidecarFormatPriority = LyricsSidecarFormatPriority.TTML,
+        )
+        val sidecarFirst = embeddedFirst.copy(sourcePriority = LyricsSourcePriority.SIDECAR)
+        val embeddedLyrics = LyricsDocument(
+            lines = emptyList(),
+            format = LyricsFormat.LRC,
+            source = LyricsSource.EMBEDDED,
+        )
+        val ttmlSidecarLyrics = LyricsDocument(
+            lines = emptyList(),
+            format = LyricsFormat.TTML,
+            source = LyricsSource.SIDECAR,
+        )
+        val lrcSidecarLyrics = ttmlSidecarLyrics.copy(format = LyricsFormat.LRC)
+
+        assertFalse(shouldShowLyricsLoading(embeddedFirst, sidecarFirst))
+        assertFalse(
+            shouldPublishLyricsResolution(
+                previousRequest = embeddedFirst,
+                request = sidecarFirst,
+                previousDocument = embeddedLyrics,
+                document = embeddedLyrics,
+            ),
+        )
+        assertTrue(
+            shouldPublishLyricsResolution(
+                previousRequest = embeddedFirst,
+                request = sidecarFirst,
+                previousDocument = embeddedLyrics,
+                document = ttmlSidecarLyrics,
+            ),
+        )
+        assertTrue(
+            shouldPublishLyricsResolution(
+                previousRequest = sidecarFirst,
+                request = sidecarFirst.copy(
+                    sidecarFormatPriority = LyricsSidecarFormatPriority.LRC,
+                ),
+                previousDocument = ttmlSidecarLyrics,
+                document = lrcSidecarLyrics,
+            ),
+        )
+    }
+
+    @Test
+    fun lyricResolutionFlowCanPublishFromCollectLatestWithoutAFlowInvariantCrash() = runBlocking {
+        val states = flowOf<LyricsRequest?>(null)
+            .resolveLyricsStates { error("No lyrics should be loaded without a request") }
+            .toList()
+
+        assertEquals(listOf(LyricsUiState.Unavailable), states)
     }
 
     @Test

@@ -323,6 +323,12 @@
     <string name="lyrics_center">歌词居中</string>
     <string name="lyrics_hide_controls">歌词页隐藏控制</string>
     <string name="lyrics_hide_controls_summary">隐藏控制后，可双击标题区播放/暂停，滑动切歌，长按呼出本弹窗</string>
+    <string name="lyrics_source_priority">歌词来源优先级</string>
+    <string name="lyrics_source_embedded">内嵌</string>
+    <string name="lyrics_source_external">外置</string>
+    <string name="lyrics_sidecar_format_priority">外置歌词格式优先级</string>
+    <string name="lyrics_sidecar_lrc">.lrc</string>
+    <string name="lyrics_sidecar_ttml">.ttml</string>
 
     <string name="about_version">%1$s</string>
     <string name="about_project_title">项目仓库</string>

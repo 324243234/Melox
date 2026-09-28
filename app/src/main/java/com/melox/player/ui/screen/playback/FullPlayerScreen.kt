@@ -76,7 +76,6 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -105,6 +104,8 @@ import com.melox.player.data.library.displayArtistName
 import com.melox.player.model.MusicTrack
 import com.melox.player.model.LyricsUiState
 import com.melox.player.model.LyricsDocument
+import com.melox.player.model.LyricsSidecarFormatPriority
+import com.melox.player.model.LyricsSourcePriority
 import com.melox.player.model.PlaybackMode
 import com.melox.player.model.PlaybackBackgroundStyle
 import com.melox.player.model.PlaybackQueueItem
@@ -145,6 +146,7 @@ import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
@@ -159,6 +161,7 @@ import top.yukonga.miuix.kmp.icon.extended.Playlist
 import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import top.yukonga.miuix.kmp.preference.OverlaySpinnerPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
@@ -178,6 +181,8 @@ internal fun FullPlayerScreen(
     leftAlignPlayerTitle: Boolean,
     hideControlsOnLyrics: Boolean,
     showLyricsTranslation: Boolean,
+    lyricsSourcePriority: LyricsSourcePriority,
+    lyricsSidecarFormatPriority: LyricsSidecarFormatPriority,
     onLyricFontScaleChange: (Float) -> Unit,
     onLyricFontWeightChange: (Int) -> Unit,
     onForceWordByWordLyricsChange: (Boolean) -> Unit,
@@ -186,6 +191,8 @@ internal fun FullPlayerScreen(
     onLeftAlignPlayerTitleChange: (Boolean) -> Unit,
     onHideControlsOnLyricsChange: (Boolean) -> Unit,
     onShowLyricsTranslationChange: (Boolean) -> Unit,
+    onLyricsSourcePriorityChange: (LyricsSourcePriority) -> Unit,
+    onLyricsSidecarFormatPriorityChange: (LyricsSidecarFormatPriority) -> Unit,
     onDismiss: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onPrevious: () -> Unit,
@@ -299,6 +306,12 @@ internal fun FullPlayerScreen(
     var displayedShowLyricsTranslation by remember {
         mutableStateOf(showLyricsTranslation)
     }
+    var displayedLyricsSourcePriority by remember {
+        mutableStateOf(lyricsSourcePriority)
+    }
+    var displayedLyricsSidecarFormatPriority by remember {
+        mutableStateOf(lyricsSidecarFormatPriority)
+    }
     var lyricsFollowRequestKey by remember { mutableIntStateOf(0) }
     var lyricsSeekRequestKey by remember { mutableIntStateOf(0) }
     var lyricsSeekPositionMs by remember { mutableLongStateOf(playback.positionMs) }
@@ -398,6 +411,12 @@ internal fun FullPlayerScreen(
     }
     LaunchedEffect(showLyricsTranslation) {
         displayedShowLyricsTranslation = showLyricsTranslation
+    }
+    LaunchedEffect(lyricsSourcePriority) {
+        displayedLyricsSourcePriority = lyricsSourcePriority
+    }
+    LaunchedEffect(lyricsSidecarFormatPriority) {
+        displayedLyricsSidecarFormatPriority = lyricsSidecarFormatPriority
     }
     val dismissGestureModifier = rememberPlayerSheetVerticalDragModifier(
         enabled = interactionEnabled,
@@ -974,6 +993,8 @@ internal fun FullPlayerScreen(
                     centerLyrics = displayedCenterLyrics,
                     hideControlsOnLyrics = displayedHideControlsOnLyrics,
                     showLyricsTranslation = displayedShowLyricsTranslation,
+                    lyricsSourcePriority = displayedLyricsSourcePriority,
+                    lyricsSidecarFormatPriority = displayedLyricsSidecarFormatPriority,
                     onDismiss = { showLyricsSettings = false },
                     onLeftAlignPlayerTitleChange = {
                         displayedLeftAlignPlayerTitle = it
@@ -1006,6 +1027,14 @@ internal fun FullPlayerScreen(
                     onShowLyricsTranslationChange = {
                         displayedShowLyricsTranslation = it
                         onShowLyricsTranslationChange(it)
+                    },
+                    onLyricsSourcePriorityChange = {
+                        displayedLyricsSourcePriority = it
+                        onLyricsSourcePriorityChange(it)
+                    },
+                    onLyricsSidecarFormatPriorityChange = {
+                        displayedLyricsSidecarFormatPriority = it
+                        onLyricsSidecarFormatPriorityChange(it)
                     },
                 )
                 PlaybackOptionsDialog(
@@ -1061,6 +1090,8 @@ private fun PlayerSettingsSheet(
     centerLyrics: Boolean,
     hideControlsOnLyrics: Boolean,
     showLyricsTranslation: Boolean,
+    lyricsSourcePriority: LyricsSourcePriority,
+    lyricsSidecarFormatPriority: LyricsSidecarFormatPriority,
     onDismiss: () -> Unit,
     onLeftAlignPlayerTitleChange: (Boolean) -> Unit,
     onLyricFontScalePreview: (Float) -> Unit,
@@ -1072,6 +1103,8 @@ private fun PlayerSettingsSheet(
     onCenterLyricsChange: (Boolean) -> Unit,
     onHideControlsOnLyricsChange: (Boolean) -> Unit,
     onShowLyricsTranslationChange: (Boolean) -> Unit,
+    onLyricsSourcePriorityChange: (LyricsSourcePriority) -> Unit,
+    onLyricsSidecarFormatPriorityChange: (LyricsSidecarFormatPriority) -> Unit,
 ) {
     val wideLayout = usesMiuixSmallTopAppBar()
     val bottomPadding = WindowInsets.navigationBars
@@ -1115,6 +1148,11 @@ private fun PlayerSettingsSheet(
                         checked = centerLyrics,
                         onCheckedChange = onCenterLyricsChange,
                     )
+                    SwitchPreference(
+                        title = stringResource(R.string.lyrics_translation),
+                        checked = showLyricsTranslation,
+                        onCheckedChange = onShowLyricsTranslationChange,
+                    )
                     TappableSliderPreference(
                         value = lyricFontScale,
                         onValueChange = onLyricFontScalePreview,
@@ -1143,11 +1181,6 @@ private fun PlayerSettingsSheet(
                         steps = LYRICS_FONT_WEIGHT_STEP_COUNT,
                         onValueChangeFinished = onLyricFontWeightCommit,
                         showKeyPoints = true,
-                    )
-                    SwitchPreference(
-                        title = stringResource(R.string.lyrics_translation),
-                        checked = showLyricsTranslation,
-                        onCheckedChange = onShowLyricsTranslationChange,
                     )
                     SwitchPreference(
                         title = stringResource(R.string.lyrics_blur),
@@ -1184,6 +1217,63 @@ private fun PlayerSettingsSheet(
                         summary = stringResource(R.string.lyrics_hide_controls_summary),
                         checked = hideControlsOnLyrics,
                         onCheckedChange = onHideControlsOnLyricsChange,
+                    )
+                }
+            }
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.defaultColors(
+                    color = bottomSheetCardColor(),
+                ),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    OverlaySpinnerPreference(
+                        items = listOf(
+                            DropdownItem(
+                                text = stringResource(R.string.lyrics_source_embedded),
+                            ),
+                            DropdownItem(
+                                text = stringResource(R.string.lyrics_source_external),
+                            ),
+                        ),
+                        selectedIndex = when (lyricsSourcePriority) {
+                            LyricsSourcePriority.EMBEDDED -> 0
+                            LyricsSourcePriority.SIDECAR -> 1
+                        },
+                        title = stringResource(R.string.lyrics_source_priority),
+                        onSelectedIndexChange = { selectedIndex ->
+                            val priority = when (selectedIndex) {
+                                0 -> LyricsSourcePriority.EMBEDDED
+                                else -> LyricsSourcePriority.SIDECAR
+                            }
+                            if (priority != lyricsSourcePriority) {
+                                onLyricsSourcePriorityChange(priority)
+                            }
+                        },
+                    )
+                    OverlaySpinnerPreference(
+                        items = listOf(
+                            DropdownItem(
+                                text = stringResource(R.string.lyrics_sidecar_lrc),
+                            ),
+                            DropdownItem(
+                                text = stringResource(R.string.lyrics_sidecar_ttml),
+                            ),
+                        ),
+                        selectedIndex = when (lyricsSidecarFormatPriority) {
+                            LyricsSidecarFormatPriority.LRC -> 0
+                            LyricsSidecarFormatPriority.TTML -> 1
+                        },
+                        title = stringResource(R.string.lyrics_sidecar_format_priority),
+                        onSelectedIndexChange = { selectedIndex ->
+                            val priority = when (selectedIndex) {
+                                0 -> LyricsSidecarFormatPriority.LRC
+                                else -> LyricsSidecarFormatPriority.TTML
+                            }
+                            if (priority != lyricsSidecarFormatPriority) {
+                                onLyricsSidecarFormatPriorityChange(priority)
+                            }
+                        },
                     )
                 }
             }

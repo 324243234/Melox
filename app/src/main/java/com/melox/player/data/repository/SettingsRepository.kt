@@ -24,6 +24,8 @@ import com.melox.player.model.AppSettings
 import com.melox.player.model.BottomBarStyle
 import com.melox.player.model.DefaultHomePage
 import com.melox.player.model.DynamicColorSource
+import com.melox.player.model.LyricsSidecarFormatPriority
+import com.melox.player.model.LyricsSourcePriority
 import com.melox.player.model.NavigationTransitionStyle
 import com.melox.player.model.PlaybackBackgroundStyle
 import com.melox.player.model.normalizePlaybackSpeed
@@ -98,6 +100,16 @@ class SettingsRepository(context: Context) {
                 leftAlignPlayerTitle = preferences[Keys.LeftAlignPlayerTitle] ?: false,
                 hideControlsOnLyrics = preferences[Keys.HideControlsOnLyrics] ?: false,
                 showLyricsTranslation = preferences[Keys.ShowLyricsTranslation] ?: true,
+                lyricsSourcePriority = preferences[Keys.LyricsSourcePriority]
+                    ?.let { storedValue ->
+                        enumValueOrDefault(storedValue, LyricsSourcePriority.EMBEDDED)
+                    }
+                    ?: LyricsSourcePriority.EMBEDDED,
+                lyricsSidecarFormatPriority = preferences[Keys.LyricsSidecarFormatPriority]
+                    ?.let { storedValue ->
+                        enumValueOrDefault(storedValue, LyricsSidecarFormatPriority.LRC)
+                    }
+                    ?: LyricsSidecarFormatPriority.LRC,
                 blurEnabled = preferences[Keys.BlurEnabled] ?: true,
                 progressiveTopBarBlurEnabled =
                     preferences[Keys.ProgressiveTopBarBlurEnabled] ?: false,
@@ -251,6 +263,18 @@ class SettingsRepository(context: Context) {
     suspend fun setShowLyricsTranslation(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[Keys.ShowLyricsTranslation] = enabled
+        }
+    }
+
+    suspend fun setLyricsSourcePriority(priority: LyricsSourcePriority) {
+        dataStore.edit { preferences ->
+            preferences[Keys.LyricsSourcePriority] = priority.name
+        }
+    }
+
+    suspend fun setLyricsSidecarFormatPriority(priority: LyricsSidecarFormatPriority) {
+        dataStore.edit { preferences ->
+            preferences[Keys.LyricsSidecarFormatPriority] = priority.name
         }
     }
 
@@ -413,6 +437,8 @@ class SettingsRepository(context: Context) {
         val LeftAlignPlayerTitle = booleanPreferencesKey("left_align_player_title")
         val HideControlsOnLyrics = booleanPreferencesKey("hide_controls_on_lyrics")
         val ShowLyricsTranslation = booleanPreferencesKey("show_lyrics_translation")
+        val LyricsSourcePriority = stringPreferencesKey("lyrics_source_priority")
+        val LyricsSidecarFormatPriority = stringPreferencesKey("lyrics_sidecar_format_priority")
         val BottomBarStyle = stringPreferencesKey("bottom_bar_style")
         val BlurEnabled = booleanPreferencesKey("blur_enabled")
         val ProgressiveTopBarBlurEnabled =

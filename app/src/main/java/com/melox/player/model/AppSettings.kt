@@ -43,6 +43,18 @@ enum class DefaultHomePage {
     LIBRARY,
 }
 
+/** Selects whether embedded or sidecar lyrics are attempted first. */
+enum class LyricsSourcePriority {
+    EMBEDDED,
+    SIDECAR,
+}
+
+/** Selects which supported sidecar lyric extension is attempted first. */
+enum class LyricsSidecarFormatPriority {
+    LRC,
+    TTML,
+}
+
 val PLAYBACK_SPEED_VALUES = listOf(
     0.25f, 0.50f, 0.75f, 0.90f, 0.95f, 1.00f, 1.05f,
     1.10f, 1.25f, 1.50f, 1.75f, 2.00f, 2.50f, 3.00f,
@@ -71,6 +83,9 @@ data class AppSettings(
     val leftAlignPlayerTitle: Boolean = false,
     val hideControlsOnLyrics: Boolean = false,
     val showLyricsTranslation: Boolean = true,
+    val lyricsSourcePriority: LyricsSourcePriority = LyricsSourcePriority.EMBEDDED,
+    val lyricsSidecarFormatPriority: LyricsSidecarFormatPriority =
+        LyricsSidecarFormatPriority.LRC,
     val blurEnabled: Boolean = true,
     val progressiveTopBarBlurEnabled: Boolean = false,
     val hideBottomBar: Boolean = false,

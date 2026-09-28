@@ -6,9 +6,13 @@ import com.melox.player.data.repository.customFolderScopeMatches
 import com.melox.player.data.repository.exactLyricsSidecarCandidates
 import com.melox.player.data.repository.folderMatchesPrefix
 import com.melox.player.data.repository.isSupportedAudioDocument
+import com.melox.player.data.repository.lyricsSourceOrder
 import com.melox.player.data.repository.stableDocumentTrackId
 import com.melox.player.data.repository.stableMediaStoreTrackId
 import com.melox.player.model.LyricsFormat
+import com.melox.player.model.LyricsSidecarFormatPriority
+import com.melox.player.model.LyricsSource
+import com.melox.player.model.LyricsSourcePriority
 import com.melox.player.ui.viewmodel.shouldEmitScanCompletion
 import com.melox.player.ui.viewmodel.shouldEmitScanNoChanges
 import org.junit.Assert.assertEquals
@@ -170,14 +174,38 @@ class MusicScanLogicTest {
     fun sidecarCandidatesRequireTheExactAudioFileStem() {
         assertEquals(
             listOf(
+                "Song Name.lrc" to LyricsFormat.LRC,
+                "Song Name.ttml" to LyricsFormat.TTML,
+            ),
+            exactLyricsSidecarCandidates("Song Name.flac"),
+        )
+        assertEquals(
+            listOf(
                 "Song Name.ttml" to LyricsFormat.TTML,
                 "Song Name.lrc" to LyricsFormat.LRC,
             ),
-            exactLyricsSidecarCandidates("Song Name.flac"),
+            exactLyricsSidecarCandidates(
+                audioFileName = "Song Name.flac",
+                formatPriority = LyricsSidecarFormatPriority.TTML,
+            ),
         )
         assertFalse(
             exactLyricsSidecarCandidates("Song Name.flac")
                 .any { (name, _) -> name == "Song Name (1).lrc" },
+        )
+        assertTrue(exactLyricsSidecarCandidates("Album/Song Name.flac").isEmpty())
+        assertTrue(exactLyricsSidecarCandidates("Album\\Song Name.flac").isEmpty())
+    }
+
+    @Test
+    fun lyricSourcePriorityKeepsTheOtherSourceAsFallback() {
+        assertEquals(
+            listOf(LyricsSource.EMBEDDED, LyricsSource.SIDECAR),
+            lyricsSourceOrder(LyricsSourcePriority.EMBEDDED),
+        )
+        assertEquals(
+            listOf(LyricsSource.SIDECAR, LyricsSource.EMBEDDED),
+            lyricsSourceOrder(LyricsSourcePriority.SIDECAR),
         )
     }
 }

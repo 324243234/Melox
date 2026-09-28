@@ -114,6 +114,8 @@ import com.melox.player.data.library.FolderSortField
 import com.melox.player.model.BottomBarStyle
 import com.melox.player.model.DefaultHomePage
 import com.melox.player.model.DynamicColorSource
+import com.melox.player.model.LyricsSidecarFormatPriority
+import com.melox.player.model.LyricsSourcePriority
 import com.melox.player.model.PlaybackBackgroundStyle
 import com.melox.player.model.ScanStatus
 import com.melox.player.model.ThemeMode
@@ -2006,6 +2008,8 @@ fun MeloxApp(
                             leftAlignPlayerTitle = settings.leftAlignPlayerTitle,
                             hideControlsOnLyrics = settings.hideControlsOnLyrics,
                             showLyricsTranslation = settings.showLyricsTranslation,
+                            lyricsSourcePriority = settings.lyricsSourcePriority,
+                            lyricsSidecarFormatPriority = settings.lyricsSidecarFormatPriority,
                             onDismiss = closePlayer,
                             onOpenQueue = { showQueue = true },
                             onAddToPlaylist = { track ->
@@ -2221,6 +2225,8 @@ private fun FullPlayerHost(
     leftAlignPlayerTitle: Boolean,
     hideControlsOnLyrics: Boolean,
     showLyricsTranslation: Boolean,
+    lyricsSourcePriority: LyricsSourcePriority,
+    lyricsSidecarFormatPriority: LyricsSidecarFormatPriority,
     onDismiss: () -> Unit,
     onOpenQueue: () -> Unit,
     onAddToPlaylist: (MusicTrack) -> Unit,
@@ -2272,6 +2278,8 @@ private fun FullPlayerHost(
         leftAlignPlayerTitle = leftAlignPlayerTitle,
         hideControlsOnLyrics = hideControlsOnLyrics,
         showLyricsTranslation = showLyricsTranslation,
+        lyricsSourcePriority = lyricsSourcePriority,
+        lyricsSidecarFormatPriority = lyricsSidecarFormatPriority,
         onLyricFontScaleChange = viewModel::setLyricFontScale,
         onLyricFontWeightChange = viewModel::setLyricFontWeight,
         onForceWordByWordLyricsChange = viewModel::setForceWordByWordLyrics,
@@ -2280,6 +2288,8 @@ private fun FullPlayerHost(
         onLeftAlignPlayerTitleChange = viewModel::setLeftAlignPlayerTitle,
         onHideControlsOnLyricsChange = viewModel::setHideControlsOnLyrics,
         onShowLyricsTranslationChange = viewModel::setShowLyricsTranslation,
+        onLyricsSourcePriorityChange = viewModel::setLyricsSourcePriority,
+        onLyricsSidecarFormatPriorityChange = viewModel::setLyricsSidecarFormatPriority,
         onDismiss = onDismiss,
         onTogglePlayPause = viewModel::togglePlayPause,
         onPrevious = viewModel::previous,

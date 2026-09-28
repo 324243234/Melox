@@ -23,7 +23,9 @@ import androidx.media3.inspector.MetadataRetriever
 import com.melox.player.data.lyrics.LyricsParser
 import com.melox.player.model.LyricsDocument
 import com.melox.player.model.LyricsFormat
+import com.melox.player.model.LyricsSidecarFormatPriority
 import com.melox.player.model.LyricsSource
+import com.melox.player.model.LyricsSourcePriority
 import com.melox.player.playback.PlaybackExtractorsFactory
 import com.kyant.taglib.TagLib
 import java.io.ByteArrayOutputStream
@@ -43,6 +45,9 @@ data class LyricsRequest(
     val folderPath: String?,
     val durationMs: Long,
     val refreshRevision: Long = 0L,
+    val sourcePriority: LyricsSourcePriority = LyricsSourcePriority.EMBEDDED,
+    val sidecarFormatPriority: LyricsSidecarFormatPriority =
+        LyricsSidecarFormatPriority.LRC,
 )
 
 /** Reads timestamped lyrics from local audio metadata and sidecars. */
@@ -51,6 +56,17 @@ class LyricsRepository(context: Context) {
     private val contentResolver = applicationContext.contentResolver
 
     suspend fun load(request: LyricsRequest): LyricsDocument? {
+        lyricsSourceOrder(request.sourcePriority).forEach { source ->
+            val document = when (source) {
+                LyricsSource.EMBEDDED -> readEmbedded(request)
+                LyricsSource.SIDECAR -> readSidecar(request)
+            }
+            if (document != null) return document
+        }
+        return null
+    }
+
+    private fun readEmbedded(request: LyricsRequest): LyricsDocument? =
         readEmbeddedCandidates(request.contentUri)
             .firstNotNullOfOrNull { candidate ->
                 LyricsParser.parse(
@@ -59,27 +75,27 @@ class LyricsRepository(context: Context) {
                     durationMs = request.durationMs,
                 )
             }
-            ?.let { return it }
-        readSidecar(request)?.let { (text, format) ->
-            return LyricsParser.parse(
+
+    private fun readSidecar(request: LyricsRequest): LyricsDocument? {
+        val candidates = exactLyricsSidecarCandidates(
+            audioFileName = request.fileName,
+            formatPriority = request.sidecarFormatPriority,
+        )
+        if (candidates.isEmpty()) return null
+        val directCandidates = readDirectSidecars(request.folderPath, candidates)
+        directCandidates.firstNotNullOfOrNull { (text, format) ->
+            LyricsParser.parse(
                 raw = text,
                 source = LyricsSource.SIDECAR,
                 preferredFormat = format,
                 durationMs = request.durationMs,
             )
-        }
-        return null
-    }
-
-    private fun readSidecar(request: LyricsRequest): Pair<String, LyricsFormat>? {
-        val candidates = exactLyricsSidecarCandidates(request.fileName)
-        if (candidates.isEmpty()) return null
-        readDirectSidecar(request.folderPath, candidates)?.let { return it }
+        }?.let { return it }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
         val relativePath = request.folderPath.toRelativeMediaStorePath() ?: return null
-        val collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL)
-        val candidateByName = candidates.associateBy { it.first }
-        return runCatching {
+        val collection = request.contentUri.toMediaStoreFilesCollection() ?: return null
+        val candidateNames = candidates.mapTo(mutableSetOf()) { it.first }
+        val textByName = runCatching {
             contentResolver.query(
                 collection,
                 arrayOf(
@@ -92,38 +108,54 @@ class LyricsRepository(context: Context) {
             )?.use { cursor ->
                 val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
                 val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DISPLAY_NAME)
+                val result = mutableMapOf<String, String>()
                 while (cursor.moveToNext()) {
                     val displayName = cursor.getString(nameColumn).orEmpty()
-                    val candidate = candidateByName[displayName] ?: continue
+                    if (displayName !in candidateNames || displayName in result) continue
                     val uri = ContentUris.withAppendedId(collection, cursor.getLong(idColumn))
-                    readText(uri)?.let { return@use it to candidate.second }
+                    readText(uri)?.let { result[displayName] = it }
                 }
-                null
+                result
             }
-        }.getOrNull()
+        }.getOrNull().orEmpty()
+        return candidates.firstNotNullOfOrNull { (name, format) ->
+            val text = textByName[name] ?: return@firstNotNullOfOrNull null
+            LyricsParser.parse(
+                raw = text,
+                source = LyricsSource.SIDECAR,
+                preferredFormat = format,
+                durationMs = request.durationMs,
+            )
+        }
     }
 
     @Suppress("DEPRECATION")
-    private fun readDirectSidecar(
+    private fun readDirectSidecars(
         folderPath: String?,
         candidates: List<Pair<String, LyricsFormat>>,
-    ): Pair<String, LyricsFormat>? {
-        val path = folderPath ?: return null
+    ): List<Pair<String, LyricsFormat>> {
+        val path = folderPath ?: return emptyList()
         val directory = when {
             path.startsWith("/storage/") ||
                 path.startsWith("/sdcard/") ||
                 path.startsWith("/mnt/") -> File(path)
             else -> File(Environment.getExternalStorageDirectory(), path.trimStart('/'))
         }
-        candidates.forEach { (name, format) ->
-            val file = File(directory, name)
-            runCatching {
+        val canonicalDirectory = runCatching { directory.canonicalFile }.getOrNull()
+            ?: return emptyList()
+        return candidates.mapNotNull { (name, format) ->
+            val file = runCatching { File(canonicalDirectory, name).canonicalFile }.getOrNull()
+                ?.takeIf { it.parentFile == canonicalDirectory }
+                ?: return@mapNotNull null
+            val text = runCatching {
                 if (file.isFile && file.length() in 1..MAX_SIDECAR_BYTES) {
-                    file.inputStream().use(::readBounded)?.let { return it to format }
+                    file.inputStream().use(::readBounded)
+                } else {
+                    null
                 }
-            }
+            }.getOrNull()
+            text?.let { it to format }
         }
-        return null
     }
 
     private fun readText(uri: Uri): String? = runCatching {
@@ -288,6 +320,14 @@ class LyricsRepository(context: Context) {
         return path.trim('/').takeIf(String::isNotEmpty)?.plus("/")
     }
 
+    private fun String.toMediaStoreFilesCollection(): Uri? {
+        val audioUri = runCatching { Uri.parse(this) }.getOrNull() ?: return null
+        if (audioUri.scheme != "content" || audioUri.authority != MediaStore.AUTHORITY) return null
+        val volumeName = audioUri.pathSegments.firstOrNull()?.takeIf(String::isNotBlank)
+            ?: return null
+        return MediaStore.Files.getContentUri(volumeName)
+    }
+
     private fun ByteArray.startsWith(prefix: ByteArray): Boolean =
         size >= prefix.size && prefix.indices.all { this[it] == prefix[it] }
 
@@ -318,12 +358,25 @@ class LyricsRepository(context: Context) {
 
 internal fun exactLyricsSidecarCandidates(
     audioFileName: String?,
+    formatPriority: LyricsSidecarFormatPriority = LyricsSidecarFormatPriority.LRC,
 ): List<Pair<String, LyricsFormat>> {
     val fileName = audioFileName ?: return emptyList()
+    if (fileName.any { it == '/' || it == '\\' }) return emptyList()
     val stem = fileName.substringBeforeLast('.', fileName).takeIf(String::isNotBlank)
         ?: return emptyList()
-    return listOf(
-        "$stem.ttml" to LyricsFormat.TTML,
-        "$stem.lrc" to LyricsFormat.LRC,
-    )
+    return when (formatPriority) {
+        LyricsSidecarFormatPriority.LRC -> listOf(
+            "$stem.lrc" to LyricsFormat.LRC,
+            "$stem.ttml" to LyricsFormat.TTML,
+        )
+        LyricsSidecarFormatPriority.TTML -> listOf(
+            "$stem.ttml" to LyricsFormat.TTML,
+            "$stem.lrc" to LyricsFormat.LRC,
+        )
+    }
+}
+
+internal fun lyricsSourceOrder(priority: LyricsSourcePriority): List<LyricsSource> = when (priority) {
+    LyricsSourcePriority.EMBEDDED -> listOf(LyricsSource.EMBEDDED, LyricsSource.SIDECAR)
+    LyricsSourcePriority.SIDECAR -> listOf(LyricsSource.SIDECAR, LyricsSource.EMBEDDED)
 }
