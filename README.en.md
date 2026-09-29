@@ -8,7 +8,7 @@
 
 ![Android](https://img.shields.io/badge/Android-9%2B-3DDC84?style=flat&logo=android&logoColor=white)
 ![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-blue)
-![Miuix](https://img.shields.io/badge/Miuix-0.9.3-4F6BED?style=flat)
+![Miuix](https://img.shields.io/badge/Miuix-0.9.4-4F6BED?style=flat)
 ![Media3](https://img.shields.io/badge/Media3-1.11.0-4F6BED?style=flat)
 
 </div>
@@ -19,40 +19,47 @@
 
 Melox is an Android local music player built with Jetpack Compose, Miuix, and AndroidX Media3.
 
-## Features
+## Screenshots
 
-### Library and Home
+### Main screens
+<table>
+  <tr>
+    <td><img src="./screenshot/1.png" width="200" alt="01"></td>
+    <td><img src="./screenshot/2.png" width="200" alt="02"></td>
+    <td><img src="./screenshot/3.png" width="200" alt="03"></td>
+    <td><img src="./screenshot/4.png" width="200" alt="04"></td>
+  </tr>
+  <tr>
+    <td><img src="./screenshot/5.png" width="200" alt="05"></td>
+    <td><img src="./screenshot/6.png" width="200" alt="06"></td>
+    <td><img src="./screenshot/7.png" width="200" alt="07"></td>
+    <td><img src="./screenshot/8.png" width="200" alt="08"></td>
+  </tr>
+  <tr>
+    <td><img src="./screenshot/9.png" width="200" alt="09"></td>
+    <td><img src="./screenshot/10.png" width="200" alt="10"></td>
+    <td><img src="./screenshot/11.png" width="200" alt="11"></td>
+    <td><img src="./screenshot/12.png" width="200" alt="12"></td>
+  </tr>
+</table>
 
-- Scan the system media library or restrict the scan scope to selected folders
-- Search, sort, and browse songs, albums, artists, and folders with alphabetical indexes
-- Open dedicated album and artist details, then start playback from the current page queue
-- View random recommendations and recently added tracks on Home
-- View music library statistics
-- Choose a scan refresh policy
-- Configure folder scan scopes and block folders
+### Player and lyrics
 
-### Playback, queue, and restoration
+<table>
+  <tr>
+    <td><img src="./screenshot/13.png" width="200" alt="01"></td>
+    <td><img src="./screenshot/14.png" width="200" alt="02"></td>
+    <td><img src="./screenshot/15.png" width="200" alt="03"></td>
+    <td><img src="./screenshot/16.png" width="200" alt="04"></td>
+  </tr>
+</table>
 
-- Seek through tracks, use Previous and Next, and switch between ordered, repeat-one, and random playback
-- Open or clear the queue, remove individual songs, play a song next, or add songs to the current queue
-- Restore the queue, current track, and playback position after reopening or process restart without starting playback automatically
-- Open an external audio file through Android and play it directly in Melox
-
-### Local lyrics and track information
-
-- Support character- and word-timed lyrics, translation lines, text size, and font weight adjustments
-- Choose lyric alignment, blur inactive lines, and whether playback controls remain visible on the Lyrics page
-- Show title, artist, album, format, bitrate, sample rate, bit depth, duration, and file location
-- With Music Tag Editor or Lyrico installed, jump to editing from track actions
-
-### Player and appearance
-
-- Follow the system theme, or use light and dark themes
-- Use dynamic colors based on the current artwork or system wallpaper
-- Enable blurred artwork, Dynamic Flow, a floating bottom bar, and liquid glass effects
-- Use Miuix or AOSP page transitions, progressive top-bar blur, and the hide-bottom-bar option
-- Left-align the player title; overflowing titles scroll once
-- Choose the default startup page
+<table>
+  <tr>
+    <td><img src="./screenshot/17.jpg" width="400" alt="05"></td>
+    <td><img src="./screenshot/18.jpg" width="400" alt="06"></td>
+  </tr>
+</table>
 
 ## Requirements
 
@@ -61,7 +68,7 @@ Melox is an Android local music player built with Jetpack Compose, Miuix, and An
 
 ## Supported formats and permissions
 
-- Supports local AAC, AIFF, ALAC, APE, FLAC, M4A, MP3, MP4, OGA, OGG, OPUS, WAV/WAVE, and WMA audio files; playback also depends on the Android and Media3 decoders
+- Supports common local audio formats such as AAC, ALAC, FLAC, M4A, MP3, MP4, and WAV
 - The first scan requires music access: “Music and audio” on Android 13 or later, or storage read access on Android 12 and earlier
 - When a custom folder is selected, grant access to that folder and its subdirectories through the system folder picker
 - Current APKs are provided for `arm64-v8a` only

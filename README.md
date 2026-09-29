@@ -9,8 +9,10 @@
 
 ![Android](https://img.shields.io/badge/Android-9%2B-3DDC84?style=flat&logo=android&logoColor=white)
 ![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-blue)
-![Miuix](https://img.shields.io/badge/Miuix-0.9.3-4F6BED?style=flat)
+![Miuix](https://img.shields.io/badge/Miuix-0.9.4-4F6BED?style=flat)
 ![Media3](https://img.shields.io/badge/Media3-1.11.0-4F6BED?style=flat)
+
+<p><a href="./README.en.md">English README</a></p>
 
 </div>
 
@@ -20,40 +22,49 @@
 
 Melox 是一款基于 Jetpack Compose、Miuix 和 AndroidX Media3 构建的 Android 本地音乐播放器。
 
-## 功能特性
+## 软件界面预览
 
-### 音乐库与首页
+### 主要页面
+<table>
+  <tr>
+    <td><img src="./screenshot/1.png" width="200" alt="01"></td>
+    <td><img src="./screenshot/2.png" width="200" alt="02"></td>
+    <td><img src="./screenshot/3.png" width="200" alt="03"></td>
+    <td><img src="./screenshot/4.png" width="200" alt="04"></td>
+  </tr>
+  <tr>
+    <td><img src="./screenshot/5.png" width="200" alt="05"></td>
+    <td><img src="./screenshot/6.png" width="200" alt="06"></td>
+    <td><img src="./screenshot/7.png" width="200" alt="07"></td>
+    <td><img src="./screenshot/8.png" width="200" alt="08"></td>
+  </tr>
+  <tr>
+    <td><img src="./screenshot/9.png" width="200" alt="09"></td>
+    <td><img src="./screenshot/10.png" width="200" alt="10"></td>
+    <td><img src="./screenshot/11.png" width="200" alt="11"></td>
+    <td><img src="./screenshot/12.png" width="200" alt="12"></td>
+  </tr>
+</table>
 
-- 支持扫描系统媒体库，也支持把扫描范围限制到指定文件夹
-- 歌曲、专辑、艺术家和文件夹页面都支持搜索、排序与字母索引
-- 专辑和艺术家有独立详情页，点击列表项即可从当前页面队列开始播放
-- 首页提供随机推荐和最近添加
-- 支持音乐库统计
-- 可选扫描刷新策略
-- 支持文件夹范围设置，支持屏蔽文件夹
+### 播放页与歌词
 
-### 播放、队列与恢复
+<table>
+  <tr>
+    <td><img src="./screenshot/13.png" width="200" alt="01"></td>
+    <td><img src="./screenshot/14.png" width="200" alt="02"></td>
+    <td><img src="./screenshot/15.png" width="200" alt="03"></td>
+    <td><img src="./screenshot/16.png" width="200" alt="04"></td>
+  </tr>
+</table>
 
-- 支持拖动进度、上一首、下一首，以及顺序播放、单曲循环和随机队列
-- 队列可以打开、清空、移除单首歌曲，也可以把歌曲加入下一首播放或当前队列
-- 应用会保存队列、当前曲目和播放进度；重新打开或进程重启后恢复，但不会擅自自动播放
-- 外部音频文件通过系统入口打开后，可以直接交给 Melox 播放
+<table>
+  <tr>
+    <td><img src="./screenshot/17.jpg" width="400" alt="05"></td>
+    <td><img src="./screenshot/18.jpg" width="400" alt="06"></td>
+  </tr>
+</table>
 
-### 本地歌词与曲目信息
 
-- 支持逐字/逐词时间轴、翻译行、字号和字重调整
-- 可以选择歌词对齐方式、非当前行模糊，以及是否在歌词页隐藏播放控制
-- 歌曲信息页展示标题、艺术家、专辑、格式、码率、采样率、位深、时长和文件位置
-- 安装“音乐标签”或 Lyrico 后，可从歌曲操作跳转编辑
-
-### 播放页与界面设置
-
-- 跟随系统、浅色和深色主题
-- 基于当前封面或系统壁纸的动态配色
-- 模糊封面、动态流光、悬浮底栏和液态玻璃效果
-- 支持 Miuix 与 AOSP 页面过渡动画、顶栏渐进模糊和隐藏底栏
-- 播放页标题支持左对齐，过长标题自动滚动显示一次
-- 可选默认首页
 
 ## 运行要求
 
@@ -62,10 +73,10 @@ Melox 是一款基于 Jetpack Compose、Miuix 和 AndroidX Media3 构建的 Andr
 
 ## 支持格式与权限
 
-- 支持 AAC、AIFF、ALAC、APE、FLAC、M4A、MP3、MP4、OGA、OGG、OPUS、WAV/WAVE 和 WMA 等本地音频格式；实际可播放范围取决于系统与 Media3 解码器
+- 支持 AAC、ALAC、FLAC、M4A、MP3、MP4、WAV等常见本地音频格式；
 - 首次扫描需授予音乐读取权限：Android 13 及以上为“音乐和音频”，Android 12 及以下为存储读取权限
 - 使用自定义文件夹时，需通过系统文件夹选择器授予目标文件夹及其子目录的访问权限
-- 当前 APK 仅提供 `arm64-v8a` 架构
+- 当前 APK 仅提供 `arm64-v8a`
 
 ## 下载与安装
 
