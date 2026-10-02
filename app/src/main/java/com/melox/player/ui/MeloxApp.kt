@@ -142,13 +142,12 @@ import com.melox.player.ui.component.library.toggleAllTrackSelection
 import com.melox.player.ui.component.playlist.PlaylistNameDialog
 import com.melox.player.ui.component.playlist.PlaylistPickerOverlay
 import com.melox.player.ui.component.playback.playerNavigationOffset
-import com.melox.player.ui.component.playback.playerSheetInputLayer
-import com.melox.player.ui.component.playback.playerSheetInputTransform
 import com.melox.player.ui.component.playback.MiniPlayer
 import com.melox.player.ui.component.playback.DynamicFlowBackgroundState
 import com.melox.player.ui.component.playback.PLAYER_FULL_ARTWORK_REQUEST_SIZE
 import com.melox.player.ui.component.playback.PlayerSheetArtworkOverlay
 import com.melox.player.ui.component.playback.PlayerSheetContentOverlay
+import com.melox.player.ui.component.playback.PlayerSheetDragInputOverlay
 import com.melox.player.ui.component.playback.PlayerSheetMiniControlsInputOverlay
 import com.melox.player.ui.component.playback.sharedArtworkTargetIsOnscreen
 import com.melox.player.ui.component.playback.playerSheetUsesFullPlayerStatusBar
@@ -1977,22 +1976,13 @@ fun MeloxApp(
                         closePlayer()
                     }
                     if (playerTransition.fullPlayerHostMounted) {
-                        val fullPlayerInputTransform = if (
+                        val fullPlayerRecordingActive =
                             playerTransition.sharedLayersReady &&
                             playerTransition.isTransitionActive
-                        ) {
-                            playerSheetInputTransform(
-                                source = playerTransition.miniPlayerBounds,
-                                target = playerTransition.fullPlayerBounds,
-                                progress = playerTransition.progress,
-                            )
-                        } else {
-                            null
-                        }
                         val fullPlayerHostTranslationY = playerSheetResidentHostTranslationY(
                             miniPlayerAcceptsInput = playerTransition.miniPlayerAcceptsInput,
                             windowHeight = windowSize.height,
-                        ).takeIf { fullPlayerInputTransform == null } ?: 0f
+                        ).takeUnless { fullPlayerRecordingActive } ?: 0f
                         FullPlayerHost(
                             viewModel = viewModel,
                             tracks = uiState.tracks,
@@ -2032,11 +2022,7 @@ fun MeloxApp(
                             initialArtworkPageSelected =
                                 playerTransition.fullPlayerArtworkPageSelected,
                             onPlayerDragStart = playerTransition::beginFullPlayerDrag,
-                            onPlayerDrag = { amount ->
-                                playerTransition.dragBy(
-                                    amount * (fullPlayerInputTransform?.scale ?: 1f),
-                                )
-                            },
+                            onPlayerDrag = playerTransition::dragBy,
                             onPlayerDragEnd = playerTransition::endDrag,
                             onPlayerDragCancel = playerTransition::cancelDrag,
                             onBackgroundLayerRecorded = { generation, size ->
@@ -2054,30 +2040,26 @@ fun MeloxApp(
                                 )
                             },
                             onPlayerBoundsChanged = { bounds ->
-                                if (fullPlayerInputTransform == null) {
-                                    playerTransition.updateFullPlayerBounds(
-                                        androidx.compose.ui.geometry.Rect(
-                                            left = bounds.left,
-                                            top = bounds.top - fullPlayerHostTranslationY,
-                                            right = bounds.right,
-                                            bottom = bounds.bottom - fullPlayerHostTranslationY,
-                                        ),
-                                        windowSize,
-                                    )
-                                }
+                                playerTransition.updateFullPlayerBounds(
+                                    androidx.compose.ui.geometry.Rect(
+                                        left = bounds.left,
+                                        top = bounds.top - fullPlayerHostTranslationY,
+                                        right = bounds.right,
+                                        bottom = bounds.bottom - fullPlayerHostTranslationY,
+                                    ),
+                                    windowSize,
+                                )
                             },
                             onArtworkBoundsChanged = { bounds ->
-                                if (fullPlayerInputTransform == null) {
-                                    playerTransition.updateFullArtworkBounds(
-                                        androidx.compose.ui.geometry.Rect(
-                                            left = bounds.left,
-                                            top = bounds.top - fullPlayerHostTranslationY,
-                                            right = bounds.right,
-                                            bottom = bounds.bottom - fullPlayerHostTranslationY,
-                                        ),
-                                        windowSize,
-                                    )
-                                }
+                                playerTransition.updateFullArtworkBounds(
+                                    androidx.compose.ui.geometry.Rect(
+                                        left = bounds.left,
+                                        top = bounds.top - fullPlayerHostTranslationY,
+                                        right = bounds.right,
+                                        bottom = bounds.bottom - fullPlayerHostTranslationY,
+                                    ),
+                                    windowSize,
+                                )
                             },
                             onArtworkPageSelectedChanged =
                                 playerTransition::updateFullPlayerArtworkPageSelected,
@@ -2086,32 +2068,26 @@ fun MeloxApp(
                             },
                             modifier = Modifier
                                 .zIndex(
-                                    if (playerTransition.fullPlayerDrawsAboveRoot) 1f else -1f,
+                                    if (playerTransition.fullPlayerDrawsInPlace) 1f else -1f,
                                 )
-                                .then(
-                                    if (fullPlayerInputTransform != null) {
-                                        Modifier.playerSheetInputLayer(
-                                            transform = fullPlayerInputTransform,
-                                            miniPlayerBounds = playerTransition.miniPlayerBounds
-                                                .takeIf {
-                                                    playerTransition.miniPlayerAcceptsInput
-                                                },
-                                        )
-                                    } else {
-                                        Modifier.graphicsLayer {
-                                            translationY = fullPlayerHostTranslationY
-                                        }
-                                    },
-                                ),
+                                .graphicsLayer {
+                                    // Hidden recording sources must not inherit the animated input clip.
+                                    translationY = fullPlayerHostTranslationY
+                                },
                         )
                     }
+                    PlayerSheetDragInputOverlay(
+                        transition = playerTransition,
+                        hasItem = compactPlayback.currentItem != null,
+                        modifier = Modifier.zIndex(2f),
+                    )
                     PlayerSheetMiniControlsInputOverlay(
                         transition = playerTransition,
                         hasItem = compactPlayback.currentItem != null,
                         normalChrome = miniPlayerUsesNormalChrome,
                         onTogglePlayPause = viewModel::togglePlayPause,
                         onOpenQueue = { showQueue = true },
-                        modifier = Modifier.zIndex(2f),
+                        modifier = Modifier.zIndex(3f),
                     )
                     PlayerSheetContentOverlay(
                         transition = playerTransition,

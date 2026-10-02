@@ -14,12 +14,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
@@ -66,6 +64,8 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.hideFromAccessibility
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -264,6 +264,11 @@ internal fun ArtworkPreviewOverlay(
         }
     }
     val pinchChromeAlpha = artworkPreviewChromeAlpha(zoom)
+    val toolbarAlpha by animateFloatAsState(
+        targetValue = if (toolbarVisible) 1f else 0f,
+        animationSpec = tween(ARTWORK_PREVIEW_CHROME_TRANSITION_DURATION_MILLIS),
+        label = "artworkPreviewToolbar",
+    )
     val previewBackgroundColor by animateColorAsState(
         targetValue = artworkPreviewBackgroundColor(usesLightChrome, toolbarVisible),
         animationSpec = tween(ARTWORK_PREVIEW_CHROME_TRANSITION_DURATION_MILLIS),
@@ -274,11 +279,8 @@ internal fun ArtworkPreviewOverlay(
         systemBarsController?.isAppearanceLightStatusBars = lightSystemBars
         systemBarsController?.isAppearanceLightNavigationBars = lightSystemBars
     }
-    val previewContentColor by animateColorAsState(
-        targetValue = if (usesLightChrome && toolbarVisible) Color.Black else Color.White,
-        animationSpec = tween(ARTWORK_PREVIEW_CHROME_TRANSITION_DURATION_MILLIS),
-        label = "artworkPreviewContent",
-    )
+    val previewContentColor = if (usesLightChrome) Color.Black else Color.White
+    val toolbarSurfaceColor = if (usesLightChrome) Color.White else Color.Black
     val asset by produceState<ArtworkPreviewFile?>(null, request.track) {
         value = readArtworkPreviewFile(context.applicationContext, request.track)
         if (value == null) {
@@ -469,12 +471,6 @@ internal fun ArtworkPreviewOverlay(
                 }
             }
             }
-            AnimatedVisibility(
-                visible = toolbarVisible,
-                enter = fadeIn(tween(180)),
-                exit = fadeOut(tween(180)),
-            ) {
-            Box(Modifier.graphicsLayer { alpha = progress.value * pinchChromeAlpha }) {
             val topAppBarState = rememberTopAppBarState(
                 initialHeightOffsetLimit = -Float.MAX_VALUE,
                 initialHeightOffset = -Float.MAX_VALUE,
@@ -483,10 +479,18 @@ internal fun ArtworkPreviewOverlay(
                 state = topAppBarState,
                 canScroll = { false },
             )
+            val toolbarInteractive = toolbarVisible && pinchChromeAlpha > 0f && !closing
+            Box(
+                Modifier
+                    .graphicsLayer { alpha = progress.value * pinchChromeAlpha * toolbarAlpha }
+                    .semantics {
+                        if (!toolbarInteractive) hideFromAccessibility()
+                    },
+            ) {
             BlurredBar(
                 backdrop = topBarBackdrop,
                 blurEnabled = topBarBackdrop != null,
-                surfaceColor = previewBackgroundColor,
+                surfaceColor = toolbarSurfaceColor,
             ) {
             TopAppBar(
                 title = asset?.let { stringResource(R.string.artwork_dimensions, it.width, it.height) }
@@ -496,17 +500,18 @@ internal fun ArtworkPreviewOverlay(
                         topAppBarState.heightOffset = topAppBarState.heightOffsetLimit
                     }
                 },
-                color = if (topBarBackdrop == null) previewBackgroundColor else Color.Transparent,
+                color = if (topBarBackdrop == null) toolbarSurfaceColor else Color.Transparent,
                 titleColor = previewContentColor,
                 largeTitleColor = previewContentColor,
                 scrollBehavior = topAppBarScrollBehavior,
                 navigationIcon = {
-                    IconButton(onClick = { if (!busy) closing = true }) {
+                    IconButton(enabled = toolbarInteractive && !busy,
+                        onClick = { closing = true }) {
                         Icon(MiuixIcons.Back, stringResource(R.string.back), tint = previewContentColor)
                     }
                 },
                 actions = {
-                    IconButton(enabled = asset != null && !busy && !closing, onClick = {
+                    IconButton(enabled = toolbarInteractive && asset != null && !busy, onClick = {
                         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
                             ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
                             PackageManager.PERMISSION_GRANTED) {
@@ -518,7 +523,7 @@ internal fun ArtworkPreviewOverlay(
                         Icon(MiuixIcons.Download, stringResource(R.string.artwork_download),
                             modifier = Modifier.size(24.dp), tint = previewContentColor)
                     }
-                    IconButton(enabled = asset != null && !busy && !closing, onClick = {
+                    IconButton(enabled = toolbarInteractive && asset != null && !busy, onClick = {
                         asset?.let { original ->
                             runCatching {
                                 val uri = FileProvider.getUriForFile(context,
@@ -541,7 +546,6 @@ internal fun ArtworkPreviewOverlay(
                     }
                 },
             )
-            }
             }
             }
         }

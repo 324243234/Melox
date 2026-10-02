@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
@@ -45,11 +46,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -85,48 +86,23 @@ internal fun sharedContainerRect(
     )
 }
 
-internal data class PlayerSheetInputTransform(
-    val hostBounds: Rect,
-    val visibleBounds: Rect,
-) {
-    val scale: Float = visibleBounds.width / hostBounds.width
-    val translationX: Float = visibleBounds.left - hostBounds.left
-    val translationY: Float = visibleBounds.top - hostBounds.top
-
-    fun localRect(bounds: Rect): Rect = Rect(
-        left = (bounds.left - hostBounds.left - translationX) / scale,
-        top = (bounds.top - hostBounds.top - translationY) / scale,
-        right = (bounds.right - hostBounds.left - translationX) / scale,
-        bottom = (bounds.bottom - hostBounds.top - translationY) / scale,
-    )
-}
-
-internal fun playerSheetInputTransform(
-    source: Rect,
-    target: Rect,
-    progress: Float,
-): PlayerSheetInputTransform? {
-    if (!source.isUsable() || !target.isUsable()) return null
-    return PlayerSheetInputTransform(
-        hostBounds = target,
-        visibleBounds = sharedContainerRect(source, target, progress),
-    )
-}
-
-internal fun Modifier.playerSheetInputLayer(
-    transform: PlayerSheetInputTransform,
+internal fun Modifier.playerSheetHostLayer(
+    hostBounds: Rect,
+    inputBounds: Rect?,
     miniPlayerBounds: Rect?,
+    residentTranslationY: Float = 0f,
 ): Modifier = graphicsLayer {
-    transformOrigin = TransformOrigin(0f, 0f)
-    scaleX = transform.scale
-    scaleY = transform.scale
-    translationX = transform.translationX
-    translationY = transform.translationY
+    // Keep recording coordinates stable; only the separate input surface moves.
+    translationY = residentTranslationY
     clip = true
-    shape = PlayerSheetInputShape(
-        bounds = transform.localRect(transform.visibleBounds),
-        excludedBounds = miniPlayerBounds?.let(transform::localRect),
-    )
+    shape = if (inputBounds != null) {
+        PlayerSheetInputShape(
+            bounds = inputBounds.translate(-hostBounds.topLeft),
+            excludedBounds = miniPlayerBounds?.translate(-hostBounds.topLeft),
+        )
+    } else {
+        RectangleShape
+    }
 }
 
 private class PlayerSheetInputShape(
