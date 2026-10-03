@@ -123,7 +123,26 @@ private val LyricLayerPaint = Paint()
 
 @Composable
 internal fun rememberLyricFontFamily(weight: Int): FontFamily = remember(weight) {
-    FontFamily(Typeface.create(Typeface.DEFAULT, weight.coerceIn(1, 1000), false))
+    val mediumFontPath = "/storage/emulated/0/Documents/字体/SimplifiedChinese/SourceHanSansSC-Medium.otf"
+    val boldFontPath = "/storage/emulated/0/Documents/字体/SimplifiedChinese/SourceHanSansSC-Bold.otf"
+
+    val customTypeface = try {
+        // 设置 600 为分界线，>= 600 使用粗体，否则使用 Medium
+        val targetPath = if (weight >= 600) boldFontPath else mediumFontPath
+        val file = java.io.File(targetPath)
+        
+        // 增加安全校验：确保文件存在且可读，防止因未授权导致应用崩溃
+        if (file.exists() && file.canRead()) {
+            android.graphics.Typeface.createFromFile(file)
+        } else {
+            android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, weight.coerceIn(1, 1000), false)
+        }
+    } catch (e: Exception) {
+        // 发生异常时回退到系统默认字体
+        android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, weight.coerceIn(1, 1000), false)
+    }
+
+    androidx.compose.ui.text.font.FontFamily(customTypeface)
 }
 
 internal fun lyricEdgeFadeHeights(showBottomFade: Boolean): Pair<Float, Float> =

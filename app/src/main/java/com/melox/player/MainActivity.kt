@@ -16,12 +16,31 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+		// 新增：检查并请求所有文件访问权限
+        checkAndRequestAllFilesPermission(this)
         val appViewModel = viewModel
         setContent {
             MeloxApp(viewModel = appViewModel)
         }
         if (savedInstanceState == null) {
             playAudioFrom(intent)
+        }
+    }
+	
+	// 新增：权限引导函数
+    private fun checkAndRequestAllFilesPermission(context: android.content.Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                    }
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    context.startActivity(intent)
+                }
+            }
         }
     }
 
