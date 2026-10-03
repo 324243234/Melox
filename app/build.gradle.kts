@@ -10,6 +10,7 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
+// 唯一合法的 plugins 块（位于顶部）
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
@@ -46,16 +47,12 @@ val releaseSigningConfigured = localPropertiesFile.isFile &&
 val appVersionName = "1.2.0-" + ZonedDateTime.now(ZoneId.of("Asia/Shanghai"))
     .format(DateTimeFormatter.ofPattern("yyMMddHHmm"))
 
-// 【已移除】原本会抛出 GradleException 的强制拦截校验代码
-
 android {
     namespace = "com.melox.player"
     compileSdk = 37
 
     defaultConfig {
         applicationId = "com.melox.player"
-        //applicationId = "com.kugou.android.lite"
-        
         minSdk = 28
         targetSdk = 36
         versionCode = 3
@@ -86,182 +83,7 @@ android {
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
             )
-            // 核心：若有本地证书则用 release 签名，若无（如在 GitHub Actions 中）则自动降级使用 debug 签名
-            signingConfig = if (releaseSigningConfigured) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
-        }
-    }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
-    }
-    buildFeatures {
-        compose = true
-        buildConfig = true
-    }
-    androidResources {
-        localeFilters += setOf("en", "zh-rCN")
-    }
-}
-
-@DisableCachingByDefault(because = "The renamed APK is copied after the packaged release APK.")
-abstract class RenameReleaseApkTask : DefaultTask() {
-    @get:Internal
-    abstract val apkDirectory: DirectoryProperty
-
-    @get:Input
-    abstract val versionName: Property<String>
-
-    @TaskAction
-    fun copyVersionedApk() {
-        val outputDirectory = apkDirectory.get().asFile
-        val targetFile = outputDirectory.resolve("Melox_${versionName.get()}.apk")
-        val sourceFile = outputDirectory
-            .listFiles { candidate ->
-                candidate.isFile &&
-                    candidate.extension == "apk" &&
-                    !candidate.name.startsWith("Melox_")
-            }
-            ?.maxByOrNull { candidate -> candidate.lastModified() }
-
-        check(sourceFile?.isFile == true) {
-            "Release APK was not generated in ${outputDirectory.absolutePath}"
-        }
-
-        sourceFile.copyTo(targetFile, overwrite = true)
-        targetFile.setLastModified(System.currentTimeMillis())
-        logger.lifecycle("Versioned release APK: ${targetFile.absolutePath}")
-    }
-}
-
-val renameReleaseApk = tasks.register<RenameReleaseApkTask>("renameReleaseApk") {
-    group = "build"
-    description = "Copies the release APK to a versioned filename."
-    dependsOn("packageRelease")
-    apkDirectory.set(layout.buildDirectory.dir("outputs/apk/release"))
-    versionName.set(appVersionName)
-}
-
-tasks.matching { task -> task.name == "assembleRelease" }.configureEach {
-    dependsOn(renameReleaseApk)
-}
-
-dependencies {
-    implementation(files("libs/renderscript-intrinsics-replacement-toolkit-344be3f-16k.aar"))
-    implementation(files("libs/media3-decoder-ffmpeg-1.11.0-ffmpeg9.0-arm64-v8a.aar"))
-    implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.appcompat)
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.datastore.preferences)
-    implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(libs.androidx.media3.exoplayer)
-    implementation(libs.androidx.media3.inspector)
-    implementation(libs.androidx.media3.session)
-    implementation(libs.material.color.utilities)
-    implementation(libs.miuix.blur)
-    implementation(libs.miuix.icons)
-    implementation(libs.miuix.nav)
-    implementation(libs.miuix.preference)
-    implementation(libs.miuix.ui)
-    implementation(libs.reorderable)
-    implementation(libs.taglib)
-    implementation(libs.tinypinyin)
-    testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(libs.androidx.junit)
-}import java.util.Properties
-import org.gradle.api.DefaultTask
-import org.gradle.api.file.DirectoryProperty
-import org.gradle.api.provider.Property
-import org.gradle.api.tasks.Input
-import org.gradle.api.tasks.Internal
-import org.gradle.api.tasks.TaskAction
-import org.gradle.work.DisableCachingByDefault
-import java.time.ZoneId
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
-
-plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.compose.compiler)
-    alias(libs.plugins.kotlin.serialization)
-}
-
-val localPropertiesFile = rootProject.file("local.properties")
-val localProperties = Properties().apply {
-    if (localPropertiesFile.isFile) {
-        localPropertiesFile.inputStream().use { input ->
-            load(input)
-        }
-    }
-}
-
-val releaseKeystorePath = localProperties.getProperty("melox.keystore.path")
-val releaseStorePassword = localProperties.getProperty("melox.store.password")
-val releaseKeyPassword = localProperties.getProperty("melox.key.password")
-val releaseKeyAlias = localProperties.getProperty("melox.key.alias")
-val releaseKeystoreFile = releaseKeystorePath
-    ?.takeIf { it.isNotBlank() }
-    ?.let { rootProject.file(it) }
-
-val releaseSigningValues = listOf(
-    "melox.keystore.path" to releaseKeystorePath,
-    "melox.store.password" to releaseStorePassword,
-    "melox.key.password" to releaseKeyPassword,
-    "melox.key.alias" to releaseKeyAlias,
-)
-val releaseSigningConfigured = localPropertiesFile.isFile &&
-    releaseKeystoreFile?.isFile == true &&
-    releaseSigningValues.all { (_, value) -> !value.isNullOrBlank() }
-
-val appVersionName = "1.2.0-" + ZonedDateTime.now(ZoneId.of("Asia/Shanghai"))
-    .format(DateTimeFormatter.ofPattern("yyMMddHHmm"))
-
-// 【已移除】原本会抛出 GradleException 的强制拦截校验代码
-
-android {
-    namespace = "com.melox.player"
-    compileSdk = 37
-
-    defaultConfig {
-        applicationId = "com.melox.player"
-        //applicationId = "com.kugou.android.lite"
-        
-        minSdk = 28
-        targetSdk = 36
-        versionCode = 3
-        versionName = appVersionName
-
-        ndk {
-            abiFilters += setOf("arm64-v8a")
-        }
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    signingConfigs {
-        if (releaseSigningConfigured) {
-            create("release") {
-                storeFile = requireNotNull(releaseKeystoreFile)
-                storePassword = releaseStorePassword
-                keyPassword = releaseKeyPassword
-                keyAlias = releaseKeyAlias
-            }
-        }
-    }
-
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-            isShrinkResources = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-            )
-            // 核心：若有本地证书则用 release 签名，若无（如在 GitHub Actions 中）则自动降级使用 debug 签名
+            // 自动降级：有正式签名用正式，云端无证书则自动降级使用 debug 签名
             signingConfig = if (releaseSigningConfigured) {
                 signingConfigs.getByName("release")
             } else {
