@@ -1,5 +1,9 @@
 package com.melox.player
 
+
+import android.os.Build               // <--- 补充导入
+import android.os.Environment         // <--- 补充导入
+import android.provider.Settings      // <--- 补充导入
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
