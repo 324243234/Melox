@@ -122,24 +122,20 @@ internal const val LYRIC_TRANSLATION_LINE_HEIGHT_SP = 22f
 private val LyricLayerPaint = Paint()
 
 @Composable
-internal fun rememberLyricFontFamily(weight: Int): FontFamily = remember(weight) {
+internal fun rememberLyricFontFamily(isBold: Boolean): FontFamily = remember(isBold) {
     val mediumFontPath = "/storage/emulated/0/Documents/字体/SimplifiedChinese/SourceHanSansSC-Medium.otf"
     val boldFontPath = "/storage/emulated/0/Documents/字体/SimplifiedChinese/SourceHanSansSC-Bold.otf"
 
+    val targetPath = if (isBold) boldFontPath else mediumFontPath
     val customTypeface = try {
-        // 设置 600 为分界线，>= 600 使用粗体，否则使用 Medium
-        val targetPath = if (weight >= 600) boldFontPath else mediumFontPath
         val file = java.io.File(targetPath)
-        
-        // 增加安全校验：确保文件存在且可读，防止因未授权导致应用崩溃
         if (file.exists() && file.canRead()) {
             android.graphics.Typeface.createFromFile(file)
         } else {
-            android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, weight.coerceIn(1, 1000), false)
+            android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, if (isBold) 700 else 400, false)
         }
     } catch (e: Exception) {
-        // 发生异常时回退到系统默认字体
-        android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, weight.coerceIn(1, 1000), false)
+        android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, if (isBold) 700 else 400, false)
     }
 
     androidx.compose.ui.text.font.FontFamily(customTypeface)
@@ -545,40 +541,40 @@ internal fun LyricsView(
     )
     val visualFocusRenderIndex = focusLineIndex
     
-    val lyricFontFamily = rememberLyricFontFamily(lyricFontWeight)
-    // 【新增】强制传入 700 加载粗体文件作为当前行样式
-    val boldLyricFontFamily = rememberLyricFontFamily(700)
+    // 【核心修复】分离加载 Medium 和 Bold 字体文件
+    val mediumLyricFontFamily = rememberLyricFontFamily(isBold = false)
+    val boldLyricFontFamily = rememberLyricFontFamily(isBold = true)
     
+    // 普通未播放行：使用 Medium 文件，【关闭】 FontWeight 的伪加粗
     val normalTextStyle = MiuixTheme.textStyles.title3.copy(
         fontSize = (LYRIC_PRIMARY_FONT_SIZE_SP * lyricFontScale).sp,
         lineHeight = (LYRIC_PRIMARY_LINE_HEIGHT_SP * lyricFontScale).sp,
-        fontFamily = lyricFontFamily,
-        fontWeight = FontWeight(lyricFontWeight.coerceIn(1, 1000)),
+        fontFamily = mediumLyricFontFamily,
+        fontWeight = FontWeight.Normal, // 强制 Normal，保持原汁原味
         fontSynthesis = FontSynthesis.None,
         textDirection = TextDirection.Content,
         textMotion = TextMotion.Animated,
     )
     
-    // 【新增】当前播放行的主歌词样式
+    // 当前播放行：使用 Bold 文件，【同样关闭】伪加粗
     val activeTextStyle = normalTextStyle.copy(
         fontFamily = boldLyricFontFamily,
-        fontWeight = FontWeight.Bold
+        fontWeight = FontWeight.Normal // 强制 Normal，避免二次加粗导致发糊、过度膨胀
     )
 
     val translationTextStyle = MiuixTheme.textStyles.body1.copy(
         fontSize = (LYRIC_TRANSLATION_FONT_SIZE_SP * lyricFontScale).sp,
         lineHeight = (LYRIC_TRANSLATION_LINE_HEIGHT_SP * lyricFontScale).sp,
-        fontFamily = lyricFontFamily,
-        fontWeight = FontWeight(lyricFontWeight.coerceIn(1, 1000)),
+        fontFamily = mediumLyricFontFamily,
+        fontWeight = FontWeight.Normal,
         fontSynthesis = FontSynthesis.None,
         textDirection = TextDirection.Content,
         textMotion = TextMotion.Animated,
     )
     
-    // 【新增】当前播放行的翻译歌词样式
     val activeTranslationTextStyle = translationTextStyle.copy(
         fontFamily = boldLyricFontFamily,
-        fontWeight = FontWeight.Bold
+        fontWeight = FontWeight.Normal
     )
 
     val lyricBrowsingModifier = Modifier.pointerInput(document) {
@@ -958,9 +954,7 @@ internal fun LyricsView(
                         val preservesOutgoingSeekProgress = index == outgoingSeekLineIndex
                         val usesWordProgress = line.words.isNotEmpty() || forceWordByWordLyrics
                         
-                        // 【新增】判断该行是否处于活动（正在播放）状态
                         val usePlaybackProgress = isCurrentLine || preservesOutgoingSeekProgress
-                        // 【新增】根据状态，动态选择普通样式还是粗体样式
                         val currentLineTextStyle = if (usePlaybackProgress) activeTextStyle else normalTextStyle
                         val currentLineTranslationStyle = if (usePlaybackProgress) activeTranslationTextStyle else translationTextStyle
                         
@@ -1020,8 +1014,8 @@ internal fun LyricsView(
                                     translationAlpha = translationAlpha,
                                     activeAlpha = wordProgressActiveAlpha,
                                     currentTimeProvider = lineTimeProvider,
-                                    normalTextStyle = currentLineTextStyle,              // 【修改】传入动态计算的主歌词样式
-                                    translationTextStyle = currentLineTranslationStyle,  // 【修改】传入动态计算的翻译样式
+                                    normalTextStyle = currentLineTextStyle,
+                                    translationTextStyle = currentLineTranslationStyle,
                                     emphasisColor = emphasisColor,
                                     alignmentProgress = alignmentProgress,
                                     translationMotion = translationMotion,
@@ -1034,8 +1028,8 @@ internal fun LyricsView(
                                     activeAlpha = wordProgressActiveAlpha,
                                     currentTimeProvider = lineTimeProvider,
                                     forceWordByWordLyrics = forceWordByWordLyrics,
-                                    normalTextStyle = currentLineTextStyle,              // 【修改】传入动态计算的主歌词样式
-                                    translationTextStyle = currentLineTranslationStyle,  // 【修改】传入动态计算的翻译样式
+                                    normalTextStyle = currentLineTextStyle,
+                                    translationTextStyle = currentLineTranslationStyle,
                                     emphasisColor = emphasisColor,
                                     alignmentProgress = alignmentProgress,
                                     translationMotion = translationMotion,
