@@ -732,7 +732,9 @@ internal fun FullPlayerScreen(
                                         resumeFollowRequestKey = lyricsFollowRequestKey,
                                         seekRequestKey = lyricsSeekRequestKey,
                                         seekPositionMs = lyricsSeekPositionMs,
-                                        modifier = Modifier.fillMaxSize(),
+                                       // modifier = Modifier.fillMaxSize(),
+									   // 【修改这里】：左右各留出 28dp 的舒适边距
+                                        modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp),
                                     )
                                 },
                             )
@@ -790,7 +792,9 @@ internal fun FullPlayerScreen(
                                             resumeFollowRequestKey = lyricsFollowRequestKey,
                                             seekRequestKey = lyricsSeekRequestKey,
                                             seekPositionMs = lyricsSeekPositionMs,
-                                            modifier = Modifier.fillMaxSize(),
+                                            //modifier = Modifier.fillMaxSize(),
+											// 【修改这里】：左右各留出 28dp 的舒适边距
+                                            modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp),
                                         )
                                     }
                                 },

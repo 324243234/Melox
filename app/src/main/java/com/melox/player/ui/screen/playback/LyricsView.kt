@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package com.melox.player.ui.screen.playback
 
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
 import android.graphics.Typeface
 import android.os.SystemClock
 import androidx.compose.animation.core.EaseInOut
@@ -116,9 +118,9 @@ private const val LYRIC_FOCUS_SCALE_OUT_DURATION_MS = 300
 private const val LYRIC_FOCUS_ALPHA_ANIMATION_DURATION_MS = 180
 private const val LYRIC_BLUR_ANIMATION_DURATION_MS = 300
 internal const val LYRIC_PRIMARY_FONT_SIZE_SP = 29f
-internal const val LYRIC_PRIMARY_LINE_HEIGHT_SP = 24f
-internal const val LYRIC_TRANSLATION_FONT_SIZE_SP = 18f
-internal const val LYRIC_TRANSLATION_LINE_HEIGHT_SP = 20f
+internal const val LYRIC_PRIMARY_LINE_HEIGHT_SP = 30f
+internal const val LYRIC_TRANSLATION_FONT_SIZE_SP = 19f
+internal const val LYRIC_TRANSLATION_LINE_HEIGHT_SP = 22f
 private val LyricLayerPaint = Paint()
 
 @Composable
@@ -556,6 +558,12 @@ internal fun LyricsView(
         fontSynthesis = FontSynthesis.None,
         textDirection = TextDirection.Content,
         textMotion = TextMotion.Animated,
+		// 【核心修复】：强制去除字体内部的默认上下留白，将基线绝对居中锁定
+        platformStyle = PlatformTextStyle(includeFontPadding = false),
+        lineHeightStyle = LineHeightStyle(
+            alignment = LineHeightStyle.Alignment.Center,
+            trim = LineHeightStyle.Trim.Both
+        )
     )
     
     // 当前播放行：使用 Bold 文件，【同样关闭】伪加粗
@@ -572,6 +580,12 @@ internal fun LyricsView(
         fontSynthesis = FontSynthesis.None,
         textDirection = TextDirection.Content,
         textMotion = TextMotion.Animated,
+		// 【核心修复】：同样锁定翻译字体的基线高度
+        platformStyle = PlatformTextStyle(includeFontPadding = false),
+        lineHeightStyle = LineHeightStyle(
+            alignment = LineHeightStyle.Alignment.Center,
+            trim = LineHeightStyle.Trim.Both
+        )
     )
     
     val activeTranslationTextStyle = translationTextStyle.copy(
