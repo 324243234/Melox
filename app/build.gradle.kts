@@ -52,11 +52,11 @@ android {
     compileSdk = 37
 
     defaultConfig {
-       // applicationId = "com.melox.player"
-		applicationId = "com.kugou.android.lite"
+        // applicationId = "com.melox.player"
+        applicationId = "com.kugou.android.lite"
         minSdk = 28
         targetSdk = 36
-        versionCode = 3
+        versionCode = 3 // 保持固定版本号不递增
         versionName = appVersionName
 
         ndk {
@@ -75,6 +75,13 @@ android {
                 keyAlias = releaseKeyAlias
             }
         }
+        // 【修改点 1】：注册固定的调试签名，直接读取你放进 app 目录下的 debug.keystore
+        create("fixedDebug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
@@ -84,11 +91,11 @@ android {
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
             )
-            // 自动降级：有正式签名用正式，云端无证书则自动降级使用 debug 签名
+            // 【修改点 2】：无正式签名时，将原本的 debug 改为 fixedDebug，确保签名永远一致
             signingConfig = if (releaseSigningConfigured) {
                 signingConfigs.getByName("release")
             } else {
-                signingConfigs.getByName("debug")
+                signingConfigs.getByName("fixedDebug")
             }
         }
     }
