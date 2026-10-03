@@ -20,6 +20,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -57,6 +58,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -141,6 +143,7 @@ import com.melox.player.ui.component.playback.weightedCrossfadeFrames
 import com.melox.player.ui.component.playback.rememberPlayerSheetVerticalDragModifier
 import com.melox.player.ui.component.playback.artworkInsetRect
 import com.melox.player.ui.component.playback.fittedArtworkRect
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToLong
 import kotlin.math.roundToInt
@@ -385,10 +388,46 @@ internal fun FullPlayerScreen(
             lyricsSeekRequestKey = 0
         }
     }
+
     val pagerState = rememberPagerState(
         initialPage = if (initialArtworkPageSelected) 0 else 1,
         pageCount = { 2 },
     )
+    
+    // ====== 【新增：协程作用域，用于控制 Pager 翻页】 ======
+    val coroutineScope = rememberCoroutineScope()
+
+    // ====== 【横向滑动切歌 + 单击切换面板 手势】 ======
+    // 仅在宽屏/紧凑横屏应用，竖屏会被排除。
+    val artworkGestureModifier = Modifier
+        .pointerInput(Unit) {
+            var dragOffset = 0f
+            detectHorizontalDragGestures(
+                onDragStart = { dragOffset = 0f },
+                onHorizontalDrag = { change, dragAmount ->
+                    change.consume()
+                    dragOffset += dragAmount
+                },
+                onDragEnd = {
+                    // 超过 60f 判定为有效切歌，防止误触
+                    if (dragOffset < -60f) onNext()
+                    else if (dragOffset > 60f) onPrevious()
+                    dragOffset = 0f
+                }
+            )
+        }
+        .pointerInput(Unit) {
+            detectTapGestures(
+                onTap = {
+                    // 单击封面时，平滑切换右侧面板 (0: 控制, 1: 歌词)
+                    coroutineScope.launch {
+                        val targetPage = if (pagerState.currentPage == 0) 1 else 0
+                        pagerState.animateScrollToPage(targetPage)
+                    }
+                }
+            )
+        }
+
     LaunchedEffect(lyricFontScale) {
         displayedLyricFontScale = lyricFontScale
     }
@@ -431,25 +470,6 @@ internal fun FullPlayerScreen(
         enabled = interactionEnabled,
         onBack = onDismiss,
     )
-    
-    // ====== 【核心修改 1】：全局复用的横向滑动切歌 Modifier ======
-    val artworkGestureModifier = Modifier.pointerInput(Unit) {
-        var dragOffset = 0f
-        detectHorizontalDragGestures(
-            onDragStart = { dragOffset = 0f },
-            onHorizontalDrag = { change, dragAmount ->
-                change.consume()
-                dragOffset += dragAmount
-            },
-            onDragEnd = {
-                // 超过 60f 的滑动距离即判定为切歌
-                if (dragOffset < -60f) onNext()
-                else if (dragOffset > 60f) onPrevious()
-                dragOffset = 0f
-            }
-        )
-    }
-    // ==============================================================
 
     Scaffold(
         modifier = modifier
@@ -609,9 +629,11 @@ internal fun FullPlayerScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         if (playerLayout == PlayerLayout.WIDE_TWO_PANE) {
-                            val playbackPaneWidth = landscapePlayerPlaybackPaneWidth(maxWidth)
-                            val lyricsPaneWidth = landscapePlayerLyricsPaneWidth(maxWidth)
+                            val paneShift = 64.dp 
+                            val playbackPaneWidth = (landscapePlayerPlaybackPaneWidth(maxWidth) - paneShift).coerceAtLeast(0.dp)
+                            val lyricsPaneWidth = landscapePlayerLyricsPaneWidth(maxWidth) + paneShift
                             val paneSpacing = landscapePlayerPaneSpacing(maxWidth)
+                            
                             val artworkSize = landscapePlayerArtworkSize(
                                 availableWidth = playbackPaneWidth,
                                 availableHeight = maxHeight,
@@ -636,13 +658,12 @@ internal fun FullPlayerScreen(
                                         modifier = Modifier.width(artworkContentWidth),
                                     )
                                     Spacer(Modifier.height(LANDSCAPE_PLAYER_TITLE_TO_ARTWORK_SPACING))
-                                    // ====== 【核心修改 2】：超宽屏双栏模式左移与手势挂载 ======
                                     BoxWithConstraints(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .weight(1f)
-                                            .padding(end = 48.dp) // 封面整体向左偏移
-                                            .then(artworkGestureModifier), // 挂载左右切歌手势
+                                            .padding(end = 48.dp)
+                                            .then(artworkGestureModifier),
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         PlayerArtwork(
@@ -659,7 +680,6 @@ internal fun FullPlayerScreen(
                                                 onArtworkDisplaySizeChanged,
                                         )
                                     }
-                                    // ==========================================================
                                     Spacer(Modifier.height(LANDSCAPE_PLAYER_ARTWORK_TO_PROGRESS_SPACING))
                                     PlayerDetails(
                                         modifier = Modifier
@@ -721,11 +741,10 @@ internal fun FullPlayerScreen(
                                 pagerState = pagerState,
                                 lyricsPagingEnabled = lyricsPagingEnabled,
                                 artworkContent = { artworkSize ->
-                                    // ====== 【核心修改 3】：紧凑横屏模式左移与手势挂载 ======
                                     Box(
                                         modifier = Modifier
-                                            .padding(end = 24.dp) // 稍微向左偏移
-                                            .then(artworkGestureModifier), // 挂载左右切歌手势
+                                            .padding(end = 24.dp)
+                                            .then(artworkGestureModifier),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         PlayerArtwork(
@@ -739,7 +758,6 @@ internal fun FullPlayerScreen(
                                                 onArtworkDisplaySizeChanged,
                                         )
                                     }
-                                    // =======================================================
                                 },
                                 lyricsContent = { contentWidth, contentHeight ->
                                     Box(
@@ -876,26 +894,19 @@ internal fun FullPlayerScreen(
                                         PortraitPlayerLayout(
                                             spacing = spacing,
                                             artworkContent = { artworkHeight ->
-                                                // ====== 【核心修改 4】：竖屏隐藏控制栏模式下手势挂载 ======
-                                                Box(
-                                                    modifier = artworkGestureModifier,
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    PlayerArtwork(
-                                                        size = fitPlayerArtworkSize(
-                                                            artworkSize,
-                                                            artworkHeight,
-                                                        ),
-                                                        artworkPadding = artworkPadding,
-                                                        artworkBlend = artworkBlend,
-                                                        cornerRadius = artworkCornerRadius,
-                                                        sharedArtworkVisible = sharedArtworkVisible,
-                                                        onArtworkBoundsChanged = onArtworkBoundsChanged,
-                                                        onArtworkDisplaySizeChanged =
-                                                            onArtworkDisplaySizeChanged,
-                                                    )
-                                                }
-                                                // ========================================================
+                                                PlayerArtwork(
+                                                    size = fitPlayerArtworkSize(
+                                                        artworkSize,
+                                                        artworkHeight,
+                                                    ),
+                                                    artworkPadding = artworkPadding,
+                                                    artworkBlend = artworkBlend,
+                                                    cornerRadius = artworkCornerRadius,
+                                                    sharedArtworkVisible = sharedArtworkVisible,
+                                                    onArtworkBoundsChanged = onArtworkBoundsChanged,
+                                                    onArtworkDisplaySizeChanged =
+                                                        onArtworkDisplaySizeChanged,
+                                                )
                                             },
                                             detailsContent = {
                                                 PlayerDetails(
@@ -963,27 +974,20 @@ internal fun FullPlayerScreen(
                                             seekPositionMs = lyricsSeekPositionMs,
                                             modifier = Modifier.fillMaxSize(),
                                             artworkContent = {
-                                                // ====== 【核心修改 5】：竖屏标准模式下手势挂载 ======
-                                                Box(
-                                                    modifier = artworkGestureModifier,
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    PlayerArtwork(
-                                                        size = fitPlayerArtworkSize(
-                                                            artworkSize,
-                                                            artworkHeight,
-                                                        ),
-                                                        artworkPadding = artworkPadding,
-                                                        artworkBlend = artworkBlend,
-                                                        cornerRadius = artworkCornerRadius,
-                                                        sharedArtworkVisible = sharedArtworkVisible,
-                                                        onArtworkBoundsChanged =
-                                                            onArtworkBoundsChanged,
-                                                        onArtworkDisplaySizeChanged =
-                                                            onArtworkDisplaySizeChanged,
-                                                    )
-                                                }
-                                                // ==================================================
+                                                PlayerArtwork(
+                                                    size = fitPlayerArtworkSize(
+                                                        artworkSize,
+                                                        artworkHeight,
+                                                    ),
+                                                    artworkPadding = artworkPadding,
+                                                    artworkBlend = artworkBlend,
+                                                    cornerRadius = artworkCornerRadius,
+                                                    sharedArtworkVisible = sharedArtworkVisible,
+                                                    onArtworkBoundsChanged =
+                                                        onArtworkBoundsChanged,
+                                                    onArtworkDisplaySizeChanged =
+                                                        onArtworkDisplaySizeChanged,
+                                                )
                                             },
                                         )
                                     },
