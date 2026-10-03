@@ -544,7 +544,11 @@ internal fun LyricsView(
         density.density, density.fontScale,
     )
     val visualFocusRenderIndex = focusLineIndex
+    
     val lyricFontFamily = rememberLyricFontFamily(lyricFontWeight)
+    // 【新增】强制传入 700 加载粗体文件作为当前行样式
+    val boldLyricFontFamily = rememberLyricFontFamily(700)
+    
     val normalTextStyle = MiuixTheme.textStyles.title3.copy(
         fontSize = (LYRIC_PRIMARY_FONT_SIZE_SP * lyricFontScale).sp,
         lineHeight = (LYRIC_PRIMARY_LINE_HEIGHT_SP * lyricFontScale).sp,
@@ -554,6 +558,13 @@ internal fun LyricsView(
         textDirection = TextDirection.Content,
         textMotion = TextMotion.Animated,
     )
+    
+    // 【新增】当前播放行的主歌词样式
+    val activeTextStyle = normalTextStyle.copy(
+        fontFamily = boldLyricFontFamily,
+        fontWeight = FontWeight.Bold
+    )
+
     val translationTextStyle = MiuixTheme.textStyles.body1.copy(
         fontSize = (LYRIC_TRANSLATION_FONT_SIZE_SP * lyricFontScale).sp,
         lineHeight = (LYRIC_TRANSLATION_LINE_HEIGHT_SP * lyricFontScale).sp,
@@ -562,6 +573,12 @@ internal fun LyricsView(
         fontSynthesis = FontSynthesis.None,
         textDirection = TextDirection.Content,
         textMotion = TextMotion.Animated,
+    )
+    
+    // 【新增】当前播放行的翻译歌词样式
+    val activeTranslationTextStyle = translationTextStyle.copy(
+        fontFamily = boldLyricFontFamily,
+        fontWeight = FontWeight.Bold
     )
 
     val lyricBrowsingModifier = Modifier.pointerInput(document) {
@@ -940,6 +957,13 @@ internal fun LyricsView(
                         val isCurrentLine = index == currentLineIndex
                         val preservesOutgoingSeekProgress = index == outgoingSeekLineIndex
                         val usesWordProgress = line.words.isNotEmpty() || forceWordByWordLyrics
+                        
+                        // 【新增】判断该行是否处于活动（正在播放）状态
+                        val usePlaybackProgress = isCurrentLine || preservesOutgoingSeekProgress
+                        // 【新增】根据状态，动态选择普通样式还是粗体样式
+                        val currentLineTextStyle = if (usePlaybackProgress) activeTextStyle else normalTextStyle
+                        val currentLineTranslationStyle = if (usePlaybackProgress) activeTranslationTextStyle else translationTextStyle
+                        
                         val lineTimeProvider = {
                             lyricLineRenderPositionMs(
                                 lineIndex = index,
@@ -992,13 +1016,12 @@ internal fun LyricsView(
                             if (line.words.isNotEmpty()) {
                                 TimedLyricLine(
                                     line = line,
-                                    usePlaybackProgress =
-                                        isCurrentLine || preservesOutgoingSeekProgress,
+                                    usePlaybackProgress = usePlaybackProgress,
                                     translationAlpha = translationAlpha,
                                     activeAlpha = wordProgressActiveAlpha,
                                     currentTimeProvider = lineTimeProvider,
-                                    normalTextStyle = normalTextStyle,
-                                    translationTextStyle = translationTextStyle,
+                                    normalTextStyle = currentLineTextStyle,              // 【修改】传入动态计算的主歌词样式
+                                    translationTextStyle = currentLineTranslationStyle,  // 【修改】传入动态计算的翻译样式
                                     emphasisColor = emphasisColor,
                                     alignmentProgress = alignmentProgress,
                                     translationMotion = translationMotion,
@@ -1006,14 +1029,13 @@ internal fun LyricsView(
                             } else {
                                 SyncedLyricLine(
                                     line = line,
-                                    usePlaybackProgress =
-                                        isCurrentLine || preservesOutgoingSeekProgress,
+                                    usePlaybackProgress = usePlaybackProgress,
                                     translationAlpha = translationAlpha,
                                     activeAlpha = wordProgressActiveAlpha,
                                     currentTimeProvider = lineTimeProvider,
                                     forceWordByWordLyrics = forceWordByWordLyrics,
-                                    normalTextStyle = normalTextStyle,
-                                    translationTextStyle = translationTextStyle,
+                                    normalTextStyle = currentLineTextStyle,              // 【修改】传入动态计算的主歌词样式
+                                    translationTextStyle = currentLineTranslationStyle,  // 【修改】传入动态计算的翻译样式
                                     emphasisColor = emphasisColor,
                                     alignmentProgress = alignmentProgress,
                                     translationMotion = translationMotion,

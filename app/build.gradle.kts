@@ -52,7 +52,8 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.melox.player"
+       // applicationId = "com.melox.player"
+		applicationId = "com.kugou.android.lite"
         minSdk = 28
         targetSdk = 36
         versionCode = 3
