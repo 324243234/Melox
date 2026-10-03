@@ -1,6 +1,5 @@
-name: Android Build
+name: Build and Release APK
 
-# 触发条件：代码推送到主分支，或者在 Actions 页面手动点击运行
 on:
   push:
     branches: [ "main", "master" ]
@@ -8,31 +7,41 @@ on:
 
 jobs:
   build:
+    name: Build Release APK
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: write # 赋予写入权限，用于自动创建 Release 发布
+      
     steps:
-    - name: 检出代码 (Checkout)
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    - name: 配置 JDK 17
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '17'
-        cache: 'gradle' # 开启缓存，第二次起打包速度会快很多
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle # 开启缓存，大幅提升后续编译速度
 
-    - name: 授予 gradlew 执行权限
-      run: chmod +x gradlew
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
 
-    - name: 编译 Debug 版 APK (测试版)
-      run: ./gradlew assembleDebug --no-daemon
+      # 编译 Release 版（会自动应用我们在 build.gradle.kts 里写的 Debug 签名降级与重命名）
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --no-daemon
 
-   
+      # 绝杀步：把生成的 apk 文件统一捞到根目录下，避免路径太深抓不到
+      - name: Extract APK to Root
+        run: |
+          find app/build/outputs/apk -name "*.apk" -exec cp {} . \;
+          ls -la *.apk
 
-    - name: 上传 Debug APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: Melox-Debug-APK
-        path: app/build/outputs/apk/debug/*.apk
-
-   
+      # 自动发布到 GitHub Releases 页面
+      - name: Auto Release Direct APK
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: "latest" # 固定的 tag 标签名
+          prerelease: true # 设为预发布版
+          title: "Melox Custom Build" # 发布页面的标题
+          files: "*.apk" # 直接抓取根目录下的 apk 文件上传
