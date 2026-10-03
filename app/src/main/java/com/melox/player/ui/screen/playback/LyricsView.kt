@@ -115,10 +115,10 @@ private const val LYRIC_FOCUS_SCALE_IN_DURATION_MS = 600
 private const val LYRIC_FOCUS_SCALE_OUT_DURATION_MS = 300
 private const val LYRIC_FOCUS_ALPHA_ANIMATION_DURATION_MS = 180
 private const val LYRIC_BLUR_ANIMATION_DURATION_MS = 300
-internal const val LYRIC_PRIMARY_FONT_SIZE_SP = 24f
-internal const val LYRIC_PRIMARY_LINE_HEIGHT_SP = 28f
-internal const val LYRIC_TRANSLATION_FONT_SIZE_SP = 16f
-internal const val LYRIC_TRANSLATION_LINE_HEIGHT_SP = 22f
+internal const val LYRIC_PRIMARY_FONT_SIZE_SP = 29f
+internal const val LYRIC_PRIMARY_LINE_HEIGHT_SP = 24f
+internal const val LYRIC_TRANSLATION_FONT_SIZE_SP = 18f
+internal const val LYRIC_TRANSLATION_LINE_HEIGHT_SP = 20f
 private val LyricLayerPaint = Paint()
 
 @Composable
