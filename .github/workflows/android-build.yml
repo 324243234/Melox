@@ -44,4 +44,4 @@ jobs:
           automatic_release_tag: "latest" # 固定的 tag 标签名
           prerelease: true # 设为预发布版
           title: "Melox Custom Build" # 发布页面的标题
-          files: "*.apk" # 直接抓取根目录下的 apk 文件上传
+          files: "Melox_*.apk" # 直接抓取根目录下的 apk 文件上传
