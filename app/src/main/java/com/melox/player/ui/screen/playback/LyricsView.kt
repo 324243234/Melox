@@ -122,20 +122,22 @@ internal const val LYRIC_TRANSLATION_LINE_HEIGHT_SP = 22f
 private val LyricLayerPaint = Paint()
 
 @Composable
-internal fun rememberLyricFontFamily(isBold: Boolean): FontFamily = remember(isBold) {
+internal fun rememberLyricFontFamily(weight: Int): FontFamily = remember(weight) {
     val mediumFontPath = "/storage/emulated/0/Documents/字体/SimplifiedChinese/SourceHanSansSC-Medium.otf"
     val boldFontPath = "/storage/emulated/0/Documents/字体/SimplifiedChinese/SourceHanSansSC-Bold.otf"
 
+    // 将参数恢复为 Int 以解决编译报错，在内部根据 600 阈值判断加载哪个文件
+    val isBold = weight >= 600
     val targetPath = if (isBold) boldFontPath else mediumFontPath
     val customTypeface = try {
         val file = java.io.File(targetPath)
         if (file.exists() && file.canRead()) {
             android.graphics.Typeface.createFromFile(file)
         } else {
-            android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, if (isBold) 700 else 400, false)
+            android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, weight.coerceIn(1, 1000), false)
         }
     } catch (e: Exception) {
-        android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, if (isBold) 700 else 400, false)
+        android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, weight.coerceIn(1, 1000), false)
     }
 
     androidx.compose.ui.text.font.FontFamily(customTypeface)
@@ -541,9 +543,9 @@ internal fun LyricsView(
     )
     val visualFocusRenderIndex = focusLineIndex
     
-    // 【核心修复】分离加载 Medium 和 Bold 字体文件
-    val mediumLyricFontFamily = rememberLyricFontFamily(isBold = false)
-    val boldLyricFontFamily = rememberLyricFontFamily(isBold = true)
+    // 【核心修复】分离加载 Medium 和 Bold 字体文件，并改传 Int 以解决编译报错
+    val mediumLyricFontFamily = rememberLyricFontFamily(weight = 400)
+    val boldLyricFontFamily = rememberLyricFontFamily(weight = 700)
     
     // 普通未播放行：使用 Medium 文件，【关闭】 FontWeight 的伪加粗
     val normalTextStyle = MiuixTheme.textStyles.title3.copy(
