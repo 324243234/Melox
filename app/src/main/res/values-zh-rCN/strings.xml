@@ -333,6 +333,7 @@
     <string name="settings_background_choose_image">选择图片</string>
     <string name="settings_background_dim">壁纸压暗</string>
     <string name="settings_background_card_blur">Card模糊</string>
+    <string name="settings_background_card_blur_disabled_summary">模糊未开启</string>
     <string name="settings_background_card_opacity">Card不透明度</string>
     <string name="settings_background_delete">删除图片</string>
     <string name="settings_background_delete_title">删除当前图片</string>
@@ -354,4 +355,6 @@
     <string name="about_github_label">Github</string>
     <string name="about_telegram_label">Telegram</string>
     <string name="sponsor_code_description">赞助码</string>
+    <string name="playlist_move_earlier">向前移动</string>
+    <string name="playlist_move_later">向后移动</string>
 </resources>

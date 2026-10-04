@@ -115,6 +115,19 @@ internal fun canonicalPlaylistEntryOrder(
     descending: Boolean,
 ): List<String> = if (descending) displayedEntryIds.asReversed() else displayedEntryIds
 
+internal fun reorderPlaylists(
+    playlists: List<LocalPlaylist>,
+    orderedPlaylistIds: List<String>,
+): List<LocalPlaylist>? {
+    if (orderedPlaylistIds.size != playlists.size) return null
+    if (orderedPlaylistIds.toSet().size != orderedPlaylistIds.size) return null
+    val playlistsById = playlists.associateBy(LocalPlaylist::id)
+    if (playlistsById.size != playlists.size) return null
+    if (orderedPlaylistIds.toSet() != playlistsById.keys) return null
+    if (orderedPlaylistIds == playlists.map(LocalPlaylist::id)) return playlists
+    return orderedPlaylistIds.map(playlistsById::getValue)
+}
+
 internal fun reorderPlaylistEntries(
     playlist: LocalPlaylist,
     orderedEntryIds: List<String>,

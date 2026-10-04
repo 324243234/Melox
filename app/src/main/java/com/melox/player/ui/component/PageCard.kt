@@ -32,11 +32,17 @@ internal fun PageCard(
     val backdrop = LocalPageSurfaceBackdrop.current.takeIf { colors.color.alpha > 0f }
     val blurRadius = LocalPageCardBlurRadius.current
     val surfaceAlpha = LocalPageCardSurfaceAlpha.current
+    val backgroundColor = pageCardBackgroundColor(
+        color = colors.color,
+        hasWallpaper = LocalCustomPageBackground.current != null,
+        hasBackdrop = backdrop != null,
+        surfaceAlpha = surfaceAlpha,
+    )
     MiuixCard(
         modifier = modifier,
         cornerRadius = cornerRadius,
         insideMargin = if (backdrop == null) insideMargin else PaddingValues(0.dp),
-        colors = if (backdrop == null) colors else colors.copy(color = Color.Transparent),
+        colors = colors.copy(color = backgroundColor),
         pressFeedbackType = pressFeedbackType,
         showIndication = showIndication,
         holdDownState = holdDownState,
@@ -55,6 +61,18 @@ internal fun PageCard(
             )
         }
     }
+}
+
+internal fun pageCardBackgroundColor(
+    color: Color,
+    hasWallpaper: Boolean,
+    hasBackdrop: Boolean,
+    surfaceAlpha: Float,
+): Color = when {
+    color.alpha <= 0f -> color
+    hasBackdrop -> Color.Transparent
+    hasWallpaper -> color.copy(alpha = color.alpha * surfaceAlpha.coerceIn(0f, 1f))
+    else -> color
 }
 
 @Composable

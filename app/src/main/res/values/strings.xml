@@ -346,6 +346,7 @@
     <string name="settings_background_choose_image">Choose image</string>
     <string name="settings_background_dim">Wallpaper dimming</string>
     <string name="settings_background_card_blur">Card blur</string>
+    <string name="settings_background_card_blur_disabled_summary">Blur is not enabled</string>
     <string name="settings_background_card_opacity">Card opacity</string>
     <string name="settings_background_delete">Delete image</string>
     <string name="settings_background_delete_title">Delete current image</string>
@@ -367,4 +368,6 @@
     <string name="about_github_label">Github</string>
     <string name="about_telegram_label">Telegram</string>
     <string name="sponsor_code_description">Sponsorship code</string>
+    <string name="playlist_move_earlier">Move earlier</string>
+    <string name="playlist_move_later">Move later</string>
 </resources>

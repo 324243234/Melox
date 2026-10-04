@@ -13,27 +13,35 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect as ComposeRect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import com.melox.player.model.AppSettings
+import com.melox.player.model.LocalPlaylist
 import com.melox.player.ui.component.FixedPageBackgroundHost
 import com.melox.player.ui.component.LocalCustomPageBackground
+import com.melox.player.ui.component.LocalPageCardSurfaceAlpha
+import com.melox.player.ui.component.LocalPageSurfaceBackdrop
 import com.melox.player.ui.component.LocalTopBarBlurSettings
 import com.melox.player.ui.component.PageCard
 import com.melox.player.ui.component.PageScaffold
 import com.melox.player.ui.component.TopBarBlurSettings
+import com.melox.player.ui.component.playlist.PlaylistGridItem
 import com.melox.player.ui.theme.MeloxTheme
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -53,6 +61,71 @@ class FixedWallpaperRenderingTest {
     @SdkSuppress(minSdkVersion = 33)
     fun cardMaterialResamplesInsideAMovingParentGraphicsLayer() {
         checkMovingSample(blurEnabled = true, sampleCard = true)
+    }
+
+    @Test
+    fun playlistCardOpacityReachesPaddingAndLabelAreaWithBlurDisabled() {
+        val opacity = mutableFloatStateOf(0.8f)
+        var bounds = ComposeRect.Zero
+        var density = 1f
+        val source = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(AndroidColor.RED)
+        }
+        val image = source.asImageBitmap()
+        lateinit var view: ComposeView
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { activity ->
+                    density = activity.resources.displayMetrics.density
+                    view = ComposeView(activity).apply {
+                        setContent {
+                            MeloxTheme(AppSettings(blurEnabled = false)) {
+                                CompositionLocalProvider(
+                                    LocalCustomPageBackground provides image,
+                                    LocalPageSurfaceBackdrop provides null,
+                                    LocalPageCardSurfaceAlpha provides opacity.floatValue,
+                                ) {
+                                    Box(
+                                        Modifier.fillMaxSize().background(Color.Red),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        PlaylistGridItem(
+                                            playlist = LocalPlaylist("test", "Playlist", 0L, 0L),
+                                            onClick = {},
+                                            modifier = Modifier.width(220.dp)
+                                                .onGloballyPositioned { bounds = it.boundsInRoot() },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    activity.setContentView(view)
+                }
+                val before = copyFrame(scenario, view)
+                try {
+                    assertTrue("Playlist Card was not laid out", bounds.width > 0f && bounds.height > 0f)
+                    val samples = listOf(
+                        (bounds.left + bounds.width * 0.5f).toInt() to (bounds.bottom - 4f * density).toInt(),
+                        (bounds.left + bounds.width * 0.9f).toInt() to (bounds.bottom - 24f * density).toInt(),
+                    )
+                    scenario.onActivity { opacity.floatValue = 0f }
+                    val after = copyFrame(scenario, view)
+                    try {
+                        for ((x, y) in samples) {
+                            assertTrue("Initial Card fill must be visible", before.getPixel(x, y) != AndroidColor.RED)
+                            assertEquals("An inner playlist fill masks Card opacity", AndroidColor.RED, after.getPixel(x, y))
+                        }
+                    } finally {
+                        after.recycle()
+                    }
+                } finally {
+                    before.recycle()
+                }
+            }
+        } finally {
+            source.recycle()
+        }
     }
 
     private fun checkMovingSample(blurEnabled: Boolean, sampleCard: Boolean) {

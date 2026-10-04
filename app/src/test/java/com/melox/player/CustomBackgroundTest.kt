@@ -9,6 +9,8 @@ import com.melox.player.data.repository.customBackgroundBlurInputMaxEdge
 import com.melox.player.data.repository.fitCustomBackgroundDimensions
 import com.melox.player.data.repository.isCustomBackgroundId
 import com.melox.player.model.AppSettings
+import com.melox.player.model.MAX_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT
+import com.melox.player.model.MAX_CUSTOM_BACKGROUND_DIM_PERCENT
 import com.melox.player.model.normalizeCustomBackgroundBlurPercent
 import com.melox.player.model.normalizeCustomBackgroundDimPercent
 import com.melox.player.model.normalizeCustomBackgroundCardBlurPercent
@@ -22,6 +24,7 @@ import com.melox.player.ui.component.topBarContainerColor
 import com.melox.player.ui.component.tabSelectedContainerColor
 import com.melox.player.ui.component.pageCardBlurRadius
 import com.melox.player.ui.component.pageCardSurfaceAlpha
+import com.melox.player.ui.component.pageCardBackgroundColor
 import com.melox.player.ui.component.NormalBarBlurRadius
 import com.melox.player.ui.screen.playback.sliderValueAtPosition
 import org.junit.Assert.assertEquals
@@ -39,28 +42,76 @@ class CustomBackgroundTest {
     @Test
     fun cardOpacityUsesTheOfficialAlphaDirectionAndClampsBounds() {
         assertEquals(0, normalizeCustomBackgroundCardOpacityPercent(Int.MIN_VALUE))
-        assertEquals(100, normalizeCustomBackgroundCardOpacityPercent(Int.MAX_VALUE))
+        assertEquals(80, normalizeCustomBackgroundCardOpacityPercent(Int.MAX_VALUE))
+        assertEquals(80, normalizeCustomBackgroundCardOpacityPercent(81))
+        assertEquals(80, normalizeCustomBackgroundCardOpacityPercent(100))
         assertEquals(0f, pageCardSurfaceAlpha(Int.MIN_VALUE), 0f)
-        assertEquals(1f, pageCardSurfaceAlpha(Int.MAX_VALUE), 0f)
-        for (percent in 0..100) {
+        assertEquals(0.8f, pageCardSurfaceAlpha(Int.MAX_VALUE), 0f)
+        for (percent in 0..MAX_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT) {
             assertEquals(percent / 100f, pageCardSurfaceAlpha(percent), 0f)
         }
-        val alphas = (0..100).map(::pageCardSurfaceAlpha)
+        val alphas = (0..MAX_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT).map(::pageCardSurfaceAlpha)
         assertTrue(alphas.zipWithNext().all { (first, next) -> first < next })
     }
 
     @Test
     fun cardOpacitySliderSupportsTapsAtEveryPercentAndRtlDirection() {
-        for (percent in 0..100) {
+        for (percent in 0..MAX_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT) {
             for (rtl in listOf(false, true)) {
-                val position = 10f + (if (rtl) 100 - percent else percent) * 2f
+                val maximum = MAX_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT
+                val position = 10f + (if (rtl) maximum - percent else percent) * 2f
                 assertEquals(
                     percent.toFloat(),
-                    sliderValueAtPosition(position, 220, 20, 0f..100f, 99, null, 0.02f, rtl),
+                    sliderValueAtPosition(position, maximum * 2 + 20, 20, 0f..maximum.toFloat(), maximum - 1, null, 0.02f, rtl),
                     0.001f,
                 )
             }
         }
+    }
+
+    @Test
+    fun nativeWallpaperCardsApplyEveryOpacityWithoutABlurBackdrop() {
+        val base = Color(0xFF7457AA)
+        for (percent in 0..100) {
+            val result = pageCardBackgroundColor(base, true, false, pageCardSurfaceAlpha(percent))
+            assertEquals(percent.coerceAtMost(80) / 100f, result.alpha, 0.005f)
+            assertEquals(base.red, result.red, 0f)
+            assertEquals(base.green, result.green, 0f)
+            assertEquals(base.blue, result.blue, 0f)
+        }
+    }
+
+    @Test
+    fun nativeCardFillPreservesOriginalPartialAlphaAndClampsInput() {
+        val base = Color(0x807457AA)
+        assertEquals(base.alpha * 0.8f, pageCardBackgroundColor(base, true, false, 0.8f).alpha, 0.005f)
+        assertEquals(0f, pageCardBackgroundColor(base, true, false, -1f).alpha, 0f)
+        assertEquals(base, pageCardBackgroundColor(base, true, false, 2f))
+    }
+
+    @Test
+    fun cardsWithoutWallpaperKeepTheirOriginalFill() {
+        for (base in listOf(Color.White, Color.Black, Color(0x807457AA))) {
+            for (alpha in listOf(0f, 0.4f, 0.8f)) {
+                assertEquals(base, pageCardBackgroundColor(base, false, false, alpha))
+            }
+        }
+    }
+
+    @Test
+    fun originallyTransparentCardsNeverGainAFill() {
+        val transparent = Color(0x007457AA)
+        for (hasWallpaper in listOf(false, true)) {
+            for (hasBackdrop in listOf(false, true)) {
+                assertEquals(transparent, pageCardBackgroundColor(transparent, hasWallpaper, hasBackdrop, 0.8f))
+            }
+        }
+    }
+
+    @Test
+    fun blurredWallpaperCardsLeaveTheFillToTheOfficialBackdrop() {
+        assertEquals(Color.Transparent, pageCardBackgroundColor(Color.White, true, true, 0.8f))
+        assertEquals(Color.Transparent, pageCardBackgroundColor(Color.Black, true, true, 0f))
     }
 
     @Test
@@ -164,19 +215,22 @@ class CustomBackgroundTest {
     }
 
     @Test
-    fun wallpaperDimmingStartsClearAndAllowsFullyBlackWithClampedBounds() {
+    fun wallpaperDimmingStartsClearAndStopsAtNinetyPercent() {
         assertEquals(0, AppSettings().customBackgroundDimPercent)
         assertEquals(0, normalizeCustomBackgroundDimPercent(Int.MIN_VALUE))
         assertEquals(50, normalizeCustomBackgroundDimPercent(50))
-        assertEquals(100, normalizeCustomBackgroundDimPercent(Int.MAX_VALUE))
+        assertEquals(90, normalizeCustomBackgroundDimPercent(Int.MAX_VALUE))
+        assertEquals(90, normalizeCustomBackgroundDimPercent(91))
+        assertEquals(90, normalizeCustomBackgroundDimPercent(100))
     }
 
     @Test
     fun tappingDimmingSelectsEveryWholePercentIncludingZero() {
-        for (percent in 0..100) {
+        for (percent in 0..MAX_CUSTOM_BACKGROUND_DIM_PERCENT) {
+            val maximum = MAX_CUSTOM_BACKGROUND_DIM_PERCENT
             assertEquals(
                 percent.toFloat(),
-                sliderValueAtPosition(percent * 2f + 10f, 220, 20, 0f..100f, 99, null, 0.02f, false),
+                sliderValueAtPosition(percent * 2f + 10f, maximum * 2 + 20, 20, 0f..maximum.toFloat(), maximum - 1, null, 0.02f, false),
                 0.001f,
             )
         }

@@ -302,7 +302,7 @@ fun HomeScreen(
 
             else -> {
                 items(
-                    items = playlists.chunked(playlistGridColumns),
+                    items = playlists.take(playlistGridColumns * 3).chunked(playlistGridColumns),
                     key = { row -> row.first().id },
                 ) { row ->
                     Row(

@@ -79,6 +79,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
@@ -1132,13 +1133,18 @@ internal fun TappableSliderPreference(
     showKeyPoints: Boolean = false,
     keyPoints: List<Float>? = null,
     magnetThreshold: Float = 0.02f,
+    enabled: Boolean = true,
+    summary: String? = null,
 ) {
     val layoutDirection = LocalLayoutDirection.current
     val currentOnValueChange by rememberUpdatedState(onValueChange)
     val currentOnValueChangeFinished by rememberUpdatedState(onValueChangeFinished)
+    val currentEnabled by rememberUpdatedState(enabled)
 
     BasicComponent(
         title = title,
+        summary = summary,
+        enabled = enabled,
         endActions = {
             Row(
                 modifier = Modifier
@@ -1149,17 +1155,26 @@ internal fun TappableSliderPreference(
                 Text(
                     text = valueText,
                     fontSize = MiuixTheme.textStyles.body2.fontSize,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                    color = if (enabled) MiuixTheme.colorScheme.onSurfaceVariantActions
+                    else MiuixTheme.colorScheme.disabledOnSecondaryVariant,
                 )
             }
         },
         bottomAction = {
             Slider(
                 value = value,
-                onValueChange = { currentOnValueChange(it) },
+                enabled = enabled,
+                onValueChange = { if (currentEnabled) currentOnValueChange(it) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .pointerInput(valueRange, steps, keyPoints, magnetThreshold, layoutDirection) {
+                    .semantics {
+                        if (!enabled) {
+                            disabled()
+                            setProgress { false }
+                        }
+                    }
+                    .pointerInput(enabled, valueRange, steps, keyPoints, magnetThreshold, layoutDirection) {
+                        if (!enabled) return@pointerInput
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
                             var pointerPosition = down.position
@@ -1195,7 +1210,9 @@ internal fun TappableSliderPreference(
                     },
                 valueRange = valueRange,
                 steps = steps,
-                onValueChangeFinished = currentOnValueChangeFinished,
+                onValueChangeFinished = currentOnValueChangeFinished?.let { callback ->
+                    { if (currentEnabled) callback() }
+                },
                 showKeyPoints = showKeyPoints,
                 keyPoints = keyPoints,
                 magnetThreshold = magnetThreshold,

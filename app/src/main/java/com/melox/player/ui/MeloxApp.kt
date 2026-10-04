@@ -115,6 +115,7 @@ import com.melox.player.data.library.ArtistSortField
 import com.melox.player.data.library.FolderSortConfig
 import com.melox.player.data.library.FolderSortField
 import com.melox.player.model.BottomBarStyle
+import com.melox.player.model.normalizeCustomBackgroundDimPercent
 import com.melox.player.model.DefaultHomePage
 import com.melox.player.model.DynamicColorSource
 import com.melox.player.model.PlaybackBackgroundStyle
@@ -1570,7 +1571,7 @@ fun MeloxApp(
         CompositionLocalProvider(
             LocalCustomPageBackground provides customPageBackground,
             LocalCustomBackgroundDimAlpha provides
-                ((customBackgroundDimPreview ?: settings.customBackgroundDimPercent).coerceIn(0, 100) / 100f),
+                (normalizeCustomBackgroundDimPercent(customBackgroundDimPreview ?: settings.customBackgroundDimPercent) / 100f),
             LocalPageCardBlurRadius provides pageCardBlurRadius(
                 customBackgroundCardBlurPreview ?: settings.customBackgroundCardBlurPercent,
             ),
@@ -2046,6 +2047,7 @@ fun MeloxApp(
                                                         PlaylistLibraryScreen(
                                                             playlists = playlistState.playlists,
                                                             loaded = playlistState.loaded,
+                                                            onMovePlaylists = viewModel::movePlaylists,
                                                             landscape = landscape,
                                                             bottomContentPadding =
                                                                 routeBottomPadding,

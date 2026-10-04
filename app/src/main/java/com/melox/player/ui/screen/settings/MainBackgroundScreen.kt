@@ -36,6 +36,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.melox.player.R
 import com.melox.player.model.AppSettings
+import com.melox.player.model.MAX_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT
+import com.melox.player.model.MAX_CUSTOM_BACKGROUND_DIM_PERCENT
 import com.melox.player.model.normalizeCustomBackgroundBlurPercent
 import com.melox.player.model.normalizeCustomBackgroundDimPercent
 import com.melox.player.model.normalizeCustomBackgroundCardBlurPercent
@@ -59,6 +61,7 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -81,6 +84,7 @@ internal fun MainBackgroundScreen(
 ) {
     val layoutDirection = LocalLayoutDirection.current
     val context = LocalContext.current
+    val cardBlurEnabled = settings.blurEnabled && isRuntimeShaderSupported()
     val scope = rememberCoroutineScope()
     var importingImage by remember { mutableStateOf(false) }
     var deletingImage by remember { mutableStateOf(false) }
@@ -171,8 +175,8 @@ internal fun MainBackgroundScreen(
                                     title = stringResource(R.string.settings_background_dim),
                                     value = dimPercent.toFloat(),
                                     valueText = stringResource(R.string.settings_percent_value, dimPercent),
-                                    valueRange = 0f..100f,
-                                    steps = 99,
+                                    valueRange = 0f..MAX_CUSTOM_BACKGROUND_DIM_PERCENT.toFloat(),
+                                    steps = MAX_CUSTOM_BACKGROUND_DIM_PERCENT - 1,
                                     onValueChange = { value ->
                                         val percent = normalizeCustomBackgroundDimPercent(value.roundToInt())
                                         if (percent != dimPercent) {
@@ -190,6 +194,8 @@ internal fun MainBackgroundScreen(
                         Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 12.dp)) {
                             TappableSliderPreference(
                                 title = stringResource(R.string.settings_background_card_blur),
+                                enabled = cardBlurEnabled,
+                                summary = if (cardBlurEnabled) null else stringResource(R.string.settings_background_card_blur_disabled_summary),
                                 value = cardBlurPercent.toFloat(),
                                 valueText = stringResource(R.string.settings_percent_value, cardBlurPercent),
                                 valueRange = 0f..100f,
@@ -206,8 +212,8 @@ internal fun MainBackgroundScreen(
                                 title = stringResource(R.string.settings_background_card_opacity),
                                 value = cardOpacityPercent.toFloat(),
                                 valueText = stringResource(R.string.settings_percent_value, cardOpacityPercent),
-                                valueRange = 0f..100f,
-                                steps = 99,
+                                valueRange = 0f..MAX_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT.toFloat(),
+                                steps = MAX_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT - 1,
                                 onValueChange = { value ->
                                     val percent = normalizeCustomBackgroundCardOpacityPercent(value.roundToInt())
                                     if (percent != cardOpacityPercent) {
