@@ -71,7 +71,7 @@ data class AppSettings(
     val playbackBackgroundStyle: PlaybackBackgroundStyle =
         PlaybackBackgroundStyle.BLURRED_ARTWORK,
     val playbackSpeed: Float = 1f,
-    val highPrecisionOutput: Boolean = true,
+    val highPrecisionOutput: Boolean = false,
     val sleepTimerSeconds: Int = 600,
     val autoExtendSleepTimer: Boolean = false,
     val playbackPauseFade: Boolean = false,

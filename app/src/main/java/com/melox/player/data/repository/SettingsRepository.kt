@@ -81,7 +81,7 @@ class SettingsRepository(context: Context) {
                     ?: PlaybackBackgroundStyle.BLURRED_ARTWORK,
                 playbackSpeed = preferences[Keys.PlaybackSpeed]
                     ?.let(::normalizePlaybackSpeed) ?: 1f,
-                highPrecisionOutput = preferences[Keys.HighPrecisionOutput] ?: true,
+                highPrecisionOutput = preferences[Keys.HighPrecisionOutput] ?: false,
                 sleepTimerSeconds = preferences[Keys.SleepTimerSeconds]
                     ?.coerceIn(0, 86_399) ?: 600,
                 autoExtendSleepTimer = preferences[Keys.AutoExtendSleepTimer] ?: false,
