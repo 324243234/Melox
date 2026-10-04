@@ -40,6 +40,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.selection.selectable
@@ -81,6 +82,8 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.CollectionInfo
 import androidx.compose.ui.semantics.CollectionItemInfo
 import androidx.compose.ui.semantics.Role
@@ -121,6 +124,23 @@ import com.melox.player.model.MusicTrack
 import com.melox.player.ui.component.BlurredBar
 import com.melox.player.ui.component.LocalBottomSheetBlurBackdrop
 import com.melox.player.ui.component.LocalTopBarBlurSettings
+import com.melox.player.ui.component.LocalCustomPageBackground
+import com.melox.player.ui.component.LocalCustomBackgroundDimAlpha
+import com.melox.player.ui.component.LocalPageSurfaceBackdrop
+import com.melox.player.ui.component.LocalPageCardBlurRadius
+import com.melox.player.ui.component.pageCardBlurRadius
+import com.melox.player.ui.component.LocalPageCardSurfaceAlpha
+import com.melox.player.ui.component.pageCardSurfaceAlpha
+import com.melox.player.ui.component.topBarContainerColor
+import com.melox.player.ui.component.tabSelectedContainerColor
+import com.melox.player.ui.component.FixedPageBackgroundHost
+import com.melox.player.ui.component.pageTextureBlur
+import com.melox.player.ui.component.refreshFixedWallpaperSample
+import com.melox.player.ui.component.pageSurfaceBlur
+import com.melox.player.ui.component.rememberCustomPageBackground
+import com.melox.player.ui.component.customPageBackground
+import com.melox.player.ui.component.customPageContainerColor
+import com.melox.player.ui.component.PageScaffold
 import com.melox.player.ui.component.TopBarBlurSettings
 import com.melox.player.ui.component.miuixBarColor
 import com.melox.player.ui.component.rememberBlurBackdrop
@@ -175,6 +195,7 @@ import com.melox.player.ui.screen.settings.MusicStatisticsScreen
 import com.melox.player.ui.screen.settings.AboutScreen
 import com.melox.player.ui.screen.settings.SponsorScreen
 import com.melox.player.ui.screen.settings.ThemeSettingsScreen
+import com.melox.player.ui.screen.settings.MainBackgroundScreen
 import com.melox.player.ui.screen.settings.LyricsSettingsScreen
 import com.melox.player.ui.screen.settings.LyricsInterfaceSettingsScreen
 import com.melox.player.ui.screen.settings.BlockedFoldersScreen
@@ -239,6 +260,7 @@ private enum class AppRoute {
     SCAN_SETTINGS,
     MUSIC_STATISTICS,
     THEME_SETTINGS,
+    MAIN_BACKGROUND,
     LYRICS_SETTINGS,
     LYRICS_INTERFACE,
     ABOUT,
@@ -695,6 +717,7 @@ fun MeloxApp(
         val artistsListState = rememberLazyListState()
         val foldersListState = rememberLazyListState()
         val themeSettingsListState = rememberLazyListState()
+        val mainBackgroundListState = rememberLazyListState()
         val lyricsSettingsListState = rememberLazyListState()
         val lyricsInterfaceListState = rememberLazyListState()
         var renderedBottomBarStyle by remember {
@@ -729,6 +752,7 @@ fun MeloxApp(
         val libraryScrollBehavior = MiuixScrollBehavior()
         val settingsScrollBehavior = MiuixScrollBehavior()
         val themeSettingsScrollBehavior = MiuixScrollBehavior()
+        val mainBackgroundScrollBehavior = MiuixScrollBehavior()
         val lyricsSettingsScrollBehavior = MiuixScrollBehavior()
         val lyricsInterfaceScrollBehavior = MiuixScrollBehavior()
         LaunchedEffect(
@@ -833,6 +857,13 @@ fun MeloxApp(
         }
         val content: @Composable (PaddingValues, Boolean) -> Unit =
             { outerPadding, navigationRailExpanded ->
+            FixedPageBackgroundHost(
+                modifier = Modifier.fillMaxSize(),
+                refreshSignal = {
+                    pagerState.currentPage + pagerState.currentPageOffsetFraction +
+                        libraryPagerState.currentPage + libraryPagerState.currentPageOffsetFraction
+                },
+            ) {
             // Each page owns its top bar so the title moves with the Pager, like the Miuix demo.
             HorizontalPager(
                 state = pagerState,
@@ -1351,6 +1382,7 @@ fun MeloxApp(
                     else -> Unit
                 }
             }
+            }
         }
 
         val currentRouteContentKey = when (currentRoute) {
@@ -1429,6 +1461,11 @@ fun MeloxApp(
                         depth = 2,
                     ),
                 )
+                currentRoute == AppRoute.MAIN_BACKGROUND -> listOf(
+                    root,
+                    AppNavDestination(AppRoute.THEME_SETTINGS, depth = 1),
+                    AppNavDestination(AppRoute.MAIN_BACKGROUND, depth = 2),
+                )
                 currentRoute == AppRoute.LYRICS_INTERFACE -> listOf(
                     root,
                     AppNavDestination(AppRoute.LYRICS_SETTINGS, depth = 1),
@@ -1489,6 +1526,8 @@ fun MeloxApp(
                 currentRoute = AppRoute.SCAN_SETTINGS
             } else if (currentRoute == AppRoute.LYRICS_INTERFACE) {
                 currentRoute = AppRoute.LYRICS_SETTINGS
+            } else if (currentRoute == AppRoute.MAIN_BACKGROUND) {
+                currentRoute = AppRoute.THEME_SETTINGS
             } else if (currentRoute == AppRoute.SPONSOR) {
                 currentRoute = AppRoute.ABOUT
             } else if (
@@ -1507,7 +1546,37 @@ fun MeloxApp(
             currentRoute = AppRoute.ROOT
             playerPagerState.animateToPage(selectedTab)
         }
+        var customBackgroundBlurPreview by remember(settings.customBackgroundId) {
+            mutableStateOf<Int?>(null)
+        }
+        LaunchedEffect(settings.customBackgroundBlurPercent, customBackgroundBlurPreview) {
+            if (customBackgroundBlurPreview == settings.customBackgroundBlurPercent) {
+                customBackgroundBlurPreview = null
+            }
+        }
+        val customPageBackground = rememberCustomPageBackground(settings, customBackgroundBlurPreview)
+        var customBackgroundDimPreview by remember(settings.customBackgroundId) { mutableStateOf<Int?>(null) }
+        LaunchedEffect(settings.customBackgroundDimPercent, customBackgroundDimPreview) {
+            if (customBackgroundDimPreview == settings.customBackgroundDimPercent) customBackgroundDimPreview = null
+        }
+        var customBackgroundCardBlurPreview by remember(settings.customBackgroundId) { mutableStateOf<Int?>(null) }
+        LaunchedEffect(settings.customBackgroundCardBlurPercent, customBackgroundCardBlurPreview) {
+            if (customBackgroundCardBlurPreview == settings.customBackgroundCardBlurPercent) customBackgroundCardBlurPreview = null
+        }
+        var customBackgroundCardOpacityPreview by remember(settings.customBackgroundId) { mutableStateOf<Int?>(null) }
+        LaunchedEffect(settings.customBackgroundCardOpacityPercent, customBackgroundCardOpacityPreview) {
+            if (customBackgroundCardOpacityPreview == settings.customBackgroundCardOpacityPercent) customBackgroundCardOpacityPreview = null
+        }
         CompositionLocalProvider(
+            LocalCustomPageBackground provides customPageBackground,
+            LocalCustomBackgroundDimAlpha provides
+                ((customBackgroundDimPreview ?: settings.customBackgroundDimPercent).coerceIn(0, 100) / 100f),
+            LocalPageCardBlurRadius provides pageCardBlurRadius(
+                customBackgroundCardBlurPreview ?: settings.customBackgroundCardBlurPercent,
+            ),
+            LocalPageCardSurfaceAlpha provides pageCardSurfaceAlpha(
+                customBackgroundCardOpacityPreview ?: settings.customBackgroundCardOpacityPercent,
+            ),
             LocalTopBarBlurSettings provides TopBarBlurSettings(
                 blurEnabled = settings.blurEnabled,
                 progressiveEnabled = settings.progressiveTopBarBlurEnabled,
@@ -1519,7 +1588,8 @@ fun MeloxApp(
                 LocalBottomSheetBlurBackdrop provides bottomSheetBackdrop,
             ) {
                 Scaffold(
-                    containerColor = MiuixTheme.colorScheme.surface,
+                    modifier = Modifier.customPageBackground(),
+                    containerColor = customPageContainerColor(),
                     popupHost = { MiuixPopupHost() },
                 ) { _ ->
                 Box(
@@ -1686,6 +1756,36 @@ fun MeloxApp(
                                                                 viewModel::setPredictiveBackEnabled,
                                                             onNavigationTransitionStyleChange =
                                                                 viewModel::setNavigationTransitionStyle,
+                                                            onOpenMainBackground = {
+                                                                currentRoute = AppRoute.MAIN_BACKGROUND
+                                                            },
+                                                        )
+
+                                                    AppRoute.MAIN_BACKGROUND ->
+                                                        MainBackgroundScreen(
+                                                            settings = settings,
+                                                            bottomContentPadding = routeBottomPadding,
+                                                            listState = mainBackgroundListState,
+                                                            scrollBehavior = mainBackgroundScrollBehavior,
+                                                            onBack = navigateBack,
+                                                            onImageChange = viewModel::setCustomBackground,
+                                                            onDeleteImage = viewModel::deleteCustomBackground,
+                                                            onDimPercentChange = {
+                                                                customBackgroundDimPreview = it
+                                                                viewModel.setCustomBackgroundDimPercent(it)
+                                                            },
+                                                            onBlurPercentChange = {
+                                                                customBackgroundBlurPreview = it
+                                                                viewModel.setCustomBackgroundBlurPercent(it)
+                                                            },
+                                                            onCardBlurPercentChange = {
+                                                                customBackgroundCardBlurPreview = it
+                                                                viewModel.setCustomBackgroundCardBlurPercent(it)
+                                                            },
+                                                            onCardOpacityPercentChange = {
+                                                                customBackgroundCardOpacityPreview = it
+                                                                viewModel.setCustomBackgroundCardOpacityPercent(it)
+                                                            },
                                                         )
 
                                                     AppRoute.LYRICS_SETTINGS ->
@@ -2554,6 +2654,8 @@ private fun LibraryTabRow(
     modifier: Modifier = Modifier,
     blurred: Boolean = false,
 ) {
+    val pageSurfaceBlurActive = LocalPageSurfaceBackdrop.current != null
+    val hasWallpaper = LocalCustomPageBackground.current != null
     val progressiveBlurActive = blurred &&
         LocalTopBarBlurSettings.current.progressiveEnabled &&
         isRuntimeShaderSupported()
@@ -2561,11 +2663,7 @@ private fun LibraryTabRow(
         modifier = modifier
             .height(38.dp)
             .background(
-                if (blurred) {
-                    androidx.compose.ui.graphics.Color.Transparent
-                } else {
-                    MiuixTheme.colorScheme.surface
-                },
+                topBarContainerColor(hasWallpaper, blurred, MiuixTheme.colorScheme.surface),
             )
             .semantics {
                 collectionInfo = CollectionInfo(rowCount = 1, columnCount = tabs.size)
@@ -2583,9 +2681,9 @@ private fun LibraryTabRow(
                     .fillMaxHeight()
                     .then(
                         if (selected) {
-                            Modifier.squircleBackground(
-                                color = MiuixTheme.colorScheme.surfaceContainer.copy(
-                                    alpha = if (progressiveBlurActive) 0.8f else 1f,
+                            Modifier.pageSurfaceBlur(12.dp).squircleBackground(
+                                color = if (pageSurfaceBlurActive) androidx.compose.ui.graphics.Color.Transparent else tabSelectedContainerColor(
+                                    hasWallpaper, progressiveBlurActive, MiuixTheme.colorScheme.surfaceContainer,
                                 ),
                                 cornerRadius = 12.dp,
                             )
@@ -2646,6 +2744,7 @@ internal fun LibrarySearchBar(
     onFocusedChange: (Boolean) -> Unit,
     onVisibleChange: (Boolean) -> Unit,
 ) {
+    val pageSurfaceBackdrop = LocalPageSurfaceBackdrop.current
     val topBarBlurSettings = LocalTopBarBlurSettings.current
     val progressiveBlurActive = topBarBlurSettings.blurEnabled &&
         topBarBlurSettings.progressiveEnabled &&
@@ -2687,6 +2786,12 @@ internal fun LibrarySearchBar(
         SearchBar(
             inputField = {
                 InputField(
+                    modifier = pageSurfaceBackdrop?.let {
+                        Modifier.pageTextureBlur(
+                            backdrop = it,
+                            shape = RoundedCornerShape(percent = 50),
+                        )
+                    } ?: Modifier,
                     query = query,
                     onQueryChange = { newQuery ->
                         // Miuix clears its query when `expanded` becomes false.
@@ -2700,7 +2805,7 @@ internal fun LibrarySearchBar(
                     expanded = visible,
                     onExpandedChange = handleExpandedChange,
                     label = label,
-                    color = MiuixTheme.colorScheme.surfaceContainerHigh.copy(
+                    color = if (pageSurfaceBackdrop != null) androidx.compose.ui.graphics.Color.Transparent else MiuixTheme.colorScheme.surfaceContainerHigh.copy(
                         alpha = if (progressiveBlurActive) 0.8f else 1f,
                     ),
                     trailingIcon = {
@@ -2762,14 +2867,15 @@ private fun PlayerPage(
     val layoutDirection = LocalLayoutDirection.current
     val density = LocalDensity.current
     val windowSize = LocalWindowInfo.current.containerSize
-    val topBarBackdrop = rememberBlurBackdrop()
+    var topBarCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val topBarBackdrop = rememberBlurBackdrop(captureCoordinates = { topBarCaptureCoordinates })
     var bottomContentHeightPx by remember { mutableIntStateOf(0) }
     var bottomContentMeasured by remember { mutableStateOf(false) }
     var fixedExpandedBarPadding by remember(scrollBehavior, density, windowSize, useSmallTopAppBar) {
         mutableStateOf<Dp?>(null)
     }
 
-    Scaffold(
+    PageScaffold(
             topBar = {
             BlurredBar(
                 backdrop = topBarBackdrop,
@@ -2831,6 +2937,8 @@ private fun PlayerPage(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .onGloballyPositioned { topBarCaptureCoordinates = it }
+                .refreshFixedWallpaperSample()
                 .then(topBarBackdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
         ) {
             content(

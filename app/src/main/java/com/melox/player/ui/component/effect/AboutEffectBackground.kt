@@ -24,6 +24,8 @@ import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.node.DrawModifierNode
 import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.node.invalidateDraw
+import com.melox.player.ui.component.LocalCustomPageBackground
+import com.melox.player.ui.component.customPageBackground
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -47,6 +49,13 @@ internal fun AboutEffectBackground(
     alpha: () -> Float = { 1f },
     content: @Composable BoxScope.() -> Unit,
 ) {
+    if (LocalCustomPageBackground.current != null) {
+        Box(
+            modifier = modifier.then(backgroundModifier).customPageBackground(),
+            content = content,
+        )
+        return
+    }
     val shaderSupported = remember { isRuntimeShaderSupported() }
     if (
         Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||

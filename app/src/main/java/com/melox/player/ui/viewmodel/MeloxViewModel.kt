@@ -649,6 +649,34 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    suspend fun setCustomBackground(uri: Uri): Boolean = settingsRepository.setCustomBackground(uri)
+
+    suspend fun deleteCustomBackground(): Boolean = settingsRepository.deleteCustomBackground()
+
+    fun setCustomBackgroundDimPercent(percent: Int) {
+        viewModelScope.launch {
+            settingsRepository.setCustomBackgroundDimPercent(percent)
+        }
+    }
+
+    fun setCustomBackgroundBlurPercent(percent: Int) {
+        viewModelScope.launch {
+            settingsRepository.setCustomBackgroundBlurPercent(percent)
+        }
+    }
+
+    fun setCustomBackgroundCardBlurPercent(percent: Int) {
+        viewModelScope.launch {
+            settingsRepository.setCustomBackgroundCardBlurPercent(percent)
+        }
+    }
+
+    fun setCustomBackgroundCardOpacityPercent(percent: Int) {
+        viewModelScope.launch {
+            settingsRepository.setCustomBackgroundCardOpacityPercent(percent)
+        }
+    }
+
     fun setShowMusicTagEditor(enabled: Boolean) {
         viewModelScope.launch {
             settingsRepository.setShowMusicTagEditor(enabled)

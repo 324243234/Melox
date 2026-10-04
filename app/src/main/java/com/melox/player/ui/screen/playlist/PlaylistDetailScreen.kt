@@ -84,7 +84,7 @@ import top.yukonga.miuix.kmp.basic.ListPopupColumn
 import top.yukonga.miuix.kmp.basic.ListPopupDefaults
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
-import top.yukonga.miuix.kmp.basic.Scaffold
+import com.melox.player.ui.component.PageScaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -294,7 +294,7 @@ fun PlaylistDetailScreen(
         }
     }
 
-    Scaffold(
+    PageScaffold(
         topBar = {
             BlurredBar(
                 backdrop = backdrop,

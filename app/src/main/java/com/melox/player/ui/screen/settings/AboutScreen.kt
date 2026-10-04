@@ -45,12 +45,14 @@ import com.melox.player.R
 import com.melox.player.ui.component.BlurredBar
 import com.melox.player.ui.component.effect.AboutEffectBackground
 import com.melox.player.ui.component.rememberBlurBackdrop
-import top.yukonga.miuix.kmp.basic.Card
+import com.melox.player.ui.component.PageCard as Card
+import com.melox.player.ui.component.LocalCustomPageBackground
+import com.melox.player.ui.component.LocalTopBarWallpaperVisible
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.Scaffold
+import com.melox.player.ui.component.PageScaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
@@ -103,7 +105,7 @@ fun AboutScreen(
         Color.Transparent
     }
 
-    Scaffold(
+    PageScaffold(
         topBar = {
             BlurredBar(
                 backdrop = barBackdrop,
@@ -113,7 +115,7 @@ fun AboutScreen(
                 SmallTopAppBar(
                     title = stringResource(R.string.settings_about_title),
                     scrollBehavior = scrollBehavior,
-                    color = barColor,
+                    color = if (LocalTopBarWallpaperVisible.current) Color.Transparent else barColor,
                     titleColor = MiuixTheme.colorScheme.onSurface.copy(
                         alpha = ((scrollProgress - 0.35f) / 0.65f).coerceIn(0f, 1f),
                     ),
@@ -161,6 +163,7 @@ private fun AboutContent(
     val versionName = BuildConfig.VERSION_NAME.ifBlank { "1.0.0" }
     var headerHeight by remember { mutableStateOf(190.dp) }
     val contentBackdrop = rememberBlurBackdrop()
+    val customBackgroundVisible = LocalCustomPageBackground.current != null
     val isDark = MiuixTheme.colorScheme.surface.luminance() < 0.5f
     val logoBlend = remember(isDark) {
         if (isDark) {
@@ -241,7 +244,7 @@ private fun AboutContent(
                             .padding(horizontal = 12.dp)
                             .padding(bottom = 12.dp)
                             .then(
-                                contentBackdrop?.let {
+                                contentBackdrop?.takeUnless { customBackgroundVisible }?.let {
                                     Modifier.textureBlur(
                                         backdrop = it,
                                         shape = RoundedCornerShape(16.dp),
@@ -254,7 +257,7 @@ private fun AboutContent(
                                 } ?: Modifier,
                             ),
                         colors = CardDefaults.defaultColors(
-                            color = if (contentBackdrop != null) {
+                            color = if (contentBackdrop != null && !customBackgroundVisible) {
                                 Color.Transparent
                             } else {
                                 MiuixTheme.colorScheme.surfaceContainer

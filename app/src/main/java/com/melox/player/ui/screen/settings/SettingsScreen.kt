@@ -23,7 +23,7 @@ import com.melox.player.model.DefaultHomePage
 import com.melox.player.ui.locale.AppLanguage
 import com.melox.player.ui.locale.currentAppLanguage
 import com.melox.player.ui.locale.setAppLanguage
-import top.yukonga.miuix.kmp.basic.Card
+import com.melox.player.ui.component.PageCard as Card
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.preference.ArrowPreference

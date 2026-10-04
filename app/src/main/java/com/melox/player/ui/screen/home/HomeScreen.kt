@@ -84,6 +84,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
+import com.melox.player.ui.component.PageCard
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
@@ -334,7 +335,7 @@ private fun HomeEmptyPlaylistCard(
     onCreatePlaylist: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Card(
+    PageCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
@@ -371,7 +372,7 @@ private fun HomeEmptyRecommendationState(
 
         MusicLibraryPlaceholder.Error,
         MusicLibraryPlaceholder.Empty,
-        -> Card(
+        -> PageCard(
             modifier = modifier
                 .fillMaxWidth()
                 .padding(

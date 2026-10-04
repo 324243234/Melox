@@ -18,7 +18,7 @@ import com.melox.player.ui.screen.playback.MIN_LYRIC_FONT_SCALE
 import com.melox.player.ui.screen.playback.MIN_LYRIC_FONT_WEIGHT
 import com.melox.player.ui.screen.playback.TappableSliderPreference
 import kotlin.math.roundToInt
-import top.yukonga.miuix.kmp.basic.Card
+import com.melox.player.ui.component.PageCard as Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme

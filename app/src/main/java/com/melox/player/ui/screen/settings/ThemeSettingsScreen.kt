@@ -38,10 +38,10 @@ import com.melox.player.ui.component.AdaptiveTopAppBar
 import com.melox.player.ui.component.BlurredBar
 import com.melox.player.ui.component.miuixBarColor
 import com.melox.player.ui.component.rememberBlurBackdrop
-import top.yukonga.miuix.kmp.basic.Card
+import com.melox.player.ui.component.PageScaffold
+import com.melox.player.ui.component.PageCard as Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -49,6 +49,7 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
@@ -71,6 +72,7 @@ fun ThemeSettingsScreen(
     onLiquidGlassChange: (Boolean) -> Unit,
     onPredictiveBackChange: (Boolean) -> Unit,
     onNavigationTransitionStyleChange: (NavigationTransitionStyle) -> Unit,
+    onOpenMainBackground: () -> Unit,
 ) {
     val layoutDirection = LocalLayoutDirection.current
     val dynamicColorSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -116,7 +118,7 @@ fun ThemeSettingsScreen(
             stringResource(R.string.settings_playback_background_dynamic_flow),
     )
     val topBarBackdrop = rememberBlurBackdrop()
-    Scaffold(
+    PageScaffold(
             topBar = {
             BlurredBar(
                 backdrop = topBarBackdrop,
@@ -334,6 +336,14 @@ fun ThemeSettingsScreen(
                                     }
                                 }
                             },
+                        )
+                    }
+                }
+                item(key = "custom_background") {
+                    ThemeCard {
+                        ArrowPreference(
+                            title = stringResource(R.string.settings_custom_background_title),
+                            onClick = onOpenMainBackground,
                         )
                     }
                 }

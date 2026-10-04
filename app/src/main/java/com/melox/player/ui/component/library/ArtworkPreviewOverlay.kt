@@ -336,7 +336,7 @@ internal fun ArtworkPreviewOverlay(
             }
         }
         val density = LocalDensity.current
-        val topBarBackdrop = rememberBlurBackdrop()
+        val topBarBackdrop = rememberBlurBackdrop(includeCustomBackground = false)
         var origin by remember { mutableStateOf(Offset.Zero) }
         BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().onGloballyPositioned {
             origin = it.positionInWindow()
