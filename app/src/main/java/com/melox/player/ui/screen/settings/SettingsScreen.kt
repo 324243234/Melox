@@ -37,6 +37,7 @@ fun SettingsScreen(
     trackCount: Int,
     onDefaultHomePageChange: (DefaultHomePage) -> Unit,
     onOpenThemeSettings: () -> Unit,
+    onOpenLyricsSettings: () -> Unit,
     onOpenAbout: () -> Unit,
     onOpenScanSettings: () -> Unit,
     onOpenStatistics: () -> Unit,
@@ -67,6 +68,10 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_theme_settings_title),
                     summary = stringResource(R.string.settings_theme_settings_summary),
                     onClick = onOpenThemeSettings,
+                )
+                ArrowPreference(
+                    title = stringResource(R.string.settings_lyrics_entry_title),
+                    onClick = onOpenLyricsSettings,
                 )
             }
         }

@@ -114,8 +114,6 @@ import com.melox.player.data.library.FolderSortField
 import com.melox.player.model.BottomBarStyle
 import com.melox.player.model.DefaultHomePage
 import com.melox.player.model.DynamicColorSource
-import com.melox.player.model.LyricsSidecarFormatPriority
-import com.melox.player.model.LyricsSourcePriority
 import com.melox.player.model.PlaybackBackgroundStyle
 import com.melox.player.model.ScanStatus
 import com.melox.player.model.ThemeMode
@@ -177,6 +175,8 @@ import com.melox.player.ui.screen.settings.MusicStatisticsScreen
 import com.melox.player.ui.screen.settings.AboutScreen
 import com.melox.player.ui.screen.settings.SponsorScreen
 import com.melox.player.ui.screen.settings.ThemeSettingsScreen
+import com.melox.player.ui.screen.settings.LyricsSettingsScreen
+import com.melox.player.ui.screen.settings.LyricsInterfaceSettingsScreen
 import com.melox.player.ui.screen.settings.BlockedFoldersScreen
 import com.melox.player.ui.viewmodel.MeloxViewModel
 import com.melox.player.ui.theme.MeloxTheme
@@ -239,6 +239,8 @@ private enum class AppRoute {
     SCAN_SETTINGS,
     MUSIC_STATISTICS,
     THEME_SETTINGS,
+    LYRICS_SETTINGS,
+    LYRICS_INTERFACE,
     ABOUT,
     ALBUM_DETAIL,
     ARTIST_DETAIL,
@@ -693,6 +695,8 @@ fun MeloxApp(
         val artistsListState = rememberLazyListState()
         val foldersListState = rememberLazyListState()
         val themeSettingsListState = rememberLazyListState()
+        val lyricsSettingsListState = rememberLazyListState()
+        val lyricsInterfaceListState = rememberLazyListState()
         var renderedBottomBarStyle by remember {
             mutableStateOf(settings.bottomBarStyle)
         }
@@ -725,6 +729,8 @@ fun MeloxApp(
         val libraryScrollBehavior = MiuixScrollBehavior()
         val settingsScrollBehavior = MiuixScrollBehavior()
         val themeSettingsScrollBehavior = MiuixScrollBehavior()
+        val lyricsSettingsScrollBehavior = MiuixScrollBehavior()
+        val lyricsInterfaceScrollBehavior = MiuixScrollBehavior()
         LaunchedEffect(
             pendingAlbumGridReset,
             albumSortConfig.gridStyle,
@@ -1010,6 +1016,8 @@ fun MeloxApp(
                             onGoToArtist = openTrackArtist,
                             onExternalEditReturned =
                                 viewModel::refreshTrackAfterExternalEdit,
+                            showMusicTagEditor = settings.showMusicTagEditor,
+                            showLyricoEditor = settings.showLyricoEditor,
                             scrollBehavior = scrollBehavior,
                             indexTopPadding = indexTopPadding,
                             listState = songsListState,
@@ -1320,7 +1328,13 @@ fun MeloxApp(
                             trackCount = uiState.tracks.size,
                             onDefaultHomePageChange = viewModel::setDefaultHomePage,
                             onOpenThemeSettings = {
+                                themeSettingsListState.requestScrollToItem(0)
+                                themeSettingsScrollBehavior.state.heightOffset = 0f
+                                themeSettingsScrollBehavior.state.contentOffset = 0f
                                 currentRoute = AppRoute.THEME_SETTINGS
+                            },
+                            onOpenLyricsSettings = {
+                                currentRoute = AppRoute.LYRICS_SETTINGS
                             },
                             onOpenAbout = { currentRoute = AppRoute.ABOUT },
                             onOpenScanSettings = {
@@ -1415,6 +1429,11 @@ fun MeloxApp(
                         depth = 2,
                     ),
                 )
+                currentRoute == AppRoute.LYRICS_INTERFACE -> listOf(
+                    root,
+                    AppNavDestination(AppRoute.LYRICS_SETTINGS, depth = 1),
+                    AppNavDestination(AppRoute.LYRICS_INTERFACE, depth = 2),
+                )
                 currentRoute == AppRoute.SPONSOR -> listOf(
                     root,
                     AppNavDestination(AppRoute.ABOUT, depth = 1),
@@ -1468,6 +1487,8 @@ fun MeloxApp(
                 returnToArtistParentAlbum(null)
             } else if (currentRoute == AppRoute.BLOCKED_FOLDERS) {
                 currentRoute = AppRoute.SCAN_SETTINGS
+            } else if (currentRoute == AppRoute.LYRICS_INTERFACE) {
+                currentRoute = AppRoute.LYRICS_SETTINGS
             } else if (currentRoute == AppRoute.SPONSOR) {
                 currentRoute = AppRoute.ABOUT
             } else if (
@@ -1667,6 +1688,55 @@ fun MeloxApp(
                                                                 viewModel::setNavigationTransitionStyle,
                                                         )
 
+                                                    AppRoute.LYRICS_SETTINGS ->
+                                                        LyricsSettingsScreen(
+                                                            settings = settings,
+                                                            bottomContentPadding =
+                                                                routeBottomPadding,
+                                                            listState = lyricsSettingsListState,
+                                                            scrollBehavior =
+                                                                lyricsSettingsScrollBehavior,
+                                                            onBack = navigateBack,
+                                                            onLyricsSourcePriorityChange =
+                                                                viewModel::setLyricsSourcePriority,
+                                                            onLyricsSidecarFormatPriorityChange =
+                                                                viewModel::setLyricsSidecarFormatPriority,
+                                                            onShowMusicTagEditorChange =
+                                                                viewModel::setShowMusicTagEditor,
+                                                            onShowLyricoEditorChange =
+                                                                viewModel::setShowLyricoEditor,
+                                                            onOpenLyricsInterface = {
+                                                                currentRoute = AppRoute.LYRICS_INTERFACE
+                                                            },
+                                                        )
+
+                                                    AppRoute.LYRICS_INTERFACE ->
+                                                        LyricsInterfaceSettingsScreen(
+                                                            settings = settings,
+                                                            bottomContentPadding =
+                                                                routeBottomPadding,
+                                                            listState = lyricsInterfaceListState,
+                                                            scrollBehavior =
+                                                                lyricsInterfaceScrollBehavior,
+                                                            onBack = navigateBack,
+                                                            onLeftAlignPlayerTitleChange =
+                                                                viewModel::setLeftAlignPlayerTitle,
+                                                            onCenterLyricsChange =
+                                                                viewModel::setCenterLyrics,
+                                                            onShowLyricsTranslationChange =
+                                                                viewModel::setShowLyricsTranslation,
+                                                            onLyricFontScaleChange =
+                                                                viewModel::setLyricFontScale,
+                                                            onLyricFontWeightChange =
+                                                                viewModel::setLyricFontWeight,
+                                                            onLyricBlurEnabledChange =
+                                                                viewModel::setLyricBlurEnabled,
+                                                            onForceWordByWordLyricsChange =
+                                                                viewModel::setForceWordByWordLyrics,
+                                                            onHideControlsOnLyricsChange =
+                                                                viewModel::setHideControlsOnLyrics,
+                                                        )
+
                                                     AppRoute.SCAN_SETTINGS ->
                                                         ScanMusicScreen(
                                                             settings = settings,
@@ -1763,6 +1833,8 @@ fun MeloxApp(
                                                                 onGoToArtist = openTrackArtist,
                                                                 onExternalEditReturned =
                                                                     viewModel::refreshTrackAfterExternalEdit,
+                                                                showMusicTagEditor = settings.showMusicTagEditor,
+                                                                showLyricoEditor = settings.showLyricoEditor,
                                                             )
                                                         }
                                                     }
@@ -1814,6 +1886,8 @@ fun MeloxApp(
                                                                 onGoToArtist = openTrackArtist,
                                                                 onExternalEditReturned =
                                                                     viewModel::refreshTrackAfterExternalEdit,
+                                                                showMusicTagEditor = settings.showMusicTagEditor,
+                                                                showLyricoEditor = settings.showLyricoEditor,
                                                             )
                                                         }
                                                     }
@@ -1862,6 +1936,8 @@ fun MeloxApp(
                                                                 onGoToArtist = openTrackArtist,
                                                                 onExternalEditReturned =
                                                                     viewModel::refreshTrackAfterExternalEdit,
+                                                                showMusicTagEditor = settings.showMusicTagEditor,
+                                                                showLyricoEditor = settings.showLyricoEditor,
                                                             )
                                                         }
                                                     }
@@ -1936,6 +2012,8 @@ fun MeloxApp(
                                                                 onGoToArtist = openTrackArtist,
                                                                 onExternalEditReturned =
                                                                     viewModel::refreshTrackAfterExternalEdit,
+                                                                showMusicTagEditor = settings.showMusicTagEditor,
+                                                                showLyricoEditor = settings.showLyricoEditor,
                                                                 onRename = { name ->
                                                                     viewModel.renamePlaylist(
                                                                         it.id,
@@ -1998,8 +2076,8 @@ fun MeloxApp(
                             leftAlignPlayerTitle = settings.leftAlignPlayerTitle,
                             hideControlsOnLyrics = settings.hideControlsOnLyrics,
                             showLyricsTranslation = settings.showLyricsTranslation,
-                            lyricsSourcePriority = settings.lyricsSourcePriority,
-                            lyricsSidecarFormatPriority = settings.lyricsSidecarFormatPriority,
+                            showMusicTagEditor = settings.showMusicTagEditor,
+                            showLyricoEditor = settings.showLyricoEditor,
                             onDismiss = closePlayer,
                             onOpenQueue = { showQueue = true },
                             onAddToPlaylist = { track ->
@@ -2201,8 +2279,8 @@ private fun FullPlayerHost(
     leftAlignPlayerTitle: Boolean,
     hideControlsOnLyrics: Boolean,
     showLyricsTranslation: Boolean,
-    lyricsSourcePriority: LyricsSourcePriority,
-    lyricsSidecarFormatPriority: LyricsSidecarFormatPriority,
+    showMusicTagEditor: Boolean,
+    showLyricoEditor: Boolean,
     onDismiss: () -> Unit,
     onOpenQueue: () -> Unit,
     onAddToPlaylist: (MusicTrack) -> Unit,
@@ -2254,8 +2332,6 @@ private fun FullPlayerHost(
         leftAlignPlayerTitle = leftAlignPlayerTitle,
         hideControlsOnLyrics = hideControlsOnLyrics,
         showLyricsTranslation = showLyricsTranslation,
-        lyricsSourcePriority = lyricsSourcePriority,
-        lyricsSidecarFormatPriority = lyricsSidecarFormatPriority,
         onLyricFontScaleChange = viewModel::setLyricFontScale,
         onLyricFontWeightChange = viewModel::setLyricFontWeight,
         onForceWordByWordLyricsChange = viewModel::setForceWordByWordLyrics,
@@ -2264,8 +2340,6 @@ private fun FullPlayerHost(
         onLeftAlignPlayerTitleChange = viewModel::setLeftAlignPlayerTitle,
         onHideControlsOnLyricsChange = viewModel::setHideControlsOnLyrics,
         onShowLyricsTranslationChange = viewModel::setShowLyricsTranslation,
-        onLyricsSourcePriorityChange = viewModel::setLyricsSourcePriority,
-        onLyricsSidecarFormatPriorityChange = viewModel::setLyricsSidecarFormatPriority,
         onDismiss = onDismiss,
         onTogglePlayPause = viewModel::togglePlayPause,
         onPrevious = viewModel::previous,
@@ -2293,6 +2367,8 @@ private fun FullPlayerHost(
         artistGroups = artistGroups,
         onGoToArtist = onGoToArtist,
         onExternalEditReturned = viewModel::refreshTrackAfterExternalEdit,
+        showMusicTagEditor = showMusicTagEditor,
+        showLyricoEditor = showLyricoEditor,
         backgroundLayer = backgroundLayer,
         contentLayer = contentLayer,
         frameRecordingGeneration = frameRecordingGeneration,

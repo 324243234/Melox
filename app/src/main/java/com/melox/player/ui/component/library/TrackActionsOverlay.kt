@@ -83,6 +83,8 @@ fun TrackActionsOverlay(
     artistGroups: List<ArtistGroup> = emptyList(),
     onGoToArtist: ((ArtistGroup) -> Unit)? = null,
     onExternalEditReturned: (Long) -> Unit,
+    showMusicTagEditor: Boolean,
+    showLyricoEditor: Boolean,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -289,28 +291,23 @@ fun TrackActionsOverlay(
                             )
                         }
                     }
-                    TrackAction(
-                        icon = MiuixIcons.Edit,
-                        text = stringResource(R.string.music_edit_with_music_tag_editor),
-                        onClick = {
-                            openExternalEditor(
-                                selectedTrack,
-                                ExternalEditorKind.MusicTagEditor,
-                                musicTagEditorNotFoundMessage,
-                            )
-                        },
-                    )
-                    TrackAction(
-                        icon = MiuixIcons.Edit,
-                        text = stringResource(R.string.music_edit_with_lyrico),
-                        onClick = {
-                            openExternalEditor(
-                                selectedTrack,
-                                ExternalEditorKind.Lyrico,
-                                lyricoNotFoundMessage,
-                            )
-                        },
-                    )
+                    visibleExternalEditors(showMusicTagEditor, showLyricoEditor).forEach { editor ->
+                        val titleRes = when (editor) {
+                            ExternalEditorKind.MusicTagEditor -> R.string.music_edit_with_music_tag_editor
+                            ExternalEditorKind.Lyrico -> R.string.music_edit_with_lyrico
+                        }
+                        val notFoundMessage = when (editor) {
+                            ExternalEditorKind.MusicTagEditor -> musicTagEditorNotFoundMessage
+                            ExternalEditorKind.Lyrico -> lyricoNotFoundMessage
+                        }
+                        TrackAction(
+                            icon = MiuixIcons.Edit,
+                            text = stringResource(titleRes),
+                            onClick = {
+                                openExternalEditor(selectedTrack, editor, notFoundMessage)
+                            },
+                        )
+                    }
                     TrackAction(
                         icon = {
                             Icon(

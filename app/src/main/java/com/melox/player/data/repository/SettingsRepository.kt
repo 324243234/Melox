@@ -100,6 +100,8 @@ class SettingsRepository(context: Context) {
                 leftAlignPlayerTitle = preferences[Keys.LeftAlignPlayerTitle] ?: false,
                 hideControlsOnLyrics = preferences[Keys.HideControlsOnLyrics] ?: false,
                 showLyricsTranslation = preferences[Keys.ShowLyricsTranslation] ?: true,
+                showMusicTagEditor = preferences[Keys.ShowMusicTagEditor] ?: true,
+                showLyricoEditor = preferences[Keys.ShowLyricoEditor] ?: true,
                 lyricsSourcePriority = preferences[Keys.LyricsSourcePriority]
                     ?.let { storedValue ->
                         enumValueOrDefault(storedValue, LyricsSourcePriority.EMBEDDED)
@@ -272,6 +274,14 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    suspend fun setShowMusicTagEditor(enabled: Boolean) {
+        dataStore.edit { it[Keys.ShowMusicTagEditor] = enabled }
+    }
+
+    suspend fun setShowLyricoEditor(enabled: Boolean) {
+        dataStore.edit { it[Keys.ShowLyricoEditor] = enabled }
+    }
+
     suspend fun setLyricsSidecarFormatPriority(priority: LyricsSidecarFormatPriority) {
         dataStore.edit { preferences ->
             preferences[Keys.LyricsSidecarFormatPriority] = priority.name
@@ -437,6 +447,8 @@ class SettingsRepository(context: Context) {
         val LeftAlignPlayerTitle = booleanPreferencesKey("left_align_player_title")
         val HideControlsOnLyrics = booleanPreferencesKey("hide_controls_on_lyrics")
         val ShowLyricsTranslation = booleanPreferencesKey("show_lyrics_translation")
+        val ShowMusicTagEditor = booleanPreferencesKey("show_music_tag_editor")
+        val ShowLyricoEditor = booleanPreferencesKey("show_lyrico_editor")
         val LyricsSourcePriority = stringPreferencesKey("lyrics_source_priority")
         val LyricsSidecarFormatPriority = stringPreferencesKey("lyrics_sidecar_format_priority")
         val BottomBarStyle = stringPreferencesKey("bottom_bar_style")

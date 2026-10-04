@@ -71,6 +71,8 @@ fun FolderDetailScreen(
     artistGroups: List<ArtistGroup>,
     onGoToArtist: (ArtistGroup) -> Unit,
     onExternalEditReturned: (Long) -> Unit,
+    showMusicTagEditor: Boolean,
+    showLyricoEditor: Boolean,
 ) {
     var query by rememberSaveable(folder.key) { mutableStateOf("") }
     var searchVisible by rememberSaveable(folder.key) { mutableStateOf(false) }
@@ -278,6 +280,8 @@ fun FolderDetailScreen(
                 artistGroups = artistGroups,
                 onGoToArtist = onGoToArtist,
                 onExternalEditReturned = onExternalEditReturned,
+                showMusicTagEditor = showMusicTagEditor,
+                showLyricoEditor = showLyricoEditor,
                 scrollBehavior = scrollBehavior,
                 indexTopPadding = indexTopPadding,
                 listState = listState,

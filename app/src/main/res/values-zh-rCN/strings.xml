@@ -326,7 +326,13 @@
     <string name="lyrics_source_priority">歌词来源优先级</string>
     <string name="lyrics_source_embedded">内嵌</string>
     <string name="lyrics_source_external">外置</string>
-    <string name="lyrics_sidecar_format_priority">外置歌词格式优先级</string>
+    <string name="lyrics_sidecar_format_priority">外置歌词优先级</string>
+    <string name="settings_lyrics_entry_title">歌词</string>
+    <string name="settings_lyrics_title">歌词</string>
+    <string name="lyrics_editor_menu">歌词编辑菜单</string>
+    <string name="lyrics_editor_music_tag">音乐标签</string>
+    <string name="lyrics_editor_lyrico">Lyrico</string>
+    <string name="settings_lyrics_interface_title">歌词界面</string>
     <string name="lyrics_sidecar_lrc">.lrc</string>
     <string name="lyrics_sidecar_ttml">.ttml</string>
 

@@ -116,6 +116,8 @@ fun PlaylistDetailScreen(
     onGoToAlbum: (MusicTrack) -> Unit,
     onGoToArtist: (ArtistGroup) -> Unit,
     onExternalEditReturned: (Long) -> Unit,
+    showMusicTagEditor: Boolean,
+    showLyricoEditor: Boolean,
     onRename: (String) -> Unit,
     onDelete: () -> Unit,
     onRemoveEntries: (Set<String>) -> Unit,
@@ -605,6 +607,8 @@ fun PlaylistDetailScreen(
         artistGroups = artistGroups,
         onGoToArtist = onGoToArtist,
         onExternalEditReturned = onExternalEditReturned,
+        showMusicTagEditor = showMusicTagEditor,
+        showLyricoEditor = showLyricoEditor,
     )
     OverlayDialog(
         show = showRemoveSelectedConfirm,

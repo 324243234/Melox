@@ -339,7 +339,13 @@
     <string name="lyrics_source_priority">Lyrics source priority</string>
     <string name="lyrics_source_embedded">Embedded</string>
     <string name="lyrics_source_external">External</string>
-    <string name="lyrics_sidecar_format_priority">External lyrics format priority</string>
+    <string name="lyrics_sidecar_format_priority">External lyrics priority</string>
+    <string name="settings_lyrics_entry_title">Lyrics</string>
+    <string name="settings_lyrics_title">Lyrics</string>
+    <string name="lyrics_editor_menu">Lyrics editing menu</string>
+    <string name="lyrics_editor_music_tag">Music Tag Editor</string>
+    <string name="lyrics_editor_lyrico">Lyrico</string>
+    <string name="settings_lyrics_interface_title">Lyrics interface</string>
     <string name="lyrics_sidecar_lrc">.lrc</string>
     <string name="lyrics_sidecar_ttml">.ttml</string>
 

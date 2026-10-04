@@ -649,6 +649,18 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setShowMusicTagEditor(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.setShowMusicTagEditor(enabled)
+        }
+    }
+
+    fun setShowLyricoEditor(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.setShowLyricoEditor(enabled)
+        }
+    }
+
     fun setLyricsSidecarFormatPriority(priority: LyricsSidecarFormatPriority) {
         viewModelScope.launch {
             settingsRepository.setLyricsSidecarFormatPriority(priority)
