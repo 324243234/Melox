@@ -62,7 +62,7 @@ class PlaybackController(context: Context) {
     val autoExtendSleepTimer: StateFlow<Boolean> = mutableAutoExtendSleepTimer.asStateFlow()
     private val mutablePlaybackPauseFade = MutableStateFlow(false)
     val playbackPauseFade: StateFlow<Boolean> = mutablePlaybackPauseFade.asStateFlow()
-    private val mutableHighPrecisionOutput = MutableStateFlow(true)
+    private val mutableHighPrecisionOutput = MutableStateFlow(false)
     val highPrecisionOutput: StateFlow<Boolean> = mutableHighPrecisionOutput.asStateFlow()
     private var pendingPlaybackSpeed: Float? = null
     private var pendingSpeedTimeoutJob: Job? = null

@@ -1,5 +1,10 @@
 package com.melox.player.ui.screen.playback
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -36,7 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
@@ -44,8 +49,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.melox.player.R
-import com.melox.player.model.SleepTimerState
 import com.melox.player.model.PLAYBACK_SPEED_VALUES
+import com.melox.player.model.SleepTimerState
 import com.melox.player.ui.component.bottomSheetCardColor
 import com.melox.player.ui.component.bottomSheetGlassModifier
 import com.melox.player.ui.component.bottomSheetMaterialColor
@@ -55,9 +60,13 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.NumberPickerDefaults
 import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.TabRowDefaults
+import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
+import top.yukonga.miuix.kmp.squircle.LocalSquircleEnabled
 import top.yukonga.miuix.kmp.squircle.squircleClip
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
@@ -159,8 +168,19 @@ internal fun PlaybackOptionsDialog(
     onPlaybackPauseFadeChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val speedLabels = LocalContext.current.resources
-        .getStringArray(R.array.playback_speed_options).toList()
+    val speedLabels = stringArrayResource(R.array.playback_speed_options).toList()
+    val speedBackgroundColor = bottomSheetCardColor().let { color ->
+        // Miuix 0.9.4's squircle-background shader returns an unpremultiplied color.
+        if (isRuntimeShaderSupported() && LocalSquircleEnabled.current) {
+            color.copy(
+                red = color.red * color.alpha,
+                green = color.green * color.alpha,
+                blue = color.blue * color.alpha,
+            )
+        } else {
+            color
+        }
+    }
     val scrollState = rememberScrollState()
     val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val hourPicker = remember(show) { TimerNumberPickerState(timerSeconds / 3600, 0..23) }
@@ -225,14 +245,26 @@ internal fun PlaybackOptionsDialog(
                 .padding(bottom = bottomPadding + 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            PlaybackSpeedTabRow(
-                tabs = speedLabels,
-                enabled = !floatOutputActive,
-                selectedTabIndex = PLAYBACK_SPEED_VALUES.indexOf(playbackSpeed)
-                    .takeIf { it >= 0 } ?: PLAYBACK_SPEED_VALUES.indexOf(1f),
-                onTabSelected = { onPlaybackSpeedChange(PLAYBACK_SPEED_VALUES[it]) },
-                modifier = Modifier.fillMaxWidth(),
-            )
+            AnimatedVisibility(
+                visible = !floatOutputActive,
+                enter = fadeIn(animationSpec = tween(200)) +
+                    expandVertically(animationSpec = tween(250)),
+                exit = fadeOut(animationSpec = tween(150)) +
+                    shrinkVertically(animationSpec = tween(200)),
+                label = "playbackSpeedVisibility",
+            ) {
+                TabRowWithContour(
+                    tabs = speedLabels,
+                    selectedTabIndex = PLAYBACK_SPEED_VALUES.indexOf(playbackSpeed)
+                        .takeIf { it >= 0 } ?: PLAYBACK_SPEED_VALUES.indexOf(1f),
+                    onTabSelected = { index ->
+                        if (!floatOutputActive) {
+                            onPlaybackSpeedChange(PLAYBACK_SPEED_VALUES[index])
+                        }
+                    },
+                    colors = TabRowDefaults.tabRowColors(backgroundColor = speedBackgroundColor),
+                )
+            }
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.defaultColors(color = bottomSheetCardColor()),

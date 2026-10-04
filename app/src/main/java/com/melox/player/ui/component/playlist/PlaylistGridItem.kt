@@ -33,7 +33,8 @@ import com.melox.player.model.LocalPlaylist
 import com.melox.player.model.MusicTrack
 import com.melox.player.ui.component.library.rememberArtworkBitmap
 import top.yukonga.miuix.kmp.basic.BasicComponent
-import top.yukonga.miuix.kmp.basic.Card
+import com.melox.player.ui.component.PageCard as Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -66,13 +67,12 @@ fun PlaylistGridItem(
     Card(
         modifier = modifier.fillMaxWidth(),
         cornerRadius = 20.dp,
+        colors = CardDefaults.defaultColors(color = MiuixTheme.colorScheme.surfaceVariant),
         pressFeedbackType = PressFeedbackType.Sink,
         onClick = onClick,
     ) {
         BasicComponent(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MiuixTheme.colorScheme.surfaceVariant),
+            modifier = Modifier.fillMaxWidth(),
             insideMargin = androidx.compose.foundation.layout.PaddingValues(8.dp),
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {

@@ -135,7 +135,7 @@ internal fun MiniPlayer(
             .onGloballyPositioned { coordinates ->
                 onPlayerBoundsChanged(coordinates.boundsInRoot())
             }
-            .recordPlayerLayer(
+            .recordMiniPlayerLayer(
                 layer = playerLayer,
                 drawInPlace = drawInPlace,
                 recordingGeneration = frameRecordingGeneration,

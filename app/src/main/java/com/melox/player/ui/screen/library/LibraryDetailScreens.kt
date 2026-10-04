@@ -52,6 +52,9 @@ import com.melox.player.data.library.buildAlbumGroups
 import com.melox.player.data.library.displayArtistName
 import com.melox.player.model.MusicTrack
 import com.melox.player.ui.component.BlurredBar
+import com.melox.player.ui.component.LocalCustomPageBackground
+import com.melox.player.ui.component.topBarContainerColor
+import com.melox.player.ui.component.tabSelectedContainerColor
 import com.melox.player.ui.component.miuixBarColor
 import com.melox.player.ui.component.rememberBlurBackdrop
 import com.melox.player.ui.component.library.ArtistArtwork
@@ -69,12 +72,12 @@ import com.melox.player.ui.component.library.selectedItemsInDisplayedOrder
 import com.melox.player.ui.component.library.toggleAllTrackSelection
 import com.melox.player.ui.component.library.toggleTrackSelection
 import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.basic.Card
+import com.melox.player.ui.component.PageCard as Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.Scaffold
+import com.melox.player.ui.component.PageScaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
@@ -103,13 +106,17 @@ fun AlbumDetailScreen(
     onGoToAlbum: (MusicTrack) -> Unit,
     onGoToArtist: (ArtistGroup) -> Unit,
     onExternalEditReturned: (Long) -> Unit,
+    showMusicTagEditor: Boolean,
+    showLyricoEditor: Boolean,
 ) {
     val scrollBehavior = MiuixScrollBehavior()
     val backdrop = rememberBlurBackdrop()
     val layoutDirection = LocalLayoutDirection.current
     val pagerState = rememberPagerState(pageCount = { 2 })
     val scope = rememberCoroutineScope()
-    val tabRowBackgroundColor = backdrop.miuixBarColor()
+    val hasWallpaper = LocalCustomPageBackground.current != null
+    val tabRowBackgroundColor = topBarContainerColor(hasWallpaper, backdrop != null, MiuixTheme.colorScheme.surface)
+    val tabSelectedColor = tabSelectedContainerColor(hasWallpaper, false, MiuixTheme.colorScheme.surfaceContainer)
     val trackSections = remember(album.tracks) { buildAlbumDiscSections(album.tracks) }
     val orderedTracks = remember(trackSections) { trackSections.flatMap(AlbumDiscSection::tracks) }
     val orderedTrackIndices = remember(orderedTracks) {
@@ -143,7 +150,7 @@ fun AlbumDetailScreen(
             selectionMode = false
         }
     }
-    Scaffold(
+    PageScaffold(
             topBar = {
             BlurredBar(
                 backdrop = backdrop,
@@ -238,6 +245,7 @@ fun AlbumDetailScreen(
                                     },
                                     colors = TabRowDefaults.tabRowColors(
                                         backgroundColor = tabRowBackgroundColor,
+                                        selectedBackgroundColor = tabSelectedColor,
                                     ),
                                 )
                             }
@@ -372,6 +380,8 @@ fun AlbumDetailScreen(
             artistGroups = artistGroups,
             onGoToArtist = onGoToArtist,
             onExternalEditReturned = onExternalEditReturned,
+            showMusicTagEditor = showMusicTagEditor,
+            showLyricoEditor = showLyricoEditor,
         )
     }
 }
@@ -431,6 +441,8 @@ fun ArtistDetailScreen(
     onGoToAlbum: (MusicTrack) -> Unit,
     onGoToArtist: (ArtistGroup) -> Unit,
     onExternalEditReturned: (Long) -> Unit,
+    showMusicTagEditor: Boolean,
+    showLyricoEditor: Boolean,
 ) {
     val scrollBehavior = MiuixScrollBehavior()
     val backdrop = rememberBlurBackdrop()
@@ -438,7 +450,9 @@ fun ArtistDetailScreen(
     val albums = remember(artist.tracks) { buildAlbumGroups(artist.tracks) }
     val pagerState = rememberPagerState(pageCount = { 2 })
     val scope = rememberCoroutineScope()
-    val tabRowBackgroundColor = backdrop.miuixBarColor()
+    val hasWallpaper = LocalCustomPageBackground.current != null
+    val tabRowBackgroundColor = topBarContainerColor(hasWallpaper, backdrop != null, MiuixTheme.colorScheme.surface)
+    val tabSelectedColor = tabSelectedContainerColor(hasWallpaper, false, MiuixTheme.colorScheme.surfaceContainer)
     var selectedTrack by remember { mutableStateOf<MusicTrack?>(null) }
     var selectedTrackUris by remember(artist.key) {
         mutableStateOf<Set<String>>(emptySet())
@@ -464,7 +478,7 @@ fun ArtistDetailScreen(
             selectionMode = false
         }
     }
-    Scaffold(
+    PageScaffold(
             topBar = {
             BlurredBar(
                 backdrop = backdrop,
@@ -559,6 +573,7 @@ fun ArtistDetailScreen(
                                     },
                                     colors = TabRowDefaults.tabRowColors(
                                         backgroundColor = tabRowBackgroundColor,
+                                        selectedBackgroundColor = tabSelectedColor,
                                     ),
                                 )
                             }
@@ -668,6 +683,8 @@ fun ArtistDetailScreen(
             artistGroups = artistGroups,
             onGoToArtist = onGoToArtist,
             onExternalEditReturned = onExternalEditReturned,
+            showMusicTagEditor = showMusicTagEditor,
+            showLyricoEditor = showLyricoEditor,
         )
     }
 }

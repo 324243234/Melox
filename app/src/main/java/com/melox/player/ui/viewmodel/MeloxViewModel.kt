@@ -42,6 +42,7 @@ import com.melox.player.data.repository.SettingsRepository
 import com.melox.player.data.playlist.addTracksToPlaylist
 import com.melox.player.data.playlist.removePlaylistEntries
 import com.melox.player.data.playlist.reorderPlaylistEntries
+import com.melox.player.data.playlist.reorderPlaylists
 import com.melox.player.model.AppSettings
 import com.melox.player.model.BottomBarStyle
 import com.melox.player.model.DefaultHomePage
@@ -649,6 +650,46 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    suspend fun setCustomBackground(uri: Uri): Boolean = settingsRepository.setCustomBackground(uri)
+
+    suspend fun deleteCustomBackground(): Boolean = settingsRepository.deleteCustomBackground()
+
+    fun setCustomBackgroundDimPercent(percent: Int) {
+        viewModelScope.launch {
+            settingsRepository.setCustomBackgroundDimPercent(percent)
+        }
+    }
+
+    fun setCustomBackgroundBlurPercent(percent: Int) {
+        viewModelScope.launch {
+            settingsRepository.setCustomBackgroundBlurPercent(percent)
+        }
+    }
+
+    fun setCustomBackgroundCardBlurPercent(percent: Int) {
+        viewModelScope.launch {
+            settingsRepository.setCustomBackgroundCardBlurPercent(percent)
+        }
+    }
+
+    fun setCustomBackgroundCardOpacityPercent(percent: Int) {
+        viewModelScope.launch {
+            settingsRepository.setCustomBackgroundCardOpacityPercent(percent)
+        }
+    }
+
+    fun setShowMusicTagEditor(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.setShowMusicTagEditor(enabled)
+        }
+    }
+
+    fun setShowLyricoEditor(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.setShowLyricoEditor(enabled)
+        }
+    }
+
     fun setLyricsSidecarFormatPriority(priority: LyricsSidecarFormatPriority) {
         viewModelScope.launch {
             settingsRepository.setLyricsSidecarFormatPriority(priority)
@@ -851,7 +892,7 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
             nowEpochMillis = now,
             newEntryId = { UUID.randomUUID().toString() },
         )
-        playlists.value = playlists.value + playlist
+        playlists.value = listOf(playlist) + playlists.value
         persistPlaylists()
         return playlistId
     }
@@ -941,6 +982,16 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
         ) ?: return false
         if (updated === current) return true
         playlists.value = currentPlaylists.toMutableList().apply { set(index, updated) }
+        persistPlaylists()
+        return true
+    }
+
+    fun movePlaylists(orderedPlaylistIds: List<String>): Boolean {
+        if (!playlistsLoaded.value) return false
+        val current = playlists.value
+        val updated = reorderPlaylists(current, orderedPlaylistIds) ?: return false
+        if (updated === current) return true
+        playlists.value = updated
         persistPlaylists()
         return true
     }

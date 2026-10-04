@@ -49,7 +49,7 @@ import com.melox.player.ui.component.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.Scaffold
+import com.melox.player.ui.component.PageScaffold
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
@@ -71,6 +71,8 @@ fun FolderDetailScreen(
     artistGroups: List<ArtistGroup>,
     onGoToArtist: (ArtistGroup) -> Unit,
     onExternalEditReturned: (Long) -> Unit,
+    showMusicTagEditor: Boolean,
+    showLyricoEditor: Boolean,
 ) {
     var query by rememberSaveable(folder.key) { mutableStateOf("") }
     var searchVisible by rememberSaveable(folder.key) { mutableStateOf(false) }
@@ -128,7 +130,7 @@ fun FolderDetailScreen(
         }
     }
 
-    Scaffold(
+    PageScaffold(
             topBar = {
             BlurredBar(
                 backdrop = backdrop,
@@ -278,6 +280,8 @@ fun FolderDetailScreen(
                 artistGroups = artistGroups,
                 onGoToArtist = onGoToArtist,
                 onExternalEditReturned = onExternalEditReturned,
+                showMusicTagEditor = showMusicTagEditor,
+                showLyricoEditor = showLyricoEditor,
                 scrollBehavior = scrollBehavior,
                 indexTopPadding = indexTopPadding,
                 listState = listState,

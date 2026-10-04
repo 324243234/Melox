@@ -22,7 +22,7 @@ class PlaybackOptionsTest {
     fun savedPlaybackOptionsUseRequestedDefaultsAndValidSpeeds() {
         val settings = AppSettings()
         assertEquals(1f, settings.playbackSpeed)
-        assertTrue(settings.highPrecisionOutput)
+        assertEquals(false, settings.highPrecisionOutput)
         assertEquals(600, settings.sleepTimerSeconds)
         assertEquals(false, settings.autoExtendSleepTimer)
         assertEquals(false, settings.playbackPauseFade)

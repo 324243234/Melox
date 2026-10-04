@@ -23,7 +23,7 @@ import com.melox.player.model.DefaultHomePage
 import com.melox.player.ui.locale.AppLanguage
 import com.melox.player.ui.locale.currentAppLanguage
 import com.melox.player.ui.locale.setAppLanguage
-import top.yukonga.miuix.kmp.basic.Card
+import com.melox.player.ui.component.PageCard as Card
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -37,6 +37,7 @@ fun SettingsScreen(
     trackCount: Int,
     onDefaultHomePageChange: (DefaultHomePage) -> Unit,
     onOpenThemeSettings: () -> Unit,
+    onOpenLyricsSettings: () -> Unit,
     onOpenAbout: () -> Unit,
     onOpenScanSettings: () -> Unit,
     onOpenStatistics: () -> Unit,
@@ -67,6 +68,10 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_theme_settings_title),
                     summary = stringResource(R.string.settings_theme_settings_summary),
                     onClick = onOpenThemeSettings,
+                )
+                ArrowPreference(
+                    title = stringResource(R.string.settings_lyrics_entry_title),
+                    onClick = onOpenLyricsSettings,
                 )
             }
         }

@@ -83,6 +83,65 @@ class MeloxInstrumentedTest {
     }
 
     @Test
+    fun cardBlurSettingPersistsIndependentlyAndClampsBounds() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = SettingsRepository(context)
+        val original = repository.loadSettings()
+        try {
+            for ((requested, expected) in listOf(-1 to 0, 50 to 50, 101 to 100)) {
+                repository.setCustomBackgroundCardBlurPercent(requested)
+                val restored = SettingsRepository(context).loadSettings()
+                assertEquals(expected, restored.customBackgroundCardBlurPercent)
+                assertEquals(original.customBackgroundBlurPercent, restored.customBackgroundBlurPercent)
+                assertEquals(original.customBackgroundDimPercent, restored.customBackgroundDimPercent)
+                assertEquals(original.blurEnabled, restored.blurEnabled)
+            }
+        } finally {
+            repository.setCustomBackgroundCardBlurPercent(original.customBackgroundCardBlurPercent)
+        }
+    }
+
+    @Test
+    fun wallpaperDimmingSettingStopsAtNinetyPercentAndPreservesOtherSettings() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = SettingsRepository(context)
+        val original = repository.loadSettings()
+        try {
+            for ((requested, expected) in listOf(-1 to 0, 90 to 90, 91 to 90, 100 to 90)) {
+                repository.setCustomBackgroundDimPercent(requested)
+                val restored = SettingsRepository(context).loadSettings()
+                assertEquals(expected, restored.customBackgroundDimPercent)
+                assertEquals(original.customBackgroundBlurPercent, restored.customBackgroundBlurPercent)
+                assertEquals(original.customBackgroundCardBlurPercent, restored.customBackgroundCardBlurPercent)
+                assertEquals(original.customBackgroundCardOpacityPercent, restored.customBackgroundCardOpacityPercent)
+                assertEquals(original.blurEnabled, restored.blurEnabled)
+            }
+        } finally {
+            repository.setCustomBackgroundDimPercent(original.customBackgroundDimPercent)
+        }
+    }
+
+    @Test
+    fun cardOpacitySettingPersistsWithoutChangingBlurOrOtherBackgroundSettings() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = SettingsRepository(context)
+        val original = repository.loadSettings()
+        try {
+            for ((requested, expected) in listOf(-1 to 0, 80 to 80, 81 to 80, 101 to 80)) {
+                repository.setCustomBackgroundCardOpacityPercent(requested)
+                val restored = SettingsRepository(context).loadSettings()
+                assertEquals(expected, restored.customBackgroundCardOpacityPercent)
+                assertEquals(original.customBackgroundCardBlurPercent, restored.customBackgroundCardBlurPercent)
+                assertEquals(original.customBackgroundBlurPercent, restored.customBackgroundBlurPercent)
+                assertEquals(original.customBackgroundDimPercent, restored.customBackgroundDimPercent)
+                assertEquals(original.blurEnabled, restored.blurEnabled)
+            }
+        } finally {
+            repository.setCustomBackgroundCardOpacityPercent(original.customBackgroundCardOpacityPercent)
+        }
+    }
+
+    @Test
     fun mainActivityCreatesWithoutCrashing() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->

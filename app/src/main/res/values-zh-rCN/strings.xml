@@ -326,7 +326,25 @@
     <string name="lyrics_source_priority">歌词来源优先级</string>
     <string name="lyrics_source_embedded">内嵌</string>
     <string name="lyrics_source_external">外置</string>
-    <string name="lyrics_sidecar_format_priority">外置歌词格式优先级</string>
+    <string name="lyrics_sidecar_format_priority">外置歌词优先级</string>
+    <string name="settings_lyrics_entry_title">歌词</string>
+    <string name="settings_lyrics_title">歌词</string>
+    <string name="settings_custom_background_title">主界面背景</string>
+    <string name="settings_background_choose_image">选择图片</string>
+    <string name="settings_background_dim">壁纸压暗</string>
+    <string name="settings_background_card_blur">Card模糊</string>
+    <string name="settings_background_card_blur_disabled_summary">模糊未开启</string>
+    <string name="settings_background_card_opacity">Card不透明度</string>
+    <string name="settings_background_delete">删除图片</string>
+    <string name="settings_background_delete_title">删除当前图片</string>
+    <string name="settings_background_delete_failed">无法删除图片</string>
+    <string name="settings_custom_background_blur_title">壁纸模糊</string>
+    <string name="settings_percent_value">%1$d%%</string>
+    <string name="settings_custom_background_failed">无法使用此图片</string>
+    <string name="lyrics_editor_menu">歌词编辑菜单</string>
+    <string name="lyrics_editor_music_tag">音乐标签</string>
+    <string name="lyrics_editor_lyrico">Lyrico</string>
+    <string name="settings_lyrics_interface_title">歌词界面</string>
     <string name="lyrics_sidecar_lrc">.lrc</string>
     <string name="lyrics_sidecar_ttml">.ttml</string>
 
@@ -337,4 +355,6 @@
     <string name="about_github_label">Github</string>
     <string name="about_telegram_label">Telegram</string>
     <string name="sponsor_code_description">赞助码</string>
+    <string name="playlist_move_earlier">向前移动</string>
+    <string name="playlist_move_later">向后移动</string>
 </resources>

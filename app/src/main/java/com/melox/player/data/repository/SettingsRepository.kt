@@ -1,6 +1,7 @@
 package com.melox.player.data.repository
 
 import android.content.Context
+import android.net.Uri
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -21,6 +22,13 @@ import com.melox.player.data.library.FolderSortField
 import com.melox.player.data.library.MusicSortConfig
 import com.melox.player.data.library.MusicSortField
 import com.melox.player.model.AppSettings
+import com.melox.player.model.normalizeCustomBackgroundBlurPercent
+import com.melox.player.model.resolveCustomBackgroundBlurPercent
+import com.melox.player.model.normalizeCustomBackgroundDimPercent
+import com.melox.player.model.normalizeCustomBackgroundCardBlurPercent
+import com.melox.player.model.DEFAULT_CUSTOM_BACKGROUND_CARD_BLUR_PERCENT
+import com.melox.player.model.DEFAULT_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT
+import com.melox.player.model.normalizeCustomBackgroundCardOpacityPercent
 import com.melox.player.model.BottomBarStyle
 import com.melox.player.model.DefaultHomePage
 import com.melox.player.model.DynamicColorSource
@@ -35,6 +43,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "melox_settings",
@@ -48,6 +61,8 @@ private val Context.settingsDataStore: DataStore<Preferences> by preferencesData
  */
 class SettingsRepository(context: Context) {
     private val dataStore = context.applicationContext.settingsDataStore
+    private val customBackgroundRepository = CustomBackgroundRepository(context)
+    private val backgroundImageMutex = Mutex()
 
     val settings: Flow<AppSettings> = dataStore.data
         .catch { exception ->
@@ -66,6 +81,17 @@ class SettingsRepository(context: Context) {
                     }
                     ?: ThemeMode.SYSTEM,
                 dynamicColorEnabled = preferences[Keys.DynamicColorEnabled] ?: false,
+                customBackgroundId = preferences[Keys.CustomBackgroundId]?.takeIf(::isCustomBackgroundId),
+                customBackgroundBlurPercent = resolveCustomBackgroundBlurPercent(
+                    preferences[Keys.CustomBackgroundBlurPercent],
+                    preferences[Keys.LegacyCustomBackgroundBlurEnabled],
+                ),
+                customBackgroundDimPercent = preferences[Keys.CustomBackgroundDimPercent]
+                    ?.let(::normalizeCustomBackgroundDimPercent) ?: 0,
+                customBackgroundCardBlurPercent = preferences[Keys.CustomBackgroundCardBlurPercent]
+                    ?.let(::normalizeCustomBackgroundCardBlurPercent) ?: DEFAULT_CUSTOM_BACKGROUND_CARD_BLUR_PERCENT,
+                customBackgroundCardOpacityPercent = preferences[Keys.CustomBackgroundCardOpacityPercent]
+                    ?.let(::normalizeCustomBackgroundCardOpacityPercent) ?: DEFAULT_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT,
                 dynamicColorSource = preferences[Keys.DynamicColorSource]
                     ?.let { storedValue ->
                         enumValueOrDefault(storedValue, DynamicColorSource.PLAYBACK_ARTWORK)
@@ -81,7 +107,7 @@ class SettingsRepository(context: Context) {
                     ?: PlaybackBackgroundStyle.BLURRED_ARTWORK,
                 playbackSpeed = preferences[Keys.PlaybackSpeed]
                     ?.let(::normalizePlaybackSpeed) ?: 1f,
-                highPrecisionOutput = preferences[Keys.HighPrecisionOutput] ?: true,
+                highPrecisionOutput = preferences[Keys.HighPrecisionOutput] ?: false,
                 sleepTimerSeconds = preferences[Keys.SleepTimerSeconds]
                     ?.coerceIn(0, 86_399) ?: 600,
                 autoExtendSleepTimer = preferences[Keys.AutoExtendSleepTimer] ?: false,
@@ -100,6 +126,8 @@ class SettingsRepository(context: Context) {
                 leftAlignPlayerTitle = preferences[Keys.LeftAlignPlayerTitle] ?: false,
                 hideControlsOnLyrics = preferences[Keys.HideControlsOnLyrics] ?: false,
                 showLyricsTranslation = preferences[Keys.ShowLyricsTranslation] ?: true,
+                showMusicTagEditor = preferences[Keys.ShowMusicTagEditor] ?: true,
+                showLyricoEditor = preferences[Keys.ShowLyricoEditor] ?: true,
                 lyricsSourcePriority = preferences[Keys.LyricsSourcePriority]
                     ?.let { storedValue ->
                         enumValueOrDefault(storedValue, LyricsSourcePriority.EMBEDDED)
@@ -170,6 +198,66 @@ class SettingsRepository(context: Context) {
         }
 
     suspend fun loadSettings(): AppSettings = settings.first()
+
+    suspend fun setCustomBackground(uri: Uri): Boolean = backgroundImageMutex.withLock {
+        val id = customBackgroundRepository.importImage(uri) ?: return@withLock false
+        withContext(NonCancellable) {
+            var previousId: String? = null
+            try {
+                dataStore.edit { preferences ->
+                    previousId = preferences[Keys.CustomBackgroundId]
+                    preferences[Keys.CustomBackgroundId] = id
+                }
+            } catch (error: CancellationException) {
+                customBackgroundRepository.deleteImage(id)
+                throw error
+            } catch (_: IOException) {
+                customBackgroundRepository.deleteImage(id)
+                return@withContext false
+            }
+            previousId?.let { customBackgroundRepository.deleteImage(it) }
+            true
+        }
+    }
+
+    suspend fun deleteCustomBackground(): Boolean = backgroundImageMutex.withLock {
+        withContext(NonCancellable) {
+            var previousId: String? = null
+            try {
+                dataStore.edit { preferences ->
+                    previousId = preferences.remove(Keys.CustomBackgroundId)
+                    preferences.remove(Keys.LegacyCustomBackgroundBlurEnabled)
+                    preferences.remove(Keys.CustomBackgroundBlurPercent)
+                    preferences.remove(Keys.CustomBackgroundDimPercent)
+                    preferences.remove(Keys.CustomBackgroundCardBlurPercent)
+                    preferences.remove(Keys.CustomBackgroundCardOpacityPercent)
+                }
+            } catch (_: IOException) {
+                return@withContext false
+            }
+            previousId?.let { customBackgroundRepository.deleteImage(it) }
+            true
+        }
+    }
+
+    suspend fun setCustomBackgroundBlurPercent(percent: Int) {
+        dataStore.edit {
+            it[Keys.CustomBackgroundBlurPercent] = normalizeCustomBackgroundBlurPercent(percent)
+            it.remove(Keys.LegacyCustomBackgroundBlurEnabled)
+        }
+    }
+
+    suspend fun setCustomBackgroundDimPercent(percent: Int) {
+        dataStore.edit { it[Keys.CustomBackgroundDimPercent] = normalizeCustomBackgroundDimPercent(percent) }
+    }
+
+    suspend fun setCustomBackgroundCardBlurPercent(percent: Int) {
+        dataStore.edit { it[Keys.CustomBackgroundCardBlurPercent] = normalizeCustomBackgroundCardBlurPercent(percent) }
+    }
+
+    suspend fun setCustomBackgroundCardOpacityPercent(percent: Int) {
+        dataStore.edit { it[Keys.CustomBackgroundCardOpacityPercent] = normalizeCustomBackgroundCardOpacityPercent(percent) }
+    }
 
     suspend fun setThemeMode(themeMode: ThemeMode) {
         dataStore.edit { preferences ->
@@ -270,6 +358,14 @@ class SettingsRepository(context: Context) {
         dataStore.edit { preferences ->
             preferences[Keys.LyricsSourcePriority] = priority.name
         }
+    }
+
+    suspend fun setShowMusicTagEditor(enabled: Boolean) {
+        dataStore.edit { it[Keys.ShowMusicTagEditor] = enabled }
+    }
+
+    suspend fun setShowLyricoEditor(enabled: Boolean) {
+        dataStore.edit { it[Keys.ShowLyricoEditor] = enabled }
     }
 
     suspend fun setLyricsSidecarFormatPriority(priority: LyricsSidecarFormatPriority) {
@@ -421,6 +517,12 @@ class SettingsRepository(context: Context) {
     private object Keys {
         val ThemeMode = stringPreferencesKey("theme_mode")
         val DynamicColorEnabled = booleanPreferencesKey("dynamic_color_enabled")
+        val CustomBackgroundId = stringPreferencesKey("custom_background_id")
+        val LegacyCustomBackgroundBlurEnabled = booleanPreferencesKey("custom_background_blur_enabled")
+        val CustomBackgroundBlurPercent = intPreferencesKey("custom_background_blur_percent")
+        val CustomBackgroundDimPercent = intPreferencesKey("custom_background_dim_percent")
+        val CustomBackgroundCardBlurPercent = intPreferencesKey("custom_background_card_blur_percent")
+        val CustomBackgroundCardOpacityPercent = intPreferencesKey("custom_background_card_opacity_percent")
         val DynamicColorSource = stringPreferencesKey("dynamic_color_source")
         val PlaybackBackgroundStyle = stringPreferencesKey("playback_background_style")
         val PlaybackSpeed = floatPreferencesKey("playback_speed")
@@ -437,6 +539,8 @@ class SettingsRepository(context: Context) {
         val LeftAlignPlayerTitle = booleanPreferencesKey("left_align_player_title")
         val HideControlsOnLyrics = booleanPreferencesKey("hide_controls_on_lyrics")
         val ShowLyricsTranslation = booleanPreferencesKey("show_lyrics_translation")
+        val ShowMusicTagEditor = booleanPreferencesKey("show_music_tag_editor")
+        val ShowLyricoEditor = booleanPreferencesKey("show_lyrico_editor")
         val LyricsSourcePriority = stringPreferencesKey("lyrics_source_priority")
         val LyricsSidecarFormatPriority = stringPreferencesKey("lyrics_sidecar_format_priority")
         val BottomBarStyle = stringPreferencesKey("bottom_bar_style")

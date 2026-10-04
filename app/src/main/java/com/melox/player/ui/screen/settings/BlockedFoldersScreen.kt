@@ -42,7 +42,7 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.Scaffold
+import com.melox.player.ui.component.PageScaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -68,7 +68,7 @@ fun BlockedFoldersScreen(
     val sortedPaths = remember(paths) {
         paths.sortedWith(compareBy(String::lowercase).thenBy { it })
     }
-    Scaffold(
+    PageScaffold(
         topBar = {
             BlurredBar(
                 backdrop = backdrop,

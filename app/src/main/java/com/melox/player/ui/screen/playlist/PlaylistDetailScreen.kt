@@ -84,7 +84,7 @@ import top.yukonga.miuix.kmp.basic.ListPopupColumn
 import top.yukonga.miuix.kmp.basic.ListPopupDefaults
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
-import top.yukonga.miuix.kmp.basic.Scaffold
+import com.melox.player.ui.component.PageScaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -116,6 +116,8 @@ fun PlaylistDetailScreen(
     onGoToAlbum: (MusicTrack) -> Unit,
     onGoToArtist: (ArtistGroup) -> Unit,
     onExternalEditReturned: (Long) -> Unit,
+    showMusicTagEditor: Boolean,
+    showLyricoEditor: Boolean,
     onRename: (String) -> Unit,
     onDelete: () -> Unit,
     onRemoveEntries: (Set<String>) -> Unit,
@@ -292,7 +294,7 @@ fun PlaylistDetailScreen(
         }
     }
 
-    Scaffold(
+    PageScaffold(
         topBar = {
             BlurredBar(
                 backdrop = backdrop,
@@ -605,6 +607,8 @@ fun PlaylistDetailScreen(
         artistGroups = artistGroups,
         onGoToArtist = onGoToArtist,
         onExternalEditReturned = onExternalEditReturned,
+        showMusicTagEditor = showMusicTagEditor,
+        showLyricoEditor = showLyricoEditor,
     )
     OverlayDialog(
         show = showRemoveSelectedConfirm,

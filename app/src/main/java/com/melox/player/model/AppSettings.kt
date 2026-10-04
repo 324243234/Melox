@@ -63,15 +63,41 @@ val PLAYBACK_SPEED_VALUES = listOf(
 fun normalizePlaybackSpeed(speed: Float): Float =
     speed.takeIf(PLAYBACK_SPEED_VALUES::contains) ?: 1f
 
+const val DEFAULT_CUSTOM_BACKGROUND_BLUR_PERCENT = 0
+const val DEFAULT_CUSTOM_BACKGROUND_CARD_BLUR_PERCENT = 50
+const val DEFAULT_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT = 80
+const val MAX_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT = 80
+const val MAX_CUSTOM_BACKGROUND_DIM_PERCENT = 90
+
+fun normalizeCustomBackgroundBlurPercent(percent: Int): Int = percent.coerceIn(0, 100)
+
+internal fun resolveCustomBackgroundBlurPercent(storedPercent: Int?, legacyEnabled: Boolean?): Int =
+    when (legacyEnabled) {
+        false -> 0
+        true -> normalizeCustomBackgroundBlurPercent(storedPercent ?: 50)
+        null -> normalizeCustomBackgroundBlurPercent(storedPercent ?: DEFAULT_CUSTOM_BACKGROUND_BLUR_PERCENT)
+    }
+
+fun normalizeCustomBackgroundDimPercent(percent: Int): Int = percent.coerceIn(0, MAX_CUSTOM_BACKGROUND_DIM_PERCENT)
+
+fun normalizeCustomBackgroundCardBlurPercent(percent: Int): Int = percent.coerceIn(0, 100)
+
+fun normalizeCustomBackgroundCardOpacityPercent(percent: Int): Int = percent.coerceIn(0, MAX_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT)
+
 /** User-controlled preferences stored by the settings repository. */
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val dynamicColorEnabled: Boolean = false,
     val dynamicColorSource: DynamicColorSource = DynamicColorSource.PLAYBACK_ARTWORK,
+    val customBackgroundId: String? = null,
+    val customBackgroundBlurPercent: Int = DEFAULT_CUSTOM_BACKGROUND_BLUR_PERCENT,
+    val customBackgroundDimPercent: Int = 0,
+    val customBackgroundCardBlurPercent: Int = DEFAULT_CUSTOM_BACKGROUND_CARD_BLUR_PERCENT,
+    val customBackgroundCardOpacityPercent: Int = DEFAULT_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT,
     val playbackBackgroundStyle: PlaybackBackgroundStyle =
         PlaybackBackgroundStyle.BLURRED_ARTWORK,
     val playbackSpeed: Float = 1f,
-    val highPrecisionOutput: Boolean = true,
+    val highPrecisionOutput: Boolean = false,
     val sleepTimerSeconds: Int = 600,
     val autoExtendSleepTimer: Boolean = false,
     val playbackPauseFade: Boolean = false,
@@ -83,6 +109,8 @@ data class AppSettings(
     val leftAlignPlayerTitle: Boolean = false,
     val hideControlsOnLyrics: Boolean = false,
     val showLyricsTranslation: Boolean = true,
+    val showMusicTagEditor: Boolean = true,
+    val showLyricoEditor: Boolean = true,
     val lyricsSourcePriority: LyricsSourcePriority = LyricsSourcePriority.EMBEDDED,
     val lyricsSidecarFormatPriority: LyricsSidecarFormatPriority =
         LyricsSidecarFormatPriority.LRC,

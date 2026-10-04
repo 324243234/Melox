@@ -46,7 +46,7 @@ import com.melox.player.ui.component.library.AlphabetSections
 import com.melox.player.ui.component.library.AlphabetSideBar
 import com.melox.player.ui.component.library.PlaybackArtwork
 import com.melox.player.ui.component.library.responsiveGridColumnCount
-import top.yukonga.miuix.kmp.basic.Card
+import com.melox.player.ui.component.PageCard as Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.Text

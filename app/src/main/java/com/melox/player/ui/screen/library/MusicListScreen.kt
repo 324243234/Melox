@@ -69,6 +69,8 @@ fun MusicListScreen(
     artistGroups: List<ArtistGroup>,
     onGoToArtist: (ArtistGroup) -> Unit,
     onExternalEditReturned: (Long) -> Unit,
+    showMusicTagEditor: Boolean,
+    showLyricoEditor: Boolean,
     scrollBehavior: ScrollBehavior,
     indexTopPadding: Dp,
     listState: LazyListState,
@@ -232,6 +234,8 @@ fun MusicListScreen(
         artistGroups = artistGroups,
         onGoToArtist = onGoToArtist,
         onExternalEditReturned = onExternalEditReturned,
+        showMusicTagEditor = showMusicTagEditor,
+        showLyricoEditor = showLyricoEditor,
     )
 }
 

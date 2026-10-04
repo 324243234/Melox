@@ -84,7 +84,7 @@ class PlaybackService : MediaSessionService() {
     private val highPrecisionOutputCommand = SessionCommand(ACTION_SET_HIGH_PRECISION_OUTPUT, Bundle.EMPTY)
     private var playbackVolumeFade: PlaybackVolumeFade? = null
     private var activePlayer: ExoPlayer? = null
-    private var highPrecisionOutput = true
+    private var highPrecisionOutput = false
     private var floatOutputActive = false
     private var outputGeneration = 0
     private var pauseFadeEnabled = false
@@ -183,7 +183,7 @@ class PlaybackService : MediaSessionService() {
             }
 
             ACTION_SET_HIGH_PRECISION_OUTPUT -> {
-                val enabled = args.getBoolean(EXTRA_HIGH_PRECISION_OUTPUT, true)
+                val enabled = args.getBoolean(EXTRA_HIGH_PRECISION_OUTPUT, false)
                 if (snapshotRestorePending) deferredHighPrecisionOutput = enabled
                 else setHighPrecisionOutput(enabled)
                 Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))

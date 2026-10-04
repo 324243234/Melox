@@ -5,18 +5,22 @@ import android.view.InputDevice
 import android.view.MotionEvent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.melox.player.ui.component.playback.PlayerSheetTransitionState
-import com.melox.player.ui.component.playback.playerSheetInputLayer
-import com.melox.player.ui.component.playback.playerSheetInputTransform
+import com.melox.player.ui.component.playback.playerSheetHostLayer
+import com.melox.player.ui.component.playback.sharedContainerRect
 import com.melox.player.ui.component.playback.rememberPlayerSheetVerticalDragModifier
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -26,11 +30,12 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.math.roundToInt
 
 @RunWith(AndroidJUnit4::class)
 class PlayerSheetDragVelocityTest {
     @Test
-    fun downwardReleaseClosesWhenTheMovingHostsLocalPositionsReverse() {
+    fun downwardReleaseClosesFromTheMovingInputSurface() {
         checkRelease(lastMoveFraction = 0.42f, expectedOpen = false)
     }
 
@@ -70,16 +75,17 @@ class PlayerSheetDragVelocityTest {
                             },
                         ) {
                             val progress = transition.progress
-                            val transform = playerSheetInputTransform(
+                            val bounds = sharedContainerRect(
                                 transition.miniPlayerBounds,
                                 transition.fullPlayerBounds,
                                 progress,
                             )
+                            val density = LocalDensity.current
                             val gesture = rememberPlayerSheetVerticalDragModifier(
                                 enabled = true,
                                 hasItem = true,
                                 onDragStart = transition::beginFullPlayerDrag,
-                                onDrag = { transition.dragBy(it * (transform?.scale ?: 1f)) },
+                                onDrag = transition::dragBy,
                                 onDragEnd = {
                                     velocity = it
                                     transition.endDrag(it)
@@ -90,11 +96,18 @@ class PlayerSheetDragVelocityTest {
                                 },
                             )
                             Box(
-                                Modifier.fillMaxSize()
-                                    .then(
-                                        transform?.let {
-                                            Modifier.playerSheetInputLayer(it, null)
-                                        } ?: Modifier,
+                                Modifier
+                                    .offset {
+                                        IntOffset(bounds.left.roundToInt(), bounds.top.roundToInt())
+                                    }
+                                    .size(
+                                        with(density) { bounds.width.toDp() },
+                                        with(density) { bounds.height.toDp() },
+                                    )
+                                    .playerSheetHostLayer(
+                                        hostBounds = bounds,
+                                        inputBounds = bounds,
+                                        miniPlayerBounds = null,
                                     )
                                     .then(gesture)
                                     .drawWithContent {

@@ -298,6 +298,46 @@ class PlaylistLogicTest {
         )
     }
 
+    @Test
+    fun collectionReorderPreservesPlaylistObjectsAndSnapshotOrder() {
+        val first = playlist(emptyList())
+        val second = first.copy(id = "playlist-2", name = "Second")
+        val third = first.copy(id = "playlist-3", name = "Third")
+        val source = listOf(first, second, third)
+        val ordered = requireNotNull(reorderPlaylists(source, listOf(third.id, first.id, second.id)))
+
+        assertSame(third, ordered[0])
+        assertSame(first, ordered[1])
+        assertSame(second, ordered[2])
+        val output = ByteArrayOutputStream()
+        PlaylistSnapshotCodec.write(output, ordered)
+        assertEquals(ordered, PlaylistSnapshotCodec.read(ByteArrayInputStream(output.toByteArray())))
+        assertSame(source, reorderPlaylists(source, source.map(LocalPlaylist::id)))
+    }
+
+    @Test
+    fun collectionReorderRejectsIncompleteDuplicateUnknownAndStaleIds() {
+        val first = playlist(emptyList())
+        val second = first.copy(id = "playlist-2")
+        val source = listOf(first, second)
+        assertEquals(null, reorderPlaylists(source, listOf(first.id)))
+        assertEquals(null, reorderPlaylists(source, listOf(first.id, first.id)))
+        assertEquals(null, reorderPlaylists(source, listOf(first.id, "unknown")))
+        assertEquals(null, reorderPlaylists(listOf(first, first), listOf(first.id, first.id)))
+        val created = first.copy(id = "new")
+        assertEquals(null, reorderPlaylists(listOf(created) + source, listOf(second.id, first.id)))
+        assertEquals(null, reorderPlaylists(listOf(first), listOf(second.id, first.id)))
+    }
+
+    @Test
+    fun collectionReorderUsesLatestPlaylistContent() {
+        val first = playlist(emptyList())
+        val second = first.copy(id = "playlist-2")
+        val renamed = first.copy(name = "Updated", entries = listOf(entry("song", track(1, "Song", "uri:1"))))
+        val ordered = requireNotNull(reorderPlaylists(listOf(renamed, second), listOf(second.id, first.id)))
+        assertSame(renamed, ordered[1])
+    }
+
     private fun sortedIds(
         tracks: List<ResolvedPlaylistTrack>,
         field: PlaylistSortField,
