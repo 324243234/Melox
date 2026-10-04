@@ -44,7 +44,7 @@ val releaseSigningConfigured = localPropertiesFile.isFile &&
     releaseKeystoreFile?.isFile == true &&
     releaseSigningValues.all { (_, value) -> !value.isNullOrBlank() }
 
-val appVersionName = "1.2.0-" + ZonedDateTime.now(ZoneId.of("Asia/Shanghai"))
+val appVersionName = "1.2.1-" + ZonedDateTime.now(ZoneId.of("Asia/Shanghai"))
     .format(DateTimeFormatter.ofPattern("yyMMddHHmm"))
 
 android {
@@ -56,7 +56,7 @@ android {
         applicationId = "com.kugou.android.lite"
         minSdk = 28
         targetSdk = 36
-        versionCode = 3 // 保持固定版本号不递增
+        versionCode = 4 // 保持固定版本号不递增
         versionName = appVersionName
 
         ndk {
