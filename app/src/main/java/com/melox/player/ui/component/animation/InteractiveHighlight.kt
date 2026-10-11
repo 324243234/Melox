@@ -9,6 +9,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -17,6 +19,8 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.unit.Dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.blur.RuntimeShader
@@ -26,6 +30,8 @@ import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
 internal class InteractiveHighlight(
     private val animationScope: CoroutineScope,
     private val position: (size: Size, offset: Offset) -> Offset = { _, offset -> offset },
+    private val highlightAlpha: () -> Float = { 1f },
+    private val spotRadius: Dp? = null,
 ) {
 
     private val pressProgressAnimationSpec = spring(0.5f, 300f, 0.001f)
@@ -34,21 +40,26 @@ internal class InteractiveHighlight(
     private val pressProgressAnimation = Animatable(0f, 0.001f)
     private val positionAnimation = Animatable(Offset.Zero, Offset.VectorConverter, Offset.VisibilityThreshold)
     private var startPosition = Offset.Zero
+    private var gestureSize = Size.Zero
 
     // Smoothstep press spot; without runtime shader support, falls back to a radialGradient
     // approximation (linear instead of S-curve falloff — barely distinguishable).
     private val spotShader: RuntimeShader? =
         if (isRuntimeShaderSupported()) RuntimeShader(SPOT_SHADER) else null
 
-    val modifier: Modifier = Modifier.drawWithContent {
-        val progress = pressProgressAnimation.value
+    val modifier: Modifier = Modifier.drawHighlight()
+
+    fun Modifier.drawHighlight(alpha: () -> Float = highlightAlpha, sourceScale: Float = 1f): Modifier = drawWithContent {
+        val progress = pressProgressAnimation.value * alpha().coerceIn(0f, 1f)
         if (progress > 0f) {
             drawRect(
                 color = Color.White.copy(alpha = 0.06f * progress),
                 blendMode = BlendMode.Plus,
             )
-            val pos = position(size, positionAnimation.value)
-            val radius = (size.minDimension * 1.2f).coerceAtLeast(1f)
+            val pos = position(size, positionAnimation.value) * sourceScale
+            val spotSize = gestureSize.takeUnless { it == Size.Zero } ?: size
+            val radius = ((spotRadius?.toPx() ?: (spotSize.minDimension * 1.2f)) * sourceScale)
+                .coerceAtLeast(1f)
             val center = Offset(
                 x = pos.x.coerceIn(0f, size.width),
                 y = pos.y.coerceIn(0f, size.height),
@@ -93,6 +104,34 @@ internal class InteractiveHighlight(
             onDragCancel = { release() },
         ) { change, _ ->
             animationScope.launch { positionAnimation.snapTo(change.position) }
+        }
+    }
+
+    // Observe child-owned drags without taking ownership or ending their press spot.
+    val trackingGestureModifier: Modifier = Modifier.pointerInput(animationScope) {
+        awaitEachGesture {
+            val down = awaitFirstDown(false, PointerEventPass.Initial)
+            gestureSize = Size(size.width.toFloat(), size.height.toFloat())
+            startPosition = down.position
+            animationScope.launch {
+                launch { pressProgressAnimation.animateTo(1f, pressProgressAnimationSpec) }
+                launch { positionAnimation.snapTo(startPosition) }
+            }
+            var pointerId = down.id
+            try {
+                do {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    val pointer = event.changes.firstOrNull { it.id == pointerId && it.pressed }
+                        ?: event.changes.firstOrNull { it.pressed }
+                    if (pointer != null) {
+                        pointerId = pointer.id
+                        val position = pointer.position
+                        animationScope.launch { positionAnimation.snapTo(position) }
+                    }
+                } while (event.changes.any { it.pressed })
+            } finally {
+                release()
+            }
         }
     }
 

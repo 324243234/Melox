@@ -94,6 +94,7 @@ class PlayerSheetRenderingTest {
                                 .recordMiniPlayerLayer(
                                     layer = miniLayer,
                                     drawInPlace = !transition.isMounted || !transition.sharedLayersReady,
+                                    drawLiveGlass = false,
                                     recordingGeneration = transition.currentFrameRecordingGeneration,
                                     onRecorded = { generation, size ->
                                         transition.markMiniFrameRecorded(window, generation, size)

@@ -28,13 +28,13 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 internal val LocalOrdinaryBackDispatcherOwner =
     compositionLocalOf<NavigationEventDispatcherOwner?> { null }
 
-internal fun secondaryPageEnterDurationMillis(transitionStyle: NavigationTransitionStyle): Int {
+internal fun secondaryPageEnterMotion(transitionStyle: NavigationTransitionStyle): NavSettleSpec.Tween {
     val transition = if (transitionStyle == NavigationTransitionStyle.AOSP) {
         AospNavigationTransition
     } else {
         NavTransitions.MiuixDefault
     }
-    return (transition.motion.programmatic as NavSettleSpec.Tween).durationMillis
+    return transition.motion.programmatic as NavSettleSpec.Tween
 }
 
 /**

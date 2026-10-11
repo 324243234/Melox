@@ -17,6 +17,90 @@ import kotlinx.coroutines.yield
 
 class PlayerResizeTransitionTest {
     @Test
+    fun liveGlassClickRequiresCurrentFramesAndKeepsPressedSourceSize() {
+        val state = PlayerSheetTransitionState()
+        state.updateWindowSize(portrait)
+        reportBounds(state, portrait)
+        reportFrames(state, portrait)
+        val oldGeneration = state.currentFrameRecordingGeneration
+
+        state.open(miniPlayerScale = 1.04f, requireFreshMiniFrame = true)
+
+        assertTrue(state.isMounted)
+        assertFalse(state.sharedLayersReady)
+        assertFalse(state.fullPlayerDrawsAboveRoot)
+        assertEquals(312f, state.overlayMiniPlayerBounds.width, 0.001f)
+        assertTrue(state.currentFrameRecordingGeneration > oldGeneration)
+        state.markMiniFrameRecorded(portrait, oldGeneration, IntSize(300, 64))
+        state.markFullFrameRecorded(portrait, oldGeneration, portrait)
+        assertFalse(state.sharedLayersReady)
+
+        reportFrames(state, portrait)
+        assertTrue(state.sharedLayersReady)
+        assertTrue(state.fullPlayerDrawsAboveRoot)
+        val currentGeneration = state.currentFrameRecordingGeneration
+        state.open(miniPlayerScale = 1f, requireFreshMiniFrame = true)
+        assertEquals(currentGeneration, state.currentFrameRecordingGeneration)
+        assertEquals(1.04f, state.overlayMiniPlayerScale, 0f)
+    }
+
+    @Test
+    fun liveGlassDragRecordsAfterExpansionAndRetainsCaptureAtZero() {
+        val state = PlayerSheetTransitionState()
+        state.updateWindowSize(portrait)
+        reportBounds(state, portrait)
+        reportFrames(state, portrait)
+        val oldGeneration = state.currentFrameRecordingGeneration
+
+        state.beginMiniPlayerDrag(miniPlayerScale = 1.01f, requireFreshMiniFrame = true)
+        state.dragMiniPlayerBy(80f, miniPlayerScale = 1.02f)
+        assertFalse(state.isMounted)
+        assertFalse(state.sharedLayersReady)
+        val currentGeneration = state.currentFrameRecordingGeneration
+        assertTrue(currentGeneration > oldGeneration)
+
+        state.dragMiniPlayerBy(-100f, miniPlayerScale = 1.04f)
+        assertTrue(state.isMounted)
+        state.markMiniFrameRecorded(portrait, oldGeneration, IntSize(300, 64))
+        state.markFullFrameRecorded(portrait, oldGeneration, portrait)
+        assertFalse(state.sharedLayersReady)
+        reportFrames(state, portrait)
+        assertTrue(state.sharedLayersReady)
+
+        state.dragMiniPlayerBy(20f, miniPlayerScale = 1.06f)
+        assertEquals(0f, state.progress, 0f)
+        assertTrue(state.isMounted)
+        assertEquals(1.04f, state.capturedMiniPlayerPressScale!!, 0f)
+        state.dragMiniPlayerBy(-20f, miniPlayerScale = 1.08f)
+        assertEquals(currentGeneration, state.currentFrameRecordingGeneration)
+        assertEquals(1.04f, state.overlayMiniPlayerScale, 0f)
+        assertTrue(state.sharedLayersReady)
+    }
+
+    @Test
+    fun anotherLiveGlassGestureRejectsThePreviousPresentationFrames() {
+        val state = PlayerSheetTransitionState()
+        state.updateWindowSize(portrait)
+        reportBounds(state, portrait)
+        reportFrames(state, portrait)
+        state.beginMiniPlayerDrag(miniPlayerScale = 1.02f, requireFreshMiniFrame = true)
+        state.dragMiniPlayerBy(80f, miniPlayerScale = 1.04f)
+        state.cancelDrag()
+        assertFalse(state.isMounted)
+        val oldGeneration = state.currentFrameRecordingGeneration
+        reportFrames(state, portrait)
+
+        state.beginMiniPlayerDrag(miniPlayerScale = 1.03f, requireFreshMiniFrame = true)
+        state.dragMiniPlayerBy(-20f, miniPlayerScale = 1.07f)
+
+        assertTrue(state.currentFrameRecordingGeneration > oldGeneration)
+        assertFalse(state.sharedLayersReady)
+        assertEquals(1.07f, state.capturedMiniPlayerPressScale!!, 0f)
+        reportFrames(state, portrait)
+        assertTrue(state.sharedLayersReady)
+    }
+
+    @Test
     fun collapsedDownwardDragKeepsTheLivePressedMiniPlayerVisible() {
         val state = PlayerSheetTransitionState()
         state.updateWindowSize(portrait)

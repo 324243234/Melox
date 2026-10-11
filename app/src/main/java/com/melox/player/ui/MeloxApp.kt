@@ -130,6 +130,8 @@ import com.melox.player.model.ScanStatus
 import com.melox.player.model.ThemeMode
 import com.melox.player.model.MusicTrack
 import com.melox.player.ui.component.BlurredBar
+import com.melox.player.ui.component.animation.InteractiveHighlight
+import com.melox.player.ui.component.playback.playerSheetBarAlpha
 import com.melox.player.ui.component.LocalBottomSheetBlurBackdrop
 import com.melox.player.ui.component.LocalTopBarBlurSettings
 import com.melox.player.ui.component.LocalCustomPageBackground
@@ -171,6 +173,7 @@ import com.melox.player.ui.component.playlist.PlaylistNameDialog
 import com.melox.player.ui.component.playlist.PlaylistPickerOverlay
 import com.melox.player.ui.component.playback.playerNavigationOffset
 import com.melox.player.ui.component.playback.MiniPlayer
+import com.melox.player.ui.component.playback.miniPlayerHeight
 import com.melox.player.ui.component.playback.miniPlayerArtworkCornerRadius
 import com.melox.player.ui.component.playback.DynamicFlowBackgroundState
 import com.melox.player.ui.component.playback.PLAYER_FULL_ARTWORK_REQUEST_SIZE
@@ -186,7 +189,7 @@ import com.melox.player.ui.component.playback.prefetchPlaybackBackground
 import com.melox.player.ui.component.playback.rememberDynamicFlowBackgroundState
 import com.melox.player.ui.component.playback.rememberPlayerSheetTransitionState
 import com.melox.player.ui.navigation.PredictiveNavDisplay
-import com.melox.player.ui.navigation.secondaryPageEnterDurationMillis
+import com.melox.player.ui.navigation.secondaryPageEnterMotion
 import com.melox.player.ui.navigation.LocalOrdinaryBackDispatcherOwner
 import com.melox.player.ui.screen.library.MusicListScreen
 import com.melox.player.ui.screen.library.AlbumDetailScreen
@@ -486,6 +489,14 @@ fun MeloxApp(
     val sharedPlayerArtworkEnabled = playerTransition.fullPlayerArtworkPageSelected
     val miniPlayerLayer = rememberGraphicsLayer()
     val miniPlayerContentLayer = rememberGraphicsLayer()
+    val miniPlayerHighlightScope = rememberCoroutineScope()
+    val miniPlayerInteractiveHighlight = remember(miniPlayerHighlightScope) {
+        InteractiveHighlight(
+            miniPlayerHighlightScope,
+            highlightAlpha = { playerSheetBarAlpha(playerTransition.progress) },
+            spotRadius = miniPlayerHeight(BottomBarStyle.LIQUID_GLASS, smallPlayerBar = false) * 1.2f,
+        )
+    }
     val fullPlayerBackgroundLayer = rememberGraphicsLayer()
     val fullPlayerContentLayer = rememberGraphicsLayer()
     SideEffect { playerTransition.updateWindowSize(windowSize) }
@@ -1643,10 +1654,10 @@ fun MeloxApp(
                             },
                             selectedTab = playerPagerState.selectedPage,
                             onTabSelected = onNavigationTabSelected,
-                            navigationHideDurationMillis = if (currentRoute == AppRoute.ROOT) {
+                            navigationHideMotion = if (currentRoute == AppRoute.ROOT) {
                                 null
                             } else {
-                                secondaryPageEnterDurationMillis(settings.navigationTransitionStyle)
+                                secondaryPageEnterMotion(settings.navigationTransitionStyle)
                             },
                             showNavigation = shouldShowNavigation(
                                 currentRouteIsRoot = currentRoute == AppRoute.ROOT,
@@ -1681,9 +1692,22 @@ fun MeloxApp(
                                     viewModel = viewModel,
                                     chrome = chrome,
                                     onChromeChanged = { miniPlayerChrome = it },
-                                    onOpen = { playerTransition.open(it) },
+                                    interactiveHighlight = miniPlayerInteractiveHighlight,
+                                    onOpen = {
+                                        playerTransition.open(
+                                            it,
+                                            requireFreshMiniFrame =
+                                                chrome.liquidGlassActive && chrome.backdrop != null,
+                                        )
+                                    },
                                     onOpenQueue = { showQueue = true },
-                                    onPlayerDragStart = playerTransition::beginMiniPlayerDrag,
+                                    onPlayerDragStart = {
+                                        playerTransition.beginMiniPlayerDrag(
+                                            it,
+                                            requireFreshMiniFrame =
+                                                chrome.liquidGlassActive && chrome.backdrop != null,
+                                        )
+                                    },
                                     onPlayerDrag = playerTransition::dragMiniPlayerBy,
                                     onPlayerDragEnd = playerTransition::endMiniPlayerDrag,
                                     onPlayerDragCancel = playerTransition::cancelDrag,
@@ -1691,6 +1715,7 @@ fun MeloxApp(
                                     playerLayer = miniPlayerLayer,
                                     playerContentLayer = miniPlayerContentLayer,
                                     frameRecordingGeneration = frameRecordingGeneration,
+                                    recordForTransition = playerTransition.isMounted,
                                     drawInPlace =
                                         !playerTransition.isMounted || !playerTransition.sharedLayersReady,
                                     surfaceVisible =
@@ -2372,6 +2397,7 @@ fun MeloxApp(
                         fullPlayerBackgroundLayer = fullPlayerBackgroundLayer,
                         fullPlayerContentLayer = fullPlayerContentLayer,
                         miniPlayerChrome = miniPlayerChrome,
+                        miniPlayerInteractiveHighlight = miniPlayerInteractiveHighlight,
                         collapsedCornerRadius =
                             if (miniPlayerUsesNormalChrome) 18.dp else 32.dp,
                         floatingMiniPlayer = !miniPlayerUsesNormalChrome,
@@ -2601,6 +2627,7 @@ private fun MiniPlayerHost(
     viewModel: MeloxViewModel,
     chrome: MiniPlayerChrome,
     onChromeChanged: (MiniPlayerChrome) -> Unit,
+    interactiveHighlight: InteractiveHighlight,
     onOpen: (Float) -> Unit,
     onOpenQueue: () -> Unit,
     onPlayerDragStart: (Float) -> Unit,
@@ -2610,6 +2637,7 @@ private fun MiniPlayerHost(
     playerLayer: GraphicsLayer,
     playerContentLayer: GraphicsLayer,
     frameRecordingGeneration: Int,
+    recordForTransition: Boolean,
     drawInPlace: Boolean,
     surfaceVisible: Boolean,
     sharedArtworkVisible: Boolean,
@@ -2627,6 +2655,7 @@ private fun MiniPlayerHost(
     MiniPlayer(
         playback = playback,
         chrome = chrome,
+        interactiveHighlight = interactiveHighlight,
         onOpen = { scale ->
             if (playback.currentItem != null) onOpen(scale)
         },
@@ -2641,6 +2670,7 @@ private fun MiniPlayerHost(
         playerLayer = playerLayer,
         playerContentLayer = playerContentLayer,
         frameRecordingGeneration = frameRecordingGeneration,
+        recordForTransition = recordForTransition,
         drawInPlace = drawInPlace,
         surfaceVisible = surfaceVisible,
         sharedArtworkVisible = sharedArtworkVisible,

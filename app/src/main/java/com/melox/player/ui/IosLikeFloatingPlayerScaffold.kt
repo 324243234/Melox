@@ -1,6 +1,7 @@
 package com.melox.player.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -28,7 +29,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
@@ -46,6 +46,7 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.nav.transition.NavSettleSpec
 
 @Composable
 internal fun IosLikeFloatingPlayerScaffold(
@@ -58,10 +59,9 @@ internal fun IosLikeFloatingPlayerScaffold(
     effectsSupported: Boolean,
     isDark: Boolean,
     showNavigation: Boolean,
-    navigationHideDurationMillis: Int?,
+    navigationHideMotion: NavSettleSpec.Tween?,
     playerNavigationOffset: () -> Float,
     miniPlayer: @Composable (MiniPlayerChrome) -> Unit,
-    backdropRefreshSignal: () -> Float,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val surfaceColor = MiuixTheme.colorScheme.surface
@@ -91,14 +91,14 @@ internal fun IosLikeFloatingPlayerScaffold(
         targetValue = if (showNavigation) 0.dp else {
             hiddenNavigationBottomPadding
         },
-        animationSpec = tween(if (showNavigation) 280 else navigationHideDurationMillis ?: 240),
+        animationSpec = navigationBarAnimationSpec(showNavigation, navigationHideMotion),
         label = "floatingMiniPlayerNavigationGap",
     )
     val miniPlayerNavigationShadowOffset by animateDpAsState(
         targetValue = if (showNavigation) FLOATING_NAVIGATION_BAR_SHADOW_PADDING else {
             (FLOATING_MINI_PLAYER_BOTTOM_PADDING - navigationBottomPadding).coerceAtLeast(0.dp)
         },
-        animationSpec = tween(if (showNavigation) 280 else navigationHideDurationMillis ?: 240),
+        animationSpec = navigationBarAnimationSpec(showNavigation, navigationHideMotion),
         label = "floatingMiniPlayerNavigationShadowOffset",
     )
     val effectsActive = effectsSupported && (blurEnabled || liquidGlassEnabled)
@@ -177,12 +177,16 @@ internal fun IosLikeFloatingPlayerScaffold(
                             clip = false,
                         ) + fadeIn(tween(180)),
                         exit = slideOutVertically(
-                            animationSpec = tween(navigationHideDurationMillis ?: 240),
+                            animationSpec = navigationBarAnimationSpec(false, navigationHideMotion),
                             targetOffsetY = { it },
                         ) + shrinkVertically(
-                            animationSpec = tween(navigationHideDurationMillis ?: 240),
+                            animationSpec = navigationBarAnimationSpec(false, navigationHideMotion),
                             clip = false,
-                        ) + fadeOut(tween(navigationHideDurationMillis ?: 140)),
+                        ) + if (navigationHideMotion == null) {
+                            fadeOut(tween(140))
+                        } else {
+                            ExitTransition.None
+                        },
                     ) {
                         Box(
                             modifier = Modifier.padding(
@@ -217,11 +221,6 @@ internal fun IosLikeFloatingPlayerScaffold(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .drawWithContent {
-                    @Suppress("UNUSED_VARIABLE")
-                    val refreshFrame = backdropRefreshSignal()
-                    drawContent()
-                }
                 .then(
                     backdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier,
                 ),

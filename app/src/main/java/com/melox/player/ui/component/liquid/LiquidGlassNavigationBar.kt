@@ -476,10 +476,9 @@ fun LiquidGlassNavigationBar(
                                     backdrop = glassBackdrop,
                                     shape = { pillShape },
                                     effects = {
-                                        // 24dp lens refraction + 16dp press-scale reach, raised before blur() reads it.
+                                        // Reserve the lens and press-scale sampling reach at full resolution.
                                         padding = maxOf(padding, 40.dp.toPx())
                                         vibrancy()
-                                        // Keep the scaled container off the quantized downsample grid.
                                         effect(containerBlur)
                                         lens(
                                             refractionHeight = 24.dp.toPx(),

@@ -61,12 +61,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.melox.player.R
 import com.melox.player.model.BottomBarStyle
 import com.melox.player.model.PlaybackQueueItem
 import com.melox.player.model.PlaybackUiState
 import com.melox.player.ui.MiniPlayerChrome
 import com.melox.player.ui.NORMAL_BAR_STROKE_ALPHA
+import com.melox.player.ui.component.animation.InteractiveHighlight
 import com.melox.player.ui.component.library.PlaybackArtwork
 import com.melox.player.ui.component.liquid.miuixFloatingBarShadow
 import com.melox.player.ui.component.liquid.miniPlayerSurface
@@ -89,6 +91,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 internal fun MiniPlayer(
     playback: PlaybackUiState,
     chrome: MiniPlayerChrome,
+    interactiveHighlight: InteractiveHighlight,
     onOpen: (Float) -> Unit,
     onTogglePlayPause: () -> Unit,
     onPrevious: () -> Unit,
@@ -101,6 +104,7 @@ internal fun MiniPlayer(
     playerLayer: GraphicsLayer,
     playerContentLayer: GraphicsLayer,
     frameRecordingGeneration: Int,
+    recordForTransition: Boolean,
     drawInPlace: Boolean,
     surfaceVisible: Boolean,
     sharedArtworkVisible: Boolean,
@@ -142,6 +146,7 @@ internal fun MiniPlayer(
     var contentCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val pressGrowth = with(LocalDensity.current) { 16.dp.toPx() }
     val swipeScope = rememberCoroutineScope()
+    val recordLayers = !pressEnabled || recordForTransition
     var swipeOffsetJob by remember { mutableStateOf<Job?>(null) }
     var swipeDragDistance by remember { mutableFloatStateOf(0f) }
     val swipeOffsetLimit = with(LocalDensity.current) { 4.dp.toPx() }
@@ -227,11 +232,14 @@ internal fun MiniPlayer(
                 playerBounds = coordinates.boundsInRoot()
                 onPlayerBoundsChanged(playerBounds)
             }
-            .recordMiniPlayerLayer(
-                layer = playerLayer,
-                drawInPlace = drawInPlace,
-                recordingGeneration = frameRecordingGeneration,
-                onRecorded = onLayerRecorded,
+            .then(
+                if (recordLayers) Modifier.recordMiniPlayerLayer(
+                    layer = playerLayer,
+                    drawInPlace = drawInPlace,
+                    drawLiveGlass = pressEnabled,
+                    recordingGeneration = frameRecordingGeneration,
+                    onRecorded = onLayerRecorded,
+                ) else Modifier,
             )
             .then(pressModifier)
             .then(expansionGestureModifier)
@@ -310,6 +318,11 @@ internal fun MiniPlayer(
                         else -> Modifier
                     },
                 )
+                .then(
+                    if (pressEnabled) {
+                        interactiveHighlight.modifier.then(interactiveHighlight.trackingGestureModifier)
+                    } else Modifier,
+                )
                 .onGloballyPositioned { contentCoordinates = it },
             contentAlignment = Alignment.Center,
         ) {
@@ -319,7 +332,10 @@ internal fun MiniPlayer(
                     .onGloballyPositioned { coordinates ->
                         onPlayerContentBoundsChanged(layoutBounds(coordinates))
                     }
-                    .recordPlayerContentLayer(playerContentLayer)
+                    .then(
+                        if (recordLayers) Modifier.recordPlayerContentLayer(playerContentLayer)
+                        else Modifier,
+                    )
                     .padding(
                         start = if (isNormal) 10.dp else if (isSmallFloating) 14.dp else 16.dp,
                         end = when {
@@ -368,6 +384,11 @@ internal fun MiniPlayer(
                         MiuixTheme.textStyles.subtitle
                     } else {
                         MiuixTheme.textStyles.body1
+                    },
+                    artistStyle = if (isSmallFloating) {
+                        MiuixTheme.textStyles.footnote1.copy(fontSize = 12.sp)
+                    } else {
+                        MiuixTheme.textStyles.footnote1
                     },
                     modifier = Modifier.weight(1f),
                     contentStartPadding = 4.dp,
@@ -441,6 +462,7 @@ private fun SwipeableMetadata(
     onSwipeDrag: (Float) -> Unit,
     onSwipeRelease: () -> Unit,
     titleStyle: TextStyle,
+    artistStyle: TextStyle,
     modifier: Modifier = Modifier,
     contentStartPadding: Dp = 0.dp,
 ) {
@@ -673,6 +695,7 @@ private fun SwipeableMetadata(
                     artistColor = artistColor,
                     alpha = 1f - crossfadeProgress,
                     titleStyle = titleStyle,
+                    artistStyle = artistStyle,
                 )
             }
             MiniMetadataColumn(
@@ -681,6 +704,7 @@ private fun SwipeableMetadata(
                 artistColor = artistColor,
                 alpha = if (outgoingMetadata == null) 1f else crossfadeProgress,
                 titleStyle = titleStyle,
+                artistStyle = artistStyle,
             )
         }
     }
@@ -727,6 +751,7 @@ private fun MiniMetadataColumn(
     artistColor: Color,
     alpha: Float,
     titleStyle: TextStyle,
+    artistStyle: TextStyle,
 ) {
     Column(
         modifier = Modifier
@@ -746,7 +771,7 @@ private fun MiniMetadataColumn(
         Text(
             text = metadata.artist,
             modifier = Modifier,
-            style = MiuixTheme.textStyles.footnote1,
+            style = artistStyle,
             color = artistColor,
             textAlign = TextAlign.Start,
             maxLines = 1,

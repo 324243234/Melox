@@ -1,6 +1,7 @@
 package com.melox.player.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -11,6 +12,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.TweenSpec
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -58,6 +60,7 @@ import com.melox.player.ui.component.miuixBarColor
 import com.melox.player.ui.component.playback.miniPlayerHeight
 import com.melox.player.ui.component.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.NavigationBar
+import top.yukonga.miuix.kmp.nav.transition.NavSettleSpec
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.NavigationItem
 import top.yukonga.miuix.kmp.basic.NavigationRail
@@ -101,7 +104,7 @@ internal fun PlayerScaffold(
     showNavigation: Boolean,
     playerNavigationOffset: () -> Float,
     showNavigationRailOnSecondary: Boolean = false,
-    navigationHideDurationMillis: Int? = null,
+    navigationHideMotion: NavSettleSpec.Tween? = null,
     persistedNavigationRailExpanded: Boolean = true,
     onNavigationRailExpandedChange: (Boolean) -> Unit = {},
     bottomBarStyle: BottomBarStyle,
@@ -363,10 +366,9 @@ internal fun PlayerScaffold(
             effectsSupported = liquidGlassSupported,
             isDark = isDark,
             showNavigation = showNavigation,
-            navigationHideDurationMillis = navigationHideDurationMillis,
+            navigationHideMotion = navigationHideMotion,
             playerNavigationOffset = playerNavigationOffset,
             miniPlayer = miniPlayer,
-            backdropRefreshSignal = backdropRefreshSignal,
             content = { padding -> content(padding, false) },
         )
     } else {
@@ -378,7 +380,7 @@ internal fun PlayerScaffold(
             blurEnabled = blurEnabled,
             isDark = isDark,
             showNavigation = showNavigation,
-            navigationHideDurationMillis = navigationHideDurationMillis,
+            navigationHideMotion = navigationHideMotion,
             playerNavigationOffset = playerNavigationOffset,
             miniPlayer = miniPlayer,
             backdropRefreshSignal = backdropRefreshSignal,
@@ -484,7 +486,7 @@ private fun BasePlayerScaffold(
     blurEnabled: Boolean,
     isDark: Boolean,
     showNavigation: Boolean,
-    navigationHideDurationMillis: Int?,
+    navigationHideMotion: NavSettleSpec.Tween?,
     playerNavigationOffset: () -> Float,
     miniPlayer: @Composable (MiniPlayerChrome) -> Unit,
     backdropRefreshSignal: () -> Float,
@@ -504,10 +506,7 @@ private fun BasePlayerScaffold(
         targetValue = if (showNavigation) 0.dp else normalMiniPlayerBottomPadding(
             windowWidth, windowHeight, navigationBarBottomInset,
         ),
-        animationSpec = tween(
-            if (showNavigation) NAVIGATION_ENTER_DURATION_MILLIS else
-                navigationHideDurationMillis ?: NAVIGATION_EXIT_DURATION_MILLIS,
-        ),
+        animationSpec = navigationBarAnimationSpec(showNavigation, navigationHideMotion),
         label = "normalMiniPlayerNavigationGap",
     )
 
@@ -536,10 +535,14 @@ private fun BasePlayerScaffold(
                     ) + expandVertically(tween(NAVIGATION_ENTER_DURATION_MILLIS)) +
                         fadeIn(tween(NAVIGATION_FADE_IN_DURATION_MILLIS)),
                     exit = slideOutVertically(
-                        animationSpec = tween(navigationHideDurationMillis ?: NAVIGATION_EXIT_DURATION_MILLIS),
+                        animationSpec = navigationBarAnimationSpec(false, navigationHideMotion),
                         targetOffsetY = { it },
-                    ) + shrinkVertically(tween(navigationHideDurationMillis ?: NAVIGATION_EXIT_DURATION_MILLIS)) +
-                        fadeOut(tween(navigationHideDurationMillis ?: NAVIGATION_FADE_OUT_DURATION_MILLIS)),
+                    ) + shrinkVertically(navigationBarAnimationSpec(false, navigationHideMotion)) +
+                        if (navigationHideMotion == null) {
+                            fadeOut(tween(NAVIGATION_FADE_OUT_DURATION_MILLIS))
+                        } else {
+                            ExitTransition.None
+                        },
                 ) {
                     Box(modifier = Modifier.background(normalBarColor)) {
                         GaussianBlurredBar(backdrop = bottomBarBackdrop) {
@@ -585,4 +588,13 @@ private fun BasePlayerScaffold(
             content(innerPadding)
         }
     }
+}
+
+internal fun <T> navigationBarAnimationSpec(
+    showNavigation: Boolean,
+    hideMotion: NavSettleSpec.Tween?,
+): TweenSpec<T> = when {
+    showNavigation -> tween(NAVIGATION_ENTER_DURATION_MILLIS)
+    hideMotion != null -> tween(hideMotion.durationMillis, easing = hideMotion.easing)
+    else -> tween(NAVIGATION_EXIT_DURATION_MILLIS)
 }

@@ -353,11 +353,12 @@ internal class PlayerSheetTransitionState(initialProgress: Float = 0f) {
         get() = isMounted &&
             (sharedLayersReady || progress > PLAYER_LAYER_HANDOFF_END_PROGRESS)
 
-    fun open(miniPlayerScale: Float = 1f) {
+    fun open(miniPlayerScale: Float = 1f, requireFreshMiniFrame: Boolean = false) {
+        val needsFreshFrames = !sharedLayersReady || requireFreshMiniFrame && !isMounted
         if (!isMounted) openingMiniPlayerScale = miniPlayerScale.coerceAtLeast(1f)
         hasBeenShown = true
         releaseDragForProgrammaticSettle()
-        if (!sharedLayersReady) requestFreshFrameRecording()
+        if (needsFreshFrames) requestFreshFrameRecording()
         requestSettle(open = true)
     }
 
@@ -370,7 +371,10 @@ internal class PlayerSheetTransitionState(initialProgress: Float = 0f) {
         }
     }
 
-    fun beginMiniPlayerDrag(miniPlayerScale: Float = 1f) {
+    fun beginMiniPlayerDrag(miniPlayerScale: Float = 1f, requireFreshMiniFrame: Boolean = false) {
+        if (requireFreshMiniFrame && !isMounted && !isDragging) {
+            requestFreshFrameRecording()
+        }
         if (!isMounted) openingMiniPlayerScale = miniPlayerScale.coerceAtLeast(1f)
         beginDrag(startedFromMiniPlayer = true)
     }

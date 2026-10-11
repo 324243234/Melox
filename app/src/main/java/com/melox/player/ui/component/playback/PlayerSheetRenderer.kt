@@ -54,6 +54,7 @@ import com.melox.player.model.PlaybackUiState
 import com.melox.player.model.BottomBarStyle
 import com.melox.player.ui.MiniPlayerChrome
 import com.melox.player.ui.NORMAL_BAR_STROKE_ALPHA
+import com.melox.player.ui.component.animation.InteractiveHighlight
 import com.melox.player.ui.component.library.PlaybackArtworkFrame
 import com.melox.player.ui.component.library.playbackArtworkShadow
 import com.melox.player.ui.component.library.playbackArtworkCornerRadius
@@ -126,14 +127,21 @@ internal fun Modifier.recordPlayerLayer(
 internal fun Modifier.recordMiniPlayerLayer(
     layer: GraphicsLayer,
     drawInPlace: Boolean,
+    drawLiveGlass: Boolean,
     recordingGeneration: Int,
     onRecorded: (generation: Int, size: IntSize) -> Unit,
 ): Modifier = drawWithContent {
     // Mini readiness must be reported even while the mini player is visible.
-    // Replay this private, untransformed source instead of drawing children twice.
     layer.record { this@drawWithContent.drawContent() }
     onRecorded(recordingGeneration, layer.size)
-    if (drawInPlace) drawLayer(layer)
+    if (drawInPlace) {
+        if (drawLiveGlass) {
+            // Keep live glass sampling on the current canvas.
+            this@drawWithContent.drawContent()
+        } else {
+            drawLayer(layer)
+        }
+    }
 }
 
 internal fun Modifier.recordPlayerContentLayer(
@@ -280,6 +288,7 @@ internal fun PlayerSheetContentOverlay(
     fullPlayerBackgroundLayer: GraphicsLayer,
     fullPlayerContentLayer: GraphicsLayer,
     miniPlayerChrome: MiniPlayerChrome?,
+    miniPlayerInteractiveHighlight: InteractiveHighlight,
     collapsedCornerRadius: Dp,
     floatingMiniPlayer: Boolean,
     isDark: Boolean,
@@ -329,6 +338,16 @@ internal fun PlayerSheetContentOverlay(
                 followsNavigationBar = glassChrome.style == BottomBarStyle.NORMAL,
                 floatingHighlight = glassChrome.floatingHighlight,
                 highlightAlpha = miniChromeAlpha,
+            )
+            .then(
+                if (glassChrome.liquidGlassActive && glassChrome.backdrop != null) {
+                    with(miniPlayerInteractiveHighlight) {
+                        Modifier.drawHighlight(
+                            alpha = { miniChromeAlpha },
+                            sourceScale = transition.overlayMiniPlayerScale,
+                        )
+                    }
+                } else Modifier,
             )
             .then(
                 if (glassChrome.style == BottomBarStyle.NORMAL) {

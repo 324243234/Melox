@@ -1657,7 +1657,7 @@ class UiLogicTest {
             ),
         )
         assertEquals(
-            764.dp,
+            768.dp,
             floatingBottomBarAvailableWidth(
                 windowWidth = 800.dp,
                 windowHeight = 1200.dp,
