@@ -2086,6 +2086,11 @@ fun MeloxApp(
                                                             FolderDetailScreen(
                                                                 onShufflePlay = viewModel::shuffleTracks,
                                                                 folder = it,
+                                                                sortConfig = settings.folderTrackSortConfigs[it.key]
+                                                                    ?: MusicSortConfig(),
+                                                                onSortConfigChange = { config ->
+                                                                    viewModel.setFolderTrackSortConfig(it.key, config)
+                                                                },
                                                                 artistGroups = uiState.artists,
                                                                 currentTrackId = currentTrackId,
                                                                 bottomContentPadding =

@@ -12,7 +12,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -76,6 +75,8 @@ fun FolderDetailScreen(
     showMusicTagEditor: Boolean,
     showLyricoEditor: Boolean,
     showLunaBeatEditor: Boolean,
+    sortConfig: MusicSortConfig,
+    onSortConfigChange: (MusicSortConfig) -> Unit,
 ) {
     var query by rememberSaveable(folder.key) { mutableStateOf("") }
     var searchVisible by rememberSaveable(folder.key) { mutableStateOf(false) }
@@ -84,16 +85,6 @@ fun FolderDetailScreen(
         mutableStateOf<Set<String>>(emptySet())
     }
     var selectionMode by remember(folder.key) { mutableStateOf(false) }
-    var sortFieldOrdinal by rememberSaveable(folder.key) {
-        mutableIntStateOf(MusicSortField.TITLE.ordinal)
-    }
-    var sortDescending by rememberSaveable(folder.key) { mutableStateOf(false) }
-    val sortConfig = MusicSortConfig(
-        field = MusicSortField.entries.getOrElse(sortFieldOrdinal) {
-            MusicSortField.TITLE
-        },
-        descending = sortDescending,
-    )
     val scrollBehavior = rememberSearchTopBarScrollBehavior(searchVisible)
     val listState = rememberLazyListState()
     val backdrop = rememberBlurBackdrop()
@@ -212,10 +203,7 @@ fun FolderDetailScreen(
                                     searchFocused = visible
                                     if (!visible) query = ""
                                 },
-                                onSortConfigChange = { config ->
-                                    sortFieldOrdinal = config.field.ordinal
-                                    sortDescending = config.descending
-                                },
+                                onSortConfigChange = onSortConfigChange,
                                 )
                             },
                         )

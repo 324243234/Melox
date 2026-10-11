@@ -169,7 +169,7 @@
     <string name="folder_empty">未发现音乐文件夹</string>
     <string name="folder_no_search_results">没有匹配的文件夹</string>
     <string name="folder_unknown">未知文件夹</string>
-    <string name="folder_block_title">隐藏</string>
+    <string name="folder_block_title">隐藏文件夹</string>
     <string name="folder_block_message">是否要隐藏文件夹 %1$s 的所有歌曲</string>
     <string name="hidden_folder_save_error">无法保存隐藏文件夹设置</string>
     <plurals name="folder_song_count">

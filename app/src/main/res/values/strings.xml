@@ -176,7 +176,7 @@
     <string name="folder_empty">No music folders found</string>
     <string name="folder_no_search_results">No matching folders</string>
     <string name="folder_unknown">Unknown folder</string>
-    <string name="folder_block_title">Hide</string>
+    <string name="folder_block_title">Hide folder</string>
     <string name="folder_block_message">Hide all songs in folder %1$s?</string>
     <string name="hidden_folder_save_error">Could not save hidden folders</string>
     <plurals name="folder_song_count">

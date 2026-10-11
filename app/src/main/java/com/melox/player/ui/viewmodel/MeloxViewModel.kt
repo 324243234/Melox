@@ -999,6 +999,12 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
         return true
     }
 
+    fun setFolderTrackSortConfig(folderKey: String, config: MusicSortConfig) {
+        viewModelScope.launch {
+            settingsRepository.setFolderTrackSortConfig(folderKey, config)
+        }
+    }
+
     fun setPlaylistSortConfig(playlistId: String, config: PlaylistSortConfig) {
         viewModelScope.launch {
             settingsRepository.setPlaylistSortConfig(playlistId, config)

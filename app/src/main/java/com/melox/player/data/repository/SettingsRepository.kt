@@ -198,6 +198,9 @@ class SettingsRepository(context: Context) {
                     ?.coerceIn(FolderSortField.entries.indices)
                     ?: FolderSortField.NAME.ordinal,
                 folderSortDescending = preferences[Keys.FolderSortDescending] ?: false,
+                folderTrackSortConfigs = decodeFolderTrackSortConfigs(
+                    preferences[Keys.FolderTrackSortConfigs].orEmpty(),
+                ),
                 playlistSortConfigs = decodePlaylistSortConfigs(
                     preferences[Keys.PlaylistSortConfigs].orEmpty(),
                 ),
@@ -526,6 +529,17 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    suspend fun setFolderTrackSortConfig(folderKey: String, config: MusicSortConfig) {
+        dataStore.edit { preferences ->
+            val configs = decodeFolderTrackSortConfigs(
+                preferences[Keys.FolderTrackSortConfigs].orEmpty(),
+            ).toMutableMap()
+            if (config == MusicSortConfig()) configs.remove(folderKey)
+            else configs[folderKey] = config
+            preferences[Keys.FolderTrackSortConfigs] = encodeFolderTrackSortConfigs(configs)
+        }
+    }
+
     suspend fun setPlaylistSortConfig(playlistId: String, config: PlaylistSortConfig) {
         dataStore.edit { preferences ->
             val configs = decodePlaylistSortConfigs(
@@ -595,9 +609,25 @@ class SettingsRepository(context: Context) {
         val ArtistSortDescending = booleanPreferencesKey("artist_sort_descending")
         val FolderSortField = intPreferencesKey("folder_sort_field")
         val FolderSortDescending = booleanPreferencesKey("folder_sort_descending")
+        val FolderTrackSortConfigs = stringSetPreferencesKey("folder_track_sort_configs")
         val PlaylistSortConfigs = stringSetPreferencesKey("playlist_sort_configs")
     }
 }
+
+internal fun encodeFolderTrackSortConfigs(configs: Map<String, MusicSortConfig>): Set<String> =
+    configs.mapTo(mutableSetOf()) { (key, config) ->
+        "${config.field.name}|${config.descending}|$key"
+    }
+
+internal fun decodeFolderTrackSortConfigs(stored: Set<String>): Map<String, MusicSortConfig> =
+    stored.mapNotNull { value ->
+        val parts = value.split('|', limit = 3)
+        if (parts.size != 3) return@mapNotNull null
+        val field = MusicSortField.entries.firstOrNull { it.name == parts[0] }
+            ?: return@mapNotNull null
+        val descending = parts[1].toBooleanStrictOrNull() ?: return@mapNotNull null
+        parts[2] to MusicSortConfig(field, descending)
+    }.toMap()
 
 internal fun encodePlaylistSortConfigs(configs: Map<String, PlaylistSortConfig>): Set<String> =
     configs.mapTo(mutableSetOf()) { (id, config) ->
