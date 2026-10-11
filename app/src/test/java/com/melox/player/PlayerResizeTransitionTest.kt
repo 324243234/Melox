@@ -2,13 +2,272 @@ package com.melox.player
 
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.runtime.BroadcastFrameClock
 import com.melox.player.ui.component.playback.PlayerSheetTransitionState
+import com.melox.player.ui.component.playback.sharedContainerRect
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 
 class PlayerResizeTransitionTest {
+    @Test
+    fun collapsedDownwardDragKeepsTheLivePressedMiniPlayerVisible() {
+        val state = PlayerSheetTransitionState()
+        state.updateWindowSize(portrait)
+        reportBounds(state, portrait)
+        reportFrames(state, portrait)
+        state.beginMiniPlayerDrag(miniPlayerScale = 1.02f)
+        state.dragBy(120f)
+
+        assertEquals(0f, state.progress, 0f)
+        assertTrue(state.isDragging)
+        assertTrue(state.miniPlayerAcceptsInput)
+        assertFalse(state.isMounted)
+        assertFalse(state.isTransitionActive)
+        assertFalse(state.fullPlayerDrawsAboveRoot)
+        assertTrue(state.sharedLayersReady)
+    }
+
+    @Test
+    fun downwardThenUpwardDragCapturesTheLatestVisiblePressScale() {
+        val state = PlayerSheetTransitionState()
+        state.updateWindowSize(portrait)
+        reportBounds(state, portrait)
+        reportFrames(state, portrait)
+        state.beginMiniPlayerDrag(miniPlayerScale = 1.01f)
+        state.dragMiniPlayerBy(120f, miniPlayerScale = 1.02f)
+        state.dragMiniPlayerBy(-80f, miniPlayerScale = 1.04f)
+        assertEquals(0f, state.progress, 0f)
+        assertFalse(state.isMounted)
+
+        state.dragMiniPlayerBy(-60f, miniPlayerScale = 1.06f)
+
+        assertTrue(state.progress > 0f)
+        assertTrue(state.isMounted)
+        assertTrue(state.isTransitionActive)
+        assertEquals(1.06f, state.overlayMiniPlayerScale, 0f)
+        assertEquals(318f, state.overlayMiniPlayerBounds.width, 0.001f)
+        state.dragMiniPlayerBy(-20f, miniPlayerScale = 1.08f)
+        assertEquals(1.06f, state.overlayMiniPlayerScale, 0f)
+        assertTrue(state.sharedLayersReady)
+    }
+
+    @Test
+    fun returningToCollapsedBoundaryKeepsTheFirstCaptureUntilRelease() {
+        val state = PlayerSheetTransitionState()
+        state.updateWindowSize(portrait)
+        reportBounds(state, portrait)
+        reportFrames(state, portrait)
+        state.beginMiniPlayerDrag(miniPlayerScale = 1.02f)
+        state.dragMiniPlayerBy(-120f, miniPlayerScale = 1.04f)
+        assertTrue(state.isTransitionActive)
+
+        state.dragMiniPlayerBy(120f, miniPlayerScale = 1.06f)
+
+        assertEquals(0f, state.progress, 0f)
+        assertTrue(state.isMounted)
+        assertTrue(state.isTransitionActive)
+        assertTrue(state.isDragging)
+        assertTrue(state.miniPlayerAcceptsInput)
+        assertEquals(1.04f, state.overlayMiniPlayerScale, 0f)
+        assertEquals(1.04f, state.capturedMiniPlayerPressScale!!, 0f)
+        state.dragMiniPlayerBy(-20f, miniPlayerScale = 1.08f)
+        assertEquals(1.04f, state.overlayMiniPlayerScale, 0f)
+        state.dragMiniPlayerBy(20f, miniPlayerScale = 1.1f)
+        assertEquals(0f, state.progress, 0f)
+        assertEquals(1.04f, state.capturedMiniPlayerPressScale!!, 0f)
+        state.dragMiniPlayerBy(-20f, miniPlayerScale = 1.1f)
+        assertEquals(1.04f, state.overlayMiniPlayerScale, 0f)
+        assertTrue(state.isMounted)
+        assertTrue(state.sharedLayersReady)
+    }
+
+    @Test
+    fun upwardFlingAfterReturningToZeroKeepsTheFirstCapture() {
+        val state = PlayerSheetTransitionState()
+        state.updateWindowSize(portrait)
+        reportBounds(state, portrait)
+        reportFrames(state, portrait)
+        state.beginMiniPlayerDrag(miniPlayerScale = 1.02f)
+        state.dragMiniPlayerBy(-80f, miniPlayerScale = 1.04f)
+        state.dragMiniPlayerBy(80f, miniPlayerScale = 1.06f)
+
+        state.endMiniPlayerDrag(-900f, miniPlayerScale = 1.1f)
+
+        assertTrue(state.targetOpen)
+        assertTrue(state.isMounted)
+        assertEquals(1.04f, state.overlayMiniPlayerScale, 0f)
+        assertEquals(null, state.capturedMiniPlayerPressScale)
+    }
+
+    @Test
+    fun newGestureCapturesAgainAfterThePreviousGestureIsReleased() {
+        val state = PlayerSheetTransitionState()
+        state.updateWindowSize(portrait)
+        reportBounds(state, portrait)
+        reportFrames(state, portrait)
+        state.beginMiniPlayerDrag(miniPlayerScale = 1.02f)
+        state.dragMiniPlayerBy(-80f, miniPlayerScale = 1.04f)
+        state.dragMiniPlayerBy(80f, miniPlayerScale = 1.06f)
+        state.endMiniPlayerDrag(900f, miniPlayerScale = 1.1f)
+        assertFalse(state.isMounted)
+        assertEquals(null, state.capturedMiniPlayerPressScale)
+
+        state.beginMiniPlayerDrag(miniPlayerScale = 1.03f)
+        assertEquals(null, state.capturedMiniPlayerPressScale)
+        state.dragMiniPlayerBy(-20f, miniPlayerScale = 1.07f)
+
+        assertEquals(1.07f, state.capturedMiniPlayerPressScale!!, 0f)
+        assertEquals(1.07f, state.overlayMiniPlayerScale, 0f)
+    }
+
+    @Test
+    fun zeroProgressFlingUsesReleaseScaleAndPreservesDirectionSettlement() {
+        for (velocity in listOf(-900f, 900f)) {
+            val state = PlayerSheetTransitionState()
+            state.updateWindowSize(portrait)
+            reportBounds(state, portrait)
+            reportFrames(state, portrait)
+            state.beginMiniPlayerDrag(miniPlayerScale = 1.01f)
+            state.dragMiniPlayerBy(120f, miniPlayerScale = 1.02f)
+            state.dragMiniPlayerBy(-60f, miniPlayerScale = 1.04f)
+            assertEquals(0f, state.progress, 0f)
+
+            state.endMiniPlayerDrag(velocity, miniPlayerScale = 1.08f)
+
+            assertFalse(state.isDragging)
+            if (velocity < 0f) {
+                assertTrue(state.targetOpen)
+                assertTrue(state.isMounted)
+                assertEquals(1.08f, state.overlayMiniPlayerScale, 0f)
+            } else {
+                assertFalse(state.targetOpen)
+                assertFalse(state.isMounted)
+                assertTrue(state.miniPlayerAcceptsInput)
+            }
+            assertTrue(state.sharedLayersReady)
+        }
+    }
+
+    @Test
+    fun pressedClickStartsFromVisibleBoundsWithoutInvalidatingRecordedFrames() {
+        val state = PlayerSheetTransitionState()
+        state.updateWindowSize(portrait)
+        reportBounds(state, portrait)
+        state.updateMiniPlayerContentBounds(Rect(0f, 8f, 300f, 56f), portrait)
+        state.updateMiniPlayerControlsBounds(Rect(200f, 8f, 288f, 56f), portrait)
+        reportFrames(state, portrait)
+
+        state.open(miniPlayerScale = 1.1f)
+
+        assertTrue(state.sharedLayersReady)
+        assertEquals(Rect(0f, 0f, 300f, 64f), state.miniPlayerBounds)
+        assertEquals(-15f, state.overlayMiniPlayerBounds.left, 0.001f)
+        assertEquals(330f, state.overlayMiniPlayerBounds.width, 0.001f)
+        assertEquals(70.4f, state.overlayMiniPlayerBounds.height, 0.001f)
+        assertEquals(state.overlayMiniPlayerBounds, sharedContainerRect(
+            state.overlayMiniPlayerBounds, state.fullPlayerBounds, state.progress,
+        ))
+        assertEquals(-6.2f, state.overlayMiniArtworkBounds.left, 0.001f)
+        assertEquals(52.8f, state.overlayMiniArtworkBounds.width, 0.001f)
+        assertEquals(330f, state.overlayMiniPlayerContentBounds.width, 0.001f)
+        assertEquals(96.8f, state.overlayMiniPlayerControlsBounds.width, 0.001f)
+
+        // A second activation or the released live mini player cannot reset the source.
+        state.open(miniPlayerScale = 1f)
+        assertEquals(1.1f, state.overlayMiniPlayerScale, 0.001f)
+    }
+
+    @Test
+    fun cancelingPressedExpansionKeepsTheReleaseFrameSize() {
+        for (distance in listOf(-120f, -0.01f)) {
+            val state = PlayerSheetTransitionState()
+            state.updateWindowSize(portrait)
+            reportBounds(state, portrait)
+            reportFrames(state, portrait)
+            state.beginMiniPlayerDrag(miniPlayerScale = 1.1f)
+            state.dragBy(distance)
+            val visibleSource = state.overlayMiniPlayerBounds
+            val progress = state.progress
+
+            state.cancelDrag()
+
+            assertFalse(state.targetOpen)
+            assertEquals(progress, state.progress, 0f)
+            assertEquals(visibleSource, state.overlayMiniPlayerBounds)
+            assertTrue(state.sharedLayersReady)
+        }
+    }
+
+    @Test
+    fun completedPressedExpansionDismissesToTheOrdinaryMiniPlayerSize() {
+        val state = PlayerSheetTransitionState()
+        state.updateWindowSize(portrait)
+        reportBounds(state, portrait)
+        reportFrames(state, portrait)
+        state.beginMiniPlayerDrag(miniPlayerScale = 1.1f)
+        state.dragBy(-1000f)
+        state.endDrag(-900f)
+        assertTrue(state.isFullyExpanded)
+
+        state.close()
+
+        assertEquals(1f, state.overlayMiniPlayerScale, 0f)
+        assertEquals(state.miniPlayerBounds, state.overlayMiniPlayerBounds)
+    }
+
+    @Test
+    fun canceledPressShrinksContinuouslyAndReopeningPreservesItsCurrentSource() {
+        val clock = BroadcastFrameClock()
+        runBlocking(clock) {
+            var frameNanos = 0L
+            suspend fun frame() {
+                yield()
+                frameNanos += 16_666_667L
+                clock.sendFrame(frameNanos)
+                yield()
+            }
+            suspend fun finish(animation: Job) {
+                repeat(180) {
+                    if (!animation.isActive) return
+                    frame()
+                }
+                assertTrue("Player spring did not settle", animation.isCompleted)
+            }
+            val state = PlayerSheetTransitionState()
+            state.updateWindowSize(portrait)
+            reportBounds(state, portrait)
+            reportFrames(state, portrait)
+            state.beginMiniPlayerDrag(miniPlayerScale = 1.1f)
+            state.dragBy(-120f)
+            state.cancelDrag()
+            val closing = launch { state.animateToTarget() }
+            repeat(6) { frame() }
+            assertTrue(state.overlayMiniPlayerScale > 1f)
+            assertTrue(state.overlayMiniPlayerScale < 1.1f)
+            val sourceBeforeReopening = state.overlayMiniPlayerBounds
+
+            state.open()
+            assertEquals(sourceBeforeReopening, state.overlayMiniPlayerBounds)
+            closing.cancelAndJoin()
+            finish(launch { state.animateToTarget() })
+            assertTrue(state.isFullyExpanded)
+            state.close()
+            finish(launch { state.animateToTarget() })
+
+            assertEquals(0f, state.progress, 0f)
+            assertEquals(1f, state.overlayMiniPlayerScale, 0f)
+            assertEquals(state.miniPlayerBounds, state.overlayMiniPlayerBounds)
+            assertTrue(state.sharedLayersReady)
+        }
+    }
+
     @Test
     fun missingFramesDoNotBlockLogicalSettlement() {
         val state = PlayerSheetTransitionState()

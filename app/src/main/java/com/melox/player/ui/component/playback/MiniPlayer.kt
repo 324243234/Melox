@@ -2,9 +2,13 @@ package com.melox.player.ui.component.playback
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.EaseOut
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +29,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,10 +43,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -65,6 +72,7 @@ import com.melox.player.ui.component.liquid.miuixFloatingBarShadow
 import com.melox.player.ui.component.liquid.miniPlayerSurface
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.sign
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Icon
@@ -81,14 +89,14 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 internal fun MiniPlayer(
     playback: PlaybackUiState,
     chrome: MiniPlayerChrome,
-    onOpen: () -> Unit,
+    onOpen: (Float) -> Unit,
     onTogglePlayPause: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onOpenQueue: () -> Unit,
-    onPlayerDragStart: () -> Unit,
-    onPlayerDrag: (Float) -> Unit,
-    onPlayerDragEnd: (Float) -> Unit,
+    onPlayerDragStart: (Float) -> Unit,
+    onPlayerDrag: (Float, Float) -> Unit,
+    onPlayerDragEnd: (Float, Float) -> Unit,
     onPlayerDragCancel: () -> Unit,
     playerLayer: GraphicsLayer,
     playerContentLayer: GraphicsLayer,
@@ -96,6 +104,7 @@ internal fun MiniPlayer(
     drawInPlace: Boolean,
     surfaceVisible: Boolean,
     sharedArtworkVisible: Boolean,
+    capturedPressScale: Float?,
     onLayerRecorded: (generation: Int, size: IntSize) -> Unit,
     onPlayerBoundsChanged: (Rect) -> Unit,
     onPlayerContentBoundsChanged: (Rect) -> Unit,
@@ -126,12 +135,85 @@ internal fun MiniPlayer(
     val controlSize = miniPlayerControlSize(isNormal, chrome.smallPlayerBar)
     val playPauseIconSize = 22.dp
     val controlIconSize = 24.dp
+    val pressEnabled = chrome.liquidGlassActive && chrome.backdrop != null
+    val pressProgress = remember { Animatable(0f, 0.001f) }
+    var pressed by remember { mutableStateOf(false) }
+    var playerBounds by remember { mutableStateOf(Rect.Zero) }
+    var contentCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val pressGrowth = with(LocalDensity.current) { 16.dp.toPx() }
+    val swipeScope = rememberCoroutineScope()
+    var swipeOffsetJob by remember { mutableStateOf<Job?>(null) }
+    var swipeDragDistance by remember { mutableFloatStateOf(0f) }
+    val swipeOffsetLimit = with(LocalDensity.current) { 4.dp.toPx() }
+    fun releaseSwipeOffset() {
+        swipeOffsetJob?.cancel()
+        if (!pressEnabled || swipeDragDistance == 0f) return
+        swipeOffsetJob = swipeScope.launch {
+            Animatable(swipeDragDistance).animateTo(0f, spring(1f, 300f, 0.5f)) {
+                swipeDragDistance = value
+            }
+        }
+    }
+    LaunchedEffect(pressEnabled) {
+        if (!pressEnabled) {
+            swipeOffsetJob?.cancel()
+            swipeDragDistance = 0f
+        }
+    }
+    fun pressScale(): Float = if (pressEnabled) {
+        capturedPressScale
+            ?: (1f + pressGrowth / playerBounds.width.coerceAtLeast(1f) * pressProgress.value)
+    } else {
+        1f
+    }
+    fun layoutBounds(coordinates: LayoutCoordinates): Rect {
+        val content = contentCoordinates
+        return if (content?.isAttached == true) {
+            content.localBoundingBoxOf(coordinates, clipBounds = false)
+                .translate(playerBounds.topLeft)
+        } else {
+            coordinates.boundsInRoot()
+        }
+    }
+    LaunchedEffect(pressEnabled, pressed, capturedPressScale) {
+        if (!pressEnabled) {
+            pressProgress.snapTo(0f)
+        } else if (capturedPressScale != null) {
+            // Keep the hidden press spring at the shared container's captured size.
+            pressProgress.snapTo(
+                ((capturedPressScale - 1f) * playerBounds.width / pressGrowth).coerceIn(0f, 1f),
+            )
+        } else {
+            pressProgress.animateTo(
+                if (pressed) 1f else 0f,
+                spring(1f, 1000f, 0.001f),
+            )
+        }
+    }
+    val pressModifier = if (pressEnabled) {
+        Modifier.pointerInput(Unit) {
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                pressed = true
+                try {
+                    // Observe child controls and existing drags without consuming input.
+                    while (awaitPointerEvent(PointerEventPass.Final).changes.any { it.pressed }) {
+                        // Keep the press until the pointer is released, including during drags.
+                    }
+                } finally {
+                    pressed = false
+                }
+            }
+        }
+    } else {
+        Modifier
+    }
     val expansionGestureModifier = rememberPlayerSheetVerticalDragModifier(
         enabled = true,
         hasItem = hasItem,
-        onDragStart = onPlayerDragStart,
-        onDrag = onPlayerDrag,
-        onDragEnd = onPlayerDragEnd,
+        onDragStart = { onPlayerDragStart(pressScale()) },
+        onDrag = { onPlayerDrag(it, pressScale()) },
+        onDragEnd = { onPlayerDragEnd(it, pressScale()) },
         onDragCancel = onPlayerDragCancel,
     )
 
@@ -142,7 +224,8 @@ internal fun MiniPlayer(
             .padding(bottom = if (isNormal) 6.dp else FLOATING_MINI_PLAYER_BOTTOM_PADDING)
             .height(playerHeight)
             .onGloballyPositioned { coordinates ->
-                onPlayerBoundsChanged(coordinates.boundsInRoot())
+                playerBounds = coordinates.boundsInRoot()
+                onPlayerBoundsChanged(playerBounds)
             }
             .recordMiniPlayerLayer(
                 layer = playerLayer,
@@ -150,28 +233,25 @@ internal fun MiniPlayer(
                 recordingGeneration = frameRecordingGeneration,
                 onRecorded = onLayerRecorded,
             )
+            .then(pressModifier)
             .then(expansionGestureModifier)
             .clickable(
                 enabled = hasItem,
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-                onClick = onOpen,
+                onClick = { onOpen(pressScale()) },
             ),
         contentAlignment = Alignment.Center,
     ) {
-        if (surfaceVisible) {
+        if (surfaceVisible && !pressEnabled) {
             Box(
                 modifier = Modifier
                     .matchParentSize()
                     .then(
-                        if (isNormal) {
-                            Modifier
-                        } else {
-                            Modifier.miuixFloatingBarShadow(
-                                cornerRadius = surfaceCornerRadius,
-                                isDark = chrome.isDark,
-                            )
-                        },
+                        if (isNormal) Modifier else Modifier.miuixFloatingBarShadow(
+                            cornerRadius = surfaceCornerRadius,
+                            isDark = chrome.isDark,
+                        ),
                     )
                     .squircleClip(surfaceCornerRadius)
                     .miniPlayerSurface(
@@ -184,127 +264,168 @@ internal fun MiniPlayer(
                         floatingHighlight = chrome.floatingHighlight,
                     )
                     .then(
-                        if (isNormal) {
-                            Modifier.squircleBorder(
-                                width = DividerDefaults.Thickness,
-                                color = normalOutlineColor,
-                                cornerRadius = surfaceCornerRadius,
-                            )
-                        } else {
-                            Modifier
-                        },
+                        if (isNormal) Modifier.squircleBorder(
+                            width = DividerDefaults.Thickness,
+                            color = normalOutlineColor,
+                            cornerRadius = surfaceCornerRadius,
+                        ) else Modifier,
                     ),
             )
         }
-        Row(
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .onGloballyPositioned { coordinates ->
-                    onPlayerContentBoundsChanged(coordinates.boundsInRoot())
-                }
-                .recordPlayerContentLayer(playerContentLayer)
-                .padding(
-                    start = if (isNormal) 10.dp else if (isSmallFloating) 14.dp else 16.dp,
-                    end = when {
-                        isSmallFloating -> 8.dp
-                        chrome.smallPlayerBar -> (playerHeight - controlSize) / 2
-                        else -> 10.dp
-                    },
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(artworkSize)
-                    .onGloballyPositioned { coordinates ->
-                        onArtworkBoundsChanged(coordinates.boundsInRoot())
+                .matchParentSize()
+                .graphicsLayer {
+                    val fraction = (swipeDragDistance / playerBounds.width.coerceAtLeast(1f))
+                        .coerceIn(-1f, 1f)
+                    translationX = if (pressEnabled) {
+                        swipeOffsetLimit * fraction.sign * EaseOut.transform(abs(fraction))
+                    } else {
+                        0f
                     }
-                    .graphicsLayer {
-                        alpha = if (sharedArtworkVisible) 1f else 0f
+                }
+                .then(
+                    when {
+                        pressEnabled && surfaceVisible -> Modifier
+                            .miuixFloatingBarShadow(surfaceCornerRadius, chrome.isDark)
+                            .miniPlayerSurface(
+                                cornerRadius = surfaceCornerRadius,
+                                backdrop = chrome.backdrop,
+                                blurActive = chrome.blurActive,
+                                liquidGlassActive = true,
+                                isDark = chrome.isDark,
+                                followsNavigationBar = isNormal,
+                                floatingHighlight = chrome.floatingHighlight,
+                                layerBlock = {
+                                    val scale = pressScale()
+                                    scaleX = scale
+                                    scaleY = scale
+                                },
+                            )
+                        pressEnabled -> Modifier.graphicsLayer {
+                            val scale = pressScale()
+                            scaleX = scale
+                            scaleY = scale
+                        }
+                        else -> Modifier
                     },
-            ) {
-                PlaybackArtwork(
-                    contentUri = item?.contentUri.orEmpty(),
-                    dateModifiedEpochSeconds = item?.dateModifiedEpochSeconds ?: 0L,
-                    fileSizeBytes = item?.fileSizeBytes ?: 0L,
-                    size = artworkSize,
-                    cornerRadius = artworkCornerRadius,
-                    modifier = Modifier.fillMaxSize(),
-                    requestSize = artworkSize,
-                    contentScale = ContentScale.Fit,
-                    bitmapCrossfadeDurationMillis =
-                        PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS,
-                    bitmapCrossfadeEasing = PLAYER_TRACK_ARTWORK_CROSSFADE_EASING,
-                    rectangularCornerRadiusReduction =
-                        MINI_PLAYER_RECTANGULAR_ARTWORK_CORNER_REDUCTION,
                 )
-            }
-            Spacer(modifier = Modifier.width(metadataSpacing))
-            SwipeableMetadata(
-                playback = playback,
-                onPrevious = onPrevious,
-                onNext = onNext,
-                titleStyle = if (isSmallFloating) {
-                    MiuixTheme.textStyles.subtitle
-                } else {
-                    MiuixTheme.textStyles.body1
-                },
-                modifier = Modifier.weight(1f),
-                contentStartPadding = 4.dp,
-            )
-            Spacer(modifier = Modifier.width(if (isNormal) 6.dp else 2.dp))
+                .onGloballyPositioned { contentCoordinates = it },
+            contentAlignment = Alignment.Center,
+        ) {
             Row(
                 modifier = Modifier
-                    .offset(
-                        x = if (isSmallFloating) {
-                            8.dp - (playerHeight - controlSize) / 2
-                        } else {
-                            0.dp
-                        },
-                    )
+                    .fillMaxWidth()
                     .onGloballyPositioned { coordinates ->
-                        onPlayerControlsBoundsChanged(coordinates.boundsInRoot())
-                    },
+                        onPlayerContentBoundsChanged(layoutBounds(coordinates))
+                    }
+                    .recordPlayerContentLayer(playerContentLayer)
+                    .padding(
+                        start = if (isNormal) 10.dp else if (isSmallFloating) 14.dp else 16.dp,
+                        end = when {
+                            isSmallFloating -> 8.dp
+                            chrome.smallPlayerBar -> (playerHeight - controlSize) / 2
+                            else -> 10.dp
+                        },
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(
-                    modifier = Modifier.offset(x = if (chrome.smallPlayerBar) 0.dp else (-6).dp),
-                    enabled = hasItem,
-                    onClick = onTogglePlayPause,
-                    minWidth = controlSize,
-                    minHeight = controlSize,
+                Box(
+                    modifier = Modifier
+                        .size(artworkSize)
+                        .onGloballyPositioned { coordinates ->
+                            onArtworkBoundsChanged(layoutBounds(coordinates))
+                        }
+                        .graphicsLayer {
+                            alpha = if (sharedArtworkVisible) 1f else 0f
+                        },
                 ) {
-                    AnimatedContent(
-                        targetState = playback.playWhenReady,
-                        transitionSpec = { playerControlIconTransition() },
-                        label = "miniPlayPauseIcon",
-                    ) { playing ->
+                    PlaybackArtwork(
+                        contentUri = item?.contentUri.orEmpty(),
+                        dateModifiedEpochSeconds = item?.dateModifiedEpochSeconds ?: 0L,
+                        fileSizeBytes = item?.fileSizeBytes ?: 0L,
+                        size = artworkSize,
+                        cornerRadius = artworkCornerRadius,
+                        modifier = Modifier.fillMaxSize(),
+                        requestSize = artworkSize,
+                        contentScale = ContentScale.Fit,
+                        bitmapCrossfadeDurationMillis =
+                            PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS,
+                        bitmapCrossfadeEasing = PLAYER_TRACK_ARTWORK_CROSSFADE_EASING,
+                        rectangularCornerRadiusReduction =
+                            MINI_PLAYER_RECTANGULAR_ARTWORK_CORNER_REDUCTION,
+                    )
+                }
+                Spacer(modifier = Modifier.width(metadataSpacing))
+                SwipeableMetadata(
+                    playback = playback,
+                    onPrevious = onPrevious,
+                    onNext = onNext,
+                    onSwipeStart = { swipeOffsetJob?.cancel() },
+                    onSwipeDrag = { if (pressEnabled) swipeDragDistance += it },
+                    onSwipeRelease = ::releaseSwipeOffset,
+                    titleStyle = if (isSmallFloating) {
+                        MiuixTheme.textStyles.subtitle
+                    } else {
+                        MiuixTheme.textStyles.body1
+                    },
+                    modifier = Modifier.weight(1f),
+                    contentStartPadding = 4.dp,
+                )
+                Spacer(modifier = Modifier.width(if (isNormal) 6.dp else 2.dp))
+                Row(
+                    modifier = Modifier
+                        .offset(
+                            x = if (isSmallFloating) {
+                                8.dp - (playerHeight - controlSize) / 2
+                            } else {
+                                0.dp
+                            },
+                        )
+                        .onGloballyPositioned { coordinates ->
+                            onPlayerControlsBoundsChanged(layoutBounds(coordinates))
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(
+                        modifier = Modifier.offset(x = if (chrome.smallPlayerBar) 0.dp else (-6).dp),
+                        enabled = hasItem,
+                        onClick = onTogglePlayPause,
+                        minWidth = controlSize,
+                        minHeight = controlSize,
+                    ) {
+                        AnimatedContent(
+                            targetState = playback.playWhenReady,
+                            transitionSpec = { playerControlIconTransition() },
+                            label = "miniPlayPauseIcon",
+                        ) { playing ->
+                            Icon(
+                                painter = painterResource(
+                                    if (playing) {
+                                        R.drawable.ic_player_pause
+                                    } else {
+                                        R.drawable.ic_player_play
+                                    },
+                                ),
+                                contentDescription = stringResource(
+                                    if (playing) R.string.pause else R.string.play,
+                                ),
+                                modifier = Modifier.size(playPauseIconSize),
+                            )
+                        }
+                    }
+                    IconButton(
+                        modifier = Modifier.offset(x = if (isNormal || isSmallFloating) 0.dp else (-2).dp),
+                        onClick = onOpenQueue,
+                        minWidth = controlSize,
+                        minHeight = controlSize,
+                    ) {
                         Icon(
-                            painter = painterResource(
-                                if (playing) {
-                                    R.drawable.ic_player_pause
-                                } else {
-                                    R.drawable.ic_player_play
-                                },
-                            ),
-                            contentDescription = stringResource(
-                                if (playing) R.string.pause else R.string.play,
-                            ),
-                            modifier = Modifier.size(playPauseIconSize),
+                            imageVector = MiuixIcons.Playlist,
+                            contentDescription = stringResource(R.string.open_queue),
+                            modifier = Modifier.size(controlIconSize),
                         )
                     }
-                }
-                IconButton(
-                    modifier = Modifier.offset(x = if (isNormal || isSmallFloating) 0.dp else (-2).dp),
-                    onClick = onOpenQueue,
-                    minWidth = controlSize,
-                    minHeight = controlSize,
-                ) {
-                    Icon(
-                        imageVector = MiuixIcons.Playlist,
-                        contentDescription = stringResource(R.string.open_queue),
-                        modifier = Modifier.size(controlIconSize),
-                    )
                 }
             }
         }
@@ -316,11 +437,17 @@ private fun SwipeableMetadata(
     playback: PlaybackUiState,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
+    onSwipeStart: () -> Unit,
+    onSwipeDrag: (Float) -> Unit,
+    onSwipeRelease: () -> Unit,
     titleStyle: TextStyle,
     modifier: Modifier = Modifier,
     contentStartPadding: Dp = 0.dp,
 ) {
     val item = playback.currentItem
+    val currentOnSwipeStart by rememberUpdatedState(onSwipeStart)
+    val currentOnSwipeDrag by rememberUpdatedState(onSwipeDrag)
+    val currentOnSwipeRelease by rememberUpdatedState(onSwipeRelease)
     val emptyTitle = stringResource(R.string.mini_player_title)
     val emptyArtist = stringResource(R.string.mini_player_empty)
     val unknownArtist = stringResource(R.string.music_unknown_artist)
@@ -401,99 +528,111 @@ private fun SwipeableMetadata(
             }
             .pointerInput(item?.mediaId, contentWidth) {
                 if (item == null) return@pointerInput
-                detectHorizontalDragGestures(
-                    onDragStart = {
-                        settleJob?.cancel()
-                        thresholdHapticDirection = 0
-                    },
-                    onHorizontalDrag = { change, dragAmount ->
-                        change.consume()
-                        val updatedOffset =
-                            (horizontalOffset + dragAmount).coerceIn(-contentWidth, contentWidth)
-                        horizontalOffset = updatedOffset
-                        val currentThresholdDirection = miniMetadataSwipeThresholdDirection(
-                            offsetPx = updatedOffset,
-                            commits = miniMetadataSwipeCommits(
+                var swipeActive = false
+                try {
+                    detectHorizontalDragGestures(
+                        onDragStart = {
+                            swipeActive = true
+                            currentOnSwipeStart()
+                            settleJob?.cancel()
+                            thresholdHapticDirection = 0
+                        },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            currentOnSwipeDrag(dragAmount)
+                            val updatedOffset =
+                                (horizontalOffset + dragAmount).coerceIn(-contentWidth, contentWidth)
+                            horizontalOffset = updatedOffset
+                            val currentThresholdDirection = miniMetadataSwipeThresholdDirection(
                                 offsetPx = updatedOffset,
+                                commits = miniMetadataSwipeCommits(
+                                    offsetPx = updatedOffset,
+                                    contentWidthPx = contentWidth,
+                                    labelWidthPx = labelWidth,
+                                    edgeMaskWidthPx = edgeMaskWidthPx,
+                                    labelSpacingPx = labelSpacingPx,
+                                ),
+                                hasDifferentTarget =
+                                    playback.hasDifferentMetadataSwipeTarget(updatedOffset),
+                            )
+                            if (
+                                shouldTriggerMiniMetadataSwipeThresholdHaptic(
+                                    previousDirection = thresholdHapticDirection,
+                                    currentDirection = currentThresholdDirection,
+                                )
+                            ) {
+                                hapticFeedback.performHapticFeedback(
+                                    HapticFeedbackType.GestureThresholdActivate,
+                                )
+                            }
+                            thresholdHapticDirection = currentThresholdDirection
+                        },
+                        onDragEnd = {
+                            swipeActive = false
+                            currentOnSwipeRelease()
+                            val startOffset = horizontalOffset
+                            val targetMetadata = playback.targetMetadataForSwipe(
+                                offset = startOffset,
+                                emptyTitle = emptyTitle,
+                                emptyArtist = emptyArtist,
+                                unknownArtist = unknownArtist,
+                            )
+                            val commits = miniMetadataSwipeCommits(
+                                offsetPx = startOffset,
                                 contentWidthPx = contentWidth,
                                 labelWidthPx = labelWidth,
                                 edgeMaskWidthPx = edgeMaskWidthPx,
                                 labelSpacingPx = labelSpacingPx,
-                            ),
-                            hasDifferentTarget =
-                                playback.hasDifferentMetadataSwipeTarget(updatedOffset),
-                        )
-                        if (
-                            shouldTriggerMiniMetadataSwipeThresholdHaptic(
-                                previousDirection = thresholdHapticDirection,
-                                currentDirection = currentThresholdDirection,
                             )
-                        ) {
-                            hapticFeedback.performHapticFeedback(
-                                HapticFeedbackType.GestureThresholdActivate,
-                            )
-                        }
-                        thresholdHapticDirection = currentThresholdDirection
-                    },
-                    onDragEnd = {
-                        val startOffset = horizontalOffset
-                        val targetMetadata = playback.targetMetadataForSwipe(
-                            offset = startOffset,
-                            emptyTitle = emptyTitle,
-                            emptyArtist = emptyArtist,
-                            unknownArtist = unknownArtist,
-                        )
-                        val commits = miniMetadataSwipeCommits(
-                            offsetPx = startOffset,
-                            contentWidthPx = contentWidth,
-                            labelWidthPx = labelWidth,
-                            edgeMaskWidthPx = edgeMaskWidthPx,
-                            labelSpacingPx = labelSpacingPx,
-                        )
-                        settleJob = scope.launch {
-                            val oldMetadata = visibleMetadata
-                            val shouldCrossfade =
-                                commits &&
-                                    targetMetadata != null &&
-                                    targetMetadata.mediaId != oldMetadata.mediaId
-                            if (shouldCrossfade) {
-                                outgoingMetadata = oldMetadata
-                                visibleMetadata = targetMetadata
-                                crossfadeProgress = 0f
-                                expectedSwipeMediaId = targetMetadata.mediaId
-                            }
-                            if (commits) {
-                                if (startOffset > 0f) onPrevious() else onNext()
-                            }
-                            val animation = Animatable(startOffset)
-                            animation.animateTo(0f, tween(MiniMetadataReturnDurationMillis)) {
-                                horizontalOffset = value
+                            settleJob = scope.launch {
+                                val oldMetadata = visibleMetadata
+                                val shouldCrossfade =
+                                    commits &&
+                                        targetMetadata != null &&
+                                        targetMetadata.mediaId != oldMetadata.mediaId
                                 if (shouldCrossfade) {
-                                    crossfadeProgress =
-                                        (1f - abs(value) / abs(startOffset).coerceAtLeast(1f))
-                                            .coerceIn(0f, 1f)
+                                    outgoingMetadata = oldMetadata
+                                    visibleMetadata = targetMetadata
+                                    crossfadeProgress = 0f
+                                    expectedSwipeMediaId = targetMetadata.mediaId
+                                }
+                                if (commits) {
+                                    if (startOffset > 0f) onPrevious() else onNext()
+                                }
+                                val animation = Animatable(startOffset)
+                                animation.animateTo(0f, tween(MiniMetadataReturnDurationMillis)) {
+                                    horizontalOffset = value
+                                    if (shouldCrossfade) {
+                                        crossfadeProgress =
+                                            (1f - abs(value) / abs(startOffset).coerceAtLeast(1f))
+                                                .coerceIn(0f, 1f)
+                                    }
+                                }
+                                horizontalOffset = 0f
+                                if (shouldCrossfade) {
+                                    crossfadeProgress = 1f
+                                    outgoingMetadata = null
                                 }
                             }
-                            horizontalOffset = 0f
-                            if (shouldCrossfade) {
-                                crossfadeProgress = 1f
-                                outgoingMetadata = null
+                            thresholdHapticDirection = 0
+                        },
+                        onDragCancel = {
+                            swipeActive = false
+                            currentOnSwipeRelease()
+                            thresholdHapticDirection = 0
+                            settleJob = scope.launch {
+                                Animatable(horizontalOffset).animateTo(
+                                    0f,
+                                    tween(MiniMetadataReturnDurationMillis),
+                                ) {
+                                    horizontalOffset = value
+                                }
                             }
-                        }
-                        thresholdHapticDirection = 0
-                    },
-                    onDragCancel = {
-                        thresholdHapticDirection = 0
-                        settleJob = scope.launch {
-                            Animatable(horizontalOffset).animateTo(
-                                0f,
-                                tween(MiniMetadataReturnDurationMillis),
-                            ) {
-                                horizontalOffset = value
-                            }
-                        }
-                    },
-                )
+                        },
+                    )
+                } finally {
+                    if (swipeActive) currentOnSwipeRelease()
+                }
             },
     ) {
         if (swipeLabel.isNotEmpty()) {

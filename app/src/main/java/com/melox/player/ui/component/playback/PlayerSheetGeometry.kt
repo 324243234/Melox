@@ -72,6 +72,17 @@ import top.yukonga.miuix.kmp.squircle.squircleBorder
 import top.yukonga.miuix.kmp.basic.DividerDefaults
 import top.yukonga.miuix.kmp.utils.getRoundedCorner
 
+internal fun scaledMiniPlayerBounds(bounds: Rect, playerBounds: Rect, scale: Float): Rect {
+    if (!bounds.isUsable() || !playerBounds.isUsable()) return bounds
+    val center = playerBounds.center
+    return Rect(
+        left = center.x + (bounds.left - center.x) * scale,
+        top = center.y + (bounds.top - center.y) * scale,
+        right = center.x + (bounds.right - center.x) * scale,
+        bottom = center.y + (bounds.bottom - center.y) * scale,
+    )
+}
+
 internal fun sharedContainerRect(
     source: Rect,
     target: Rect,

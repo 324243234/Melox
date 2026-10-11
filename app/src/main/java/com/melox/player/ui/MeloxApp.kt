@@ -539,7 +539,6 @@ fun MeloxApp(
     val libraryTabs = remember(albumsTitle, artistsTitle, foldersTitle) {
         listOf(albumsTitle, artistsTitle, foldersTitle)
     }
-    val openPlayer = { playerTransition.open() }
     val closePlayer = { playerTransition.close() }
     var playerStatusBarBackgroundIsDark by remember { mutableStateOf(isDark) }
     val playerUsesFullPlayerStatusBar = playerSheetUsesFullPlayerStatusBar(
@@ -1626,7 +1625,7 @@ fun MeloxApp(
                     PlayerScaffold(
                             playerNavigationOffset = {
                                 playerNavigationOffset(
-                                    source = playerTransition.miniPlayerBounds,
+                                    source = playerTransition.overlayMiniPlayerBounds,
                                     target = playerTransition.fullPlayerBounds,
                                     progress = playerTransition.progress,
                                 )
@@ -1666,12 +1665,13 @@ fun MeloxApp(
                                     viewModel = viewModel,
                                     chrome = chrome,
                                     onChromeChanged = { miniPlayerChrome = it },
-                                    onOpen = openPlayer,
+                                    onOpen = { playerTransition.open(it) },
                                     onOpenQueue = { showQueue = true },
                                     onPlayerDragStart = playerTransition::beginMiniPlayerDrag,
-                                    onPlayerDrag = playerTransition::dragBy,
-                                    onPlayerDragEnd = playerTransition::endDrag,
+                                    onPlayerDrag = playerTransition::dragMiniPlayerBy,
+                                    onPlayerDragEnd = playerTransition::endMiniPlayerDrag,
                                     onPlayerDragCancel = playerTransition::cancelDrag,
+                                    capturedPressScale = playerTransition.capturedMiniPlayerPressScale,
                                     playerLayer = miniPlayerLayer,
                                     playerContentLayer = miniPlayerContentLayer,
                                     frameRecordingGeneration = frameRecordingGeneration,
@@ -2580,11 +2580,11 @@ private fun MiniPlayerHost(
     viewModel: MeloxViewModel,
     chrome: MiniPlayerChrome,
     onChromeChanged: (MiniPlayerChrome) -> Unit,
-    onOpen: () -> Unit,
+    onOpen: (Float) -> Unit,
     onOpenQueue: () -> Unit,
-    onPlayerDragStart: () -> Unit,
-    onPlayerDrag: (Float) -> Unit,
-    onPlayerDragEnd: (Float) -> Unit,
+    onPlayerDragStart: (Float) -> Unit,
+    onPlayerDrag: (Float, Float) -> Unit,
+    onPlayerDragEnd: (Float, Float) -> Unit,
     onPlayerDragCancel: () -> Unit,
     playerLayer: GraphicsLayer,
     playerContentLayer: GraphicsLayer,
@@ -2592,6 +2592,7 @@ private fun MiniPlayerHost(
     drawInPlace: Boolean,
     surfaceVisible: Boolean,
     sharedArtworkVisible: Boolean,
+    capturedPressScale: Float?,
     onLayerRecorded: (generation: Int, size: IntSize) -> Unit,
     onPlayerBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit,
     onPlayerContentBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit,
@@ -2605,8 +2606,8 @@ private fun MiniPlayerHost(
     MiniPlayer(
         playback = playback,
         chrome = chrome,
-        onOpen = {
-            if (playback.currentItem != null) onOpen()
+        onOpen = { scale ->
+            if (playback.currentItem != null) onOpen(scale)
         },
         onTogglePlayPause = viewModel::togglePlayPause,
         onPrevious = viewModel::previous,
@@ -2622,6 +2623,7 @@ private fun MiniPlayerHost(
         drawInPlace = drawInPlace,
         surfaceVisible = surfaceVisible,
         sharedArtworkVisible = sharedArtworkVisible,
+        capturedPressScale = capturedPressScale,
         onLayerRecorded = onLayerRecorded,
         onPlayerBoundsChanged = onPlayerBoundsChanged,
         onPlayerContentBoundsChanged = onPlayerContentBoundsChanged,

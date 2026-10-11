@@ -27,6 +27,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.FilterQuality
@@ -151,7 +153,7 @@ internal fun PlayerSheetDragInputOverlay(
 ) {
     if (!transition.sharedLayersReady || !transition.isTransitionActive) return
     val bounds = sharedContainerRect(
-        transition.miniPlayerBounds,
+        transition.overlayMiniPlayerBounds,
         transition.fullPlayerBounds,
         transition.progress,
     )
@@ -174,7 +176,7 @@ internal fun PlayerSheetDragInputOverlay(
             .playerSheetHostLayer(
                 hostBounds = bounds,
                 inputBounds = bounds,
-                miniPlayerBounds = transition.miniPlayerBounds.takeIf {
+                miniPlayerBounds = transition.overlayMiniPlayerBounds.takeIf {
                     transition.miniPlayerAcceptsInput
                 },
             )
@@ -199,9 +201,9 @@ internal fun PlayerSheetMiniControlsInputOverlay(
     if (!transition.sharedLayersReady || !transition.isTransitionActive ||
         transition.progress >= PLAYER_MINI_CONTENT_FADE_END_PROGRESS
     ) return
-    val source = transition.miniPlayerBounds
-    val content = transition.miniPlayerContentBounds
-    val controls = transition.miniPlayerControlsBounds
+    val source = transition.overlayMiniPlayerBounds
+    val content = transition.overlayMiniPlayerContentBounds
+    val controls = transition.overlayMiniPlayerControlsBounds
     if (!source.isUsable() || !content.isUsable() || !controls.isUsable()) return
 
     val bounds = sharedContainerRect(source, transition.fullPlayerBounds, transition.progress)
@@ -212,11 +214,12 @@ internal fun PlayerSheetMiniControlsInputOverlay(
         controlsBounds = controls,
     )
     val density = LocalDensity.current
-    val playOffset = with(density) { (if (smallPlayerBar) 0.dp else (-6).dp).toPx() }
-    val queueOffset = with(density) {
+    val miniScale = transition.overlayMiniPlayerScale
+    val playOffset = miniScale * with(density) { (if (smallPlayerBar) 0.dp else (-6).dp).toPx() }
+    val queueOffset = miniScale * with(density) {
         (if (normalChrome || smallPlayerBar) 0.dp else (-2).dp).toPx()
     }
-    val controlSizeDp = miniPlayerControlSize(normalChrome, smallPlayerBar)
+    val controlSizeDp = miniPlayerControlSize(normalChrome, smallPlayerBar) * miniScale
     val controlSize = with(density) { controlSizeDp.toPx() }
     val currentOnTogglePlayPause by rememberUpdatedState(onTogglePlayPause)
     val currentOnOpenQueue by rememberUpdatedState(onOpenQueue)
@@ -287,12 +290,12 @@ internal fun PlayerSheetContentOverlay(
     val progress = transition.progress
     val density = LocalDensity.current
     val contentBounds = sharedContainerRect(
-        source = transition.miniPlayerBounds,
+        source = transition.overlayMiniPlayerBounds,
         target = transition.fullPlayerBounds,
         progress = progress,
     )
     val bounds = sharedContainerRenderRect(
-        source = transition.miniPlayerBounds,
+        source = transition.overlayMiniPlayerBounds,
         target = transition.fullPlayerBounds,
         progress = progress,
     )
@@ -303,7 +306,9 @@ internal fun PlayerSheetContentOverlay(
         0.dp
     }
     val cornerRadii = sharedContainerCornerRadii(
-        source = SharedContainerCornerRadii.uniform(collapsedCornerRadius.value),
+        source = SharedContainerCornerRadii.uniform(
+            collapsedCornerRadius.value * transition.overlayMiniPlayerScale,
+        ),
         target = SharedContainerCornerRadii.uniform(expandedCornerRadius.value),
         progress = progress,
     )
@@ -364,11 +369,18 @@ internal fun PlayerSheetContentOverlay(
                     Modifier
                 },
             )
-            .squircleClip(
-                topStart = cornerRadii.topStart.dp,
-                topEnd = cornerRadii.topEnd.dp,
-                bottomEnd = cornerRadii.bottomEnd.dp,
-                bottomStart = cornerRadii.bottomStart.dp,
+            .then(
+                if (miniPlayerChrome?.liquidGlassActive == true && miniPlayerChrome.backdrop != null) {
+                    // Preserve the glass pill's outline after its material fades away.
+                    if (glassChrome != null) Modifier else Modifier.clip(RoundedCornerShape(cornerRadius))
+                } else {
+                    Modifier.squircleClip(
+                        topStart = cornerRadii.topStart.dp,
+                        topEnd = cornerRadii.topEnd.dp,
+                        bottomEnd = cornerRadii.bottomEnd.dp,
+                        bottomStart = cornerRadii.bottomStart.dp,
+                    )
+                },
             )
             .then(glassSurfaceModifier),
     ) {
@@ -378,8 +390,8 @@ internal fun PlayerSheetContentOverlay(
                     progress < PLAYER_MINI_CONTENT_FADE_END_PROGRESS
             ) {
                     miniPlayerContentLayer.alpha = playerSheetMiniContentAlpha(progress)
-                    val sourceBounds = transition.miniPlayerBounds
-                    val contentLayerBounds = transition.miniPlayerContentBounds
+                    val sourceBounds = transition.overlayMiniPlayerBounds
+                    val contentLayerBounds = transition.overlayMiniPlayerContentBounds
                     val contentOffset = if (contentLayerBounds.isUsable()) {
                         sharedMiniPlayerContentOffset(
                             sourcePlayerBounds = sourceBounds,
@@ -389,7 +401,7 @@ internal fun PlayerSheetContentOverlay(
                     } else {
                         Offset.Zero
                     }
-                    val controlsBounds = transition.miniPlayerControlsBounds
+                    val controlsBounds = transition.overlayMiniPlayerControlsBounds
                     if (sourceBounds.isUsable() && controlsBounds.isUsable()) {
                         val controlsLeft = controlsBounds.left - sourceBounds.left
                         val controlsTranslationX = sharedMiniPlayerControlsTranslationX(
@@ -403,6 +415,11 @@ internal fun PlayerSheetContentOverlay(
                                     left = contentOffset.x,
                                     top = contentOffset.y,
                                 )
+                                scale(
+                                    scaleX = transition.overlayMiniPlayerScale,
+                                    scaleY = transition.overlayMiniPlayerScale,
+                                    pivot = Offset.Zero,
+                                )
                             }) {
                                 drawLayer(miniPlayerContentLayer)
                             }
@@ -413,6 +430,11 @@ internal fun PlayerSheetContentOverlay(
                                     left = contentOffset.x + controlsTranslationX,
                                     top = contentOffset.y,
                                 )
+                                scale(
+                                    scaleX = transition.overlayMiniPlayerScale,
+                                    scaleY = transition.overlayMiniPlayerScale,
+                                    pivot = Offset.Zero,
+                                )
                             }) {
                                 drawLayer(miniPlayerContentLayer)
                             }
@@ -422,6 +444,11 @@ internal fun PlayerSheetContentOverlay(
                             translate(
                                 left = contentOffset.x,
                                 top = contentOffset.y,
+                            )
+                            scale(
+                                scaleX = transition.overlayMiniPlayerScale,
+                                scaleY = transition.overlayMiniPlayerScale,
+                                pivot = Offset.Zero,
                             )
                         }) {
                             drawLayer(miniPlayerContentLayer)
@@ -522,7 +549,7 @@ internal fun PlayerSheetArtworkOverlay(
         )
     } ?: collapsedCornerRadius
     val artworkCornerRadius = lerp(
-        collapsedArtworkCornerRadius.value,
+        collapsedArtworkCornerRadius.value * transition.overlayMiniPlayerScale,
         PLAYER_FULL_ARTWORK_CORNER_RADIUS.value,
         progress,
     )

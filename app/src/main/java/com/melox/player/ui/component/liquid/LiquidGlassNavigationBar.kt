@@ -50,7 +50,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.shadow.Shadow
@@ -257,13 +256,7 @@ fun LiquidGlassNavigationBar(
 
     val tabsBackdrop = rememberLayerBackdrop()
     val density = LocalDensity.current
-    val containerBlur = remember(density) {
-        // Match Miuix v0.9.4's sigma at full resolution. Android converts its blur
-        // radius to sigma with radius * 0.57735 + 0.5 (AOSP hwui/utils/Blur.cpp).
-        val sigma = with(density) { 4.dp.toPx() } * 0.45f
-        val radius = (sigma - 0.5f) / 0.57735f
-        BlurEffect(radius, radius)
-    }
+    val containerBlur = rememberGlassContainerBlur()
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val animationScope = rememberCoroutineScope()
     val tabsCount = items.size
