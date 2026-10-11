@@ -102,6 +102,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.melox.player.model.LyricAnimationMode
 import com.melox.player.R
@@ -182,6 +186,8 @@ import com.melox.player.ui.component.playback.prefetchPlaybackBackground
 import com.melox.player.ui.component.playback.rememberDynamicFlowBackgroundState
 import com.melox.player.ui.component.playback.rememberPlayerSheetTransitionState
 import com.melox.player.ui.navigation.PredictiveNavDisplay
+import com.melox.player.ui.navigation.secondaryPageEnterDurationMillis
+import com.melox.player.ui.navigation.LocalOrdinaryBackDispatcherOwner
 import com.melox.player.ui.screen.library.MusicListScreen
 import com.melox.player.ui.screen.library.AlbumDetailScreen
 import com.melox.player.ui.screen.library.AlbumLibraryScreen
@@ -1037,6 +1043,7 @@ fun MeloxApp(
                             LibrarySearchBar(
                                 visible = songSearchVisible,
                                 focused = songSearchFocused,
+                                backEnabled = pagerState.currentPage == SONGS_TAB_INDEX,
                                 query = songSearchQuery,
                                 label = stringResource(R.string.search_hint),
                                 topPadding = expandedTopBarBottomContentGap(
@@ -1182,6 +1189,7 @@ fun MeloxApp(
                                 LibrarySearchBar(
                                     visible = librarySearchVisible,
                                     focused = librarySearchFocused,
+                                    backEnabled = pagerState.currentPage == LIBRARY_TAB_INDEX,
                                     query = librarySearchQuery,
                                     label = stringResource(R.string.search_hint),
                                     topPadding = 6.dp,
@@ -1303,6 +1311,7 @@ fun MeloxApp(
                                 ) {
                                     AlphabetSideBar(
                                         sectionIndexMap = albumPresentation.sectionIndexMap,
+                                        topOffset = 108.dp,
                                         itemCount = albumPresentation.items.size,
                                         scrollStateKey = albumsGridState,
                                         isAtTarget = { index ->
@@ -1327,6 +1336,7 @@ fun MeloxApp(
                                 ) {
                                     AlphabetSideBar(
                                         sectionIndexMap = artistPresentation.sectionIndexMap,
+                                        topOffset = 108.dp,
                                         itemCount = artistPresentation.items.size,
                                         scrollStateKey = artistsListState,
                                         isAtTarget = { index ->
@@ -1351,6 +1361,7 @@ fun MeloxApp(
                                 ) {
                                     AlphabetSideBar(
                                         sectionIndexMap = folderPresentation.sectionIndexMap,
+                                        topOffset = 108.dp,
                                         itemCount = folderPresentation.items.size,
                                         scrollStateKey = foldersListState,
                                         isAtTarget = { index ->
@@ -1632,6 +1643,11 @@ fun MeloxApp(
                             },
                             selectedTab = playerPagerState.selectedPage,
                             onTabSelected = onNavigationTabSelected,
+                            navigationHideDurationMillis = if (currentRoute == AppRoute.ROOT) {
+                                null
+                            } else {
+                                secondaryPageEnterDurationMillis(settings.navigationTransitionStyle)
+                            },
                             showNavigation = shouldShowNavigation(
                                 currentRouteIsRoot = currentRoute == AppRoute.ROOT,
                                 hideBottomBar = settings.hideBottomBar,
@@ -2855,7 +2871,21 @@ internal fun LibrarySearchBar(
     onQueryChange: (String) -> Unit,
     onFocusedChange: (Boolean) -> Unit,
     onVisibleChange: (Boolean) -> Unit,
+    backEnabled: Boolean = true,
 ) {
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val ordinaryBackOwner = LocalOrdinaryBackDispatcherOwner.current
+    val searchBackOwner = ordinaryBackOwner
+        ?: checkNotNull(LocalNavigationEventDispatcherOwner.current)
+    val ordinaryBackEnabled = visible && backEnabled &&
+        ordinaryBackOwner != null &&
+        lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+    // Activity 1.13 otherwise registers BackHandler in the disabled entry dispatcher.
+    CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides searchBackOwner) {
+        BackHandler(enabled = ordinaryBackEnabled) {
+            onVisibleChange(false)
+        }
+    }
     val hasWallpaper = LocalCustomPageBackground.current != null
     val topBarBlurSettings = LocalTopBarBlurSettings.current
     val progressiveBlurActive = topBarBlurSettings.blurEnabled &&

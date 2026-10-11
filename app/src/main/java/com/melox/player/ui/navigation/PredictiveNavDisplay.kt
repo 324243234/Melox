@@ -3,6 +3,7 @@ package com.melox.player.ui.navigation
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -21,7 +22,20 @@ import top.yukonga.miuix.kmp.nav.core.NavDisplayEffects
 import top.yukonga.miuix.kmp.nav.core.NavEntryBuilder
 import top.yukonga.miuix.kmp.nav.core.rememberNavSystemCornerRadius
 import top.yukonga.miuix.kmp.nav.transition.NavTransitions
+import top.yukonga.miuix.kmp.nav.transition.NavSettleSpec
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+internal val LocalOrdinaryBackDispatcherOwner =
+    compositionLocalOf<NavigationEventDispatcherOwner?> { null }
+
+internal fun secondaryPageEnterDurationMillis(transitionStyle: NavigationTransitionStyle): Int {
+    val transition = if (transitionStyle == NavigationTransitionStyle.AOSP) {
+        AospNavigationTransition
+    } else {
+        NavTransitions.MiuixDefault
+    }
+    return (transition.motion.programmatic as NavSettleSpec.Tween).durationMillis
+}
 
 /**
  * Keeps one Miuix navigation host while predictive back is toggled at runtime.
@@ -89,6 +103,9 @@ fun PredictiveNavDisplay(
     )
     CompositionLocalProvider(
         LocalNavigationEventDispatcherOwner provides activeDispatcherOwner,
+        LocalOrdinaryBackDispatcherOwner provides dispatcherOwner.takeIf {
+            backEnabled && !predictiveBackEnabled
+        },
     ) {
         NavDisplay(
             backStack = backStack,

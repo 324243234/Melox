@@ -20,8 +20,8 @@ class BottomBarGeometryTest {
     @Test
     fun floatingPlayerAndNavigationShareTheSuppliedVisibleBottomDistances() {
         for (inset in listOf(0.dp, 24.dp, 48.dp)) {
-            val portraitDistance = if (inset > 0.dp) inset else 24.dp
-            val landscapeDistance = if (inset > 0.dp) inset else 16.dp
+            val portraitDistance = if (inset > 0.dp) inset + 8.dp else 24.dp
+            val landscapeDistance = if (inset > 0.dp) inset + 8.dp else 16.dp
             assertEquals(portraitDistance, floatingNavigationBarBottomPadding(inset))
             assertEquals(landscapeDistance, floatingBottomBarBottomPadding(inset))
             assertEquals(portraitDistance, floatingMiniPlayerBottomPaddingWhenNavigationIsHidden(inset, true) + 8.dp)

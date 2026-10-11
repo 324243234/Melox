@@ -58,6 +58,7 @@ internal fun IosLikeFloatingPlayerScaffold(
     effectsSupported: Boolean,
     isDark: Boolean,
     showNavigation: Boolean,
+    navigationHideDurationMillis: Int?,
     playerNavigationOffset: () -> Float,
     miniPlayer: @Composable (MiniPlayerChrome) -> Unit,
     backdropRefreshSignal: () -> Float,
@@ -90,14 +91,14 @@ internal fun IosLikeFloatingPlayerScaffold(
         targetValue = if (showNavigation) 0.dp else {
             hiddenNavigationBottomPadding
         },
-        animationSpec = tween(if (showNavigation) 280 else 240),
+        animationSpec = tween(if (showNavigation) 280 else navigationHideDurationMillis ?: 240),
         label = "floatingMiniPlayerNavigationGap",
     )
     val miniPlayerNavigationShadowOffset by animateDpAsState(
         targetValue = if (showNavigation) FLOATING_NAVIGATION_BAR_SHADOW_PADDING else {
             (FLOATING_MINI_PLAYER_BOTTOM_PADDING - navigationBottomPadding).coerceAtLeast(0.dp)
         },
-        animationSpec = tween(if (showNavigation) 280 else 240),
+        animationSpec = tween(if (showNavigation) 280 else navigationHideDurationMillis ?: 240),
         label = "floatingMiniPlayerNavigationShadowOffset",
     )
     val effectsActive = effectsSupported && (blurEnabled || liquidGlassEnabled)
@@ -176,12 +177,12 @@ internal fun IosLikeFloatingPlayerScaffold(
                             clip = false,
                         ) + fadeIn(tween(180)),
                         exit = slideOutVertically(
-                            animationSpec = tween(240),
+                            animationSpec = tween(navigationHideDurationMillis ?: 240),
                             targetOffsetY = { it },
                         ) + shrinkVertically(
-                            animationSpec = tween(240),
+                            animationSpec = tween(navigationHideDurationMillis ?: 240),
                             clip = false,
-                        ) + fadeOut(tween(140)),
+                        ) + fadeOut(tween(navigationHideDurationMillis ?: 140)),
                     ) {
                         Box(
                             modifier = Modifier.padding(

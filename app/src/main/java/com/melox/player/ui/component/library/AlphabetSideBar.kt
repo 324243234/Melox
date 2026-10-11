@@ -83,6 +83,7 @@ fun AlphabetSideBar(
     modifier: Modifier = Modifier,
     sections: List<String> = AlphabetSections,
     onTargetIndexChanged: (targetIndex: Int, restoreLargeTitle: Boolean) -> Unit,
+    topOffset: Dp = 54.dp,
 ) {
     val view = LocalView.current
     val density = LocalDensity.current
@@ -185,7 +186,7 @@ fun AlphabetSideBar(
         Row(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .offset(y = 54.dp)
+                .offset(y = topOffset)
                 .wrapContentHeight(align = Alignment.Top, unbounded = true)
                 .height(barHeight),
             horizontalArrangement = Arrangement.End,

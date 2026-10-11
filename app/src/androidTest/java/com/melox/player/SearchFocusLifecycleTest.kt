@@ -14,11 +14,13 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.melox.player.model.AppSettings
+import com.melox.player.model.NavigationTransitionStyle
 import com.melox.player.ui.LibrarySearchBar
 import com.melox.player.ui.component.LocalTopBarBlurSettings
 import com.melox.player.ui.component.PageScaffold
 import com.melox.player.ui.component.TopBarBlurSettings
 import com.melox.player.ui.theme.MeloxTheme
+import com.melox.player.ui.navigation.PredictiveNavDisplay
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
@@ -26,9 +28,102 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import top.yukonga.miuix.kmp.nav.core.NavKey
+import top.yukonga.miuix.kmp.nav.core.navBackStackOf
 
 @RunWith(AndroidJUnit4::class)
 class SearchFocusLifecycleTest {
+    private data class SearchRoute(val depth: Int) : NavKey
+
+    @Test
+    fun ordinaryBackClosesSearchBeforeRootExitOrDetailNavigation() {
+        for (initialPredictiveEnabled in listOf(false, true)) {
+            for (depth in 0..2) {
+                val stack = navBackStackOf(*Array(depth + 1) { SearchRoute(it) })
+                val visible = mutableStateOf(true)
+                val active = mutableStateOf(true)
+                val navigationEnabled = mutableStateOf(true)
+                val predictiveEnabled = mutableStateOf(initialPredictiveEnabled)
+                var closes = 0
+                var closedDepth = -1
+                var navigations = 0
+                var fallbacks = 0
+                lateinit var view: ComposeView
+                ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                    scenario.onActivity { activity ->
+                        activity.onBackPressedDispatcher.addCallback(activity,
+                            object : androidx.activity.OnBackPressedCallback(true) {
+                                override fun handleOnBackPressed() { fallbacks++ }
+                            },
+                        )
+                        view = ComposeView(activity).apply {
+                            setContent {
+                                MeloxTheme(AppSettings(blurEnabled = false)) {
+                                    PredictiveNavDisplay(
+                                        backStack = stack,
+                                        predictiveBackEnabled = predictiveEnabled.value,
+                                        transitionStyle = NavigationTransitionStyle.MIUIX,
+                                        isDark = false,
+                                        backEnabled = navigationEnabled.value,
+                                        onBack = { navigations++ },
+                                    ) {
+                                        entry<SearchRoute> { route ->
+                                            PageScaffold {
+                                                LibrarySearchBar(
+                                                    visible = visible.value,
+                                                    focused = false,
+                                                    query = "retained query",
+                                                    label = "Search",
+                                                    onQueryChange = {},
+                                                    onFocusedChange = {},
+                                                    onVisibleChange = {
+                                                        visible.value = it
+                                                        closes++
+                                                        closedDepth = route.depth
+                                                    },
+                                                    backEnabled = active.value,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        activity.setContentView(view)
+                    }
+                    awaitFrames(scenario, view)
+                    // Cover both predictive-off startup and a live toggle without replacing the host.
+                    scenario.onActivity { predictiveEnabled.value = false }
+                    awaitFrames(scenario, view)
+                    scenario.onActivity { activity -> activity.onBackPressedDispatcher.onBackPressed() }
+                    awaitFrames(scenario, view)
+                    assertFalse(visible.value)
+                    assertEquals(1, closes)
+                    assertEquals("A covered entry intercepted search Back", depth, closedDepth)
+                    assertEquals(0, navigations)
+                    assertEquals(0, fallbacks)
+                    scenario.onActivity { activity -> activity.onBackPressedDispatcher.onBackPressed() }
+                    assertEquals(if (depth > 0) 1 else 0, navigations)
+                    assertEquals(if (depth == 0) 1 else 0, fallbacks)
+
+                    scenario.onActivity { visible.value = true; active.value = false }
+                    awaitFrames(scenario, view)
+                    scenario.onActivity { activity -> activity.onBackPressedDispatcher.onBackPressed() }
+                    assertTrue("An inactive pager page consumed Back", visible.value)
+                    assertEquals(1, closes)
+
+                    scenario.onActivity { active.value = true; navigationEnabled.value = false }
+                    awaitFrames(scenario, view)
+                    val previousFallbacks = fallbacks
+                    scenario.onActivity { activity -> activity.onBackPressedDispatcher.onBackPressed() }
+                    assertTrue("Search consumed Back while player input owns the host", visible.value)
+                    assertEquals(previousFallbacks + 1, fallbacks)
+                    assertEquals(1, closes)
+                }
+            }
+        }
+    }
+
     @Test
     fun returningToVisibleUnfocusedSearchNeverRequestsFocusOrShowsIme() {
         val mounted = mutableStateOf(true)
