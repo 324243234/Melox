@@ -253,7 +253,7 @@ internal fun floatingBottomBarAvailableWidth(
 internal fun floatingBottomBarBottomPadding(
     navigationBarBottomInset: Dp,
 ): Dp = if (navigationBarBottomInset > 0.dp) {
-    navigationBarBottomInset
+    navigationBarBottomInset + 8.dp
 } else {
     16.dp
 }

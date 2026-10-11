@@ -2736,8 +2736,9 @@ class UiLogicTest {
     }
 
     @Test
-    fun landscapeFloatingBottomBarUsesNavigationInsetOrSixteenDpFallback() {
-        assertEquals(24.dp, floatingBottomBarBottomPadding(24.dp))
+    fun landscapeFloatingBottomBarUsesOfficialClearanceOrSixteenDpFallback() {
+        assertEquals(32.dp, floatingBottomBarBottomPadding(24.dp))
+        assertEquals(12.dp, floatingBottomBarBottomPadding(4.dp))
         assertEquals(16.dp, floatingBottomBarBottomPadding(0.dp))
     }
 
@@ -2751,7 +2752,8 @@ class UiLogicTest {
             ),
         )
         assertEquals(24.dp, floatingNavigationBarBottomPadding(0.dp))
-        assertEquals(24.dp, floatingNavigationBarBottomPadding(24.dp))
+        assertEquals(32.dp, floatingNavigationBarBottomPadding(24.dp))
+        assertEquals(12.dp, floatingNavigationBarBottomPadding(4.dp))
         assertEquals(
             8.dp,
             floatingMiniPlayerBottomPaddingWhenNavigationIsHidden(
@@ -2760,12 +2762,25 @@ class UiLogicTest {
             ),
         )
         assertEquals(
-            16.dp,
+            24.dp,
             floatingMiniPlayerBottomPaddingWhenNavigationIsHidden(
                 navigationBarBottomInset = 24.dp,
                 isPortrait = true,
             ),
         )
+    }
+
+    @Test
+    fun playerOnlyFloatingSurfaceMatchesOfficialClearanceInBothOrientations() {
+        listOf(true, false).forEach { isPortrait ->
+            listOf(4.dp, 24.dp).forEach { inset ->
+                val externalPadding = floatingMiniPlayerBottomPaddingWhenNavigationIsHidden(
+                    navigationBarBottomInset = inset,
+                    isPortrait = isPortrait,
+                )
+                assertEquals(inset + 8.dp, externalPadding + 8.dp)
+            }
+        }
     }
 
     @Test

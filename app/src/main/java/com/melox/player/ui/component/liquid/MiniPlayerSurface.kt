@@ -3,6 +3,7 @@ package com.melox.player.ui.component.liquid
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.graphics.Color
@@ -28,7 +29,7 @@ internal fun Modifier.miniPlayerSurface(
     liquidGlassActive: Boolean,
     isDark: Boolean,
     followsNavigationBar: Boolean,
-    floatingHighlight: Highlight? = null,
+    floatingHighlight: State<Highlight>? = null,
     highlightAlpha: Float = 1f,
 ): Modifier {
     val surfaceColor = if (followsNavigationBar) {
@@ -55,7 +56,7 @@ internal fun Modifier.miniPlayerSurface(
                     )
                 },
                 highlight = {
-                    val highlight = floatingHighlight?.copy(alpha = 0.75f) ?: if (isDark) {
+                    val highlight = floatingHighlight?.value?.copy(alpha = 0.75f) ?: if (isDark) {
                         Highlight.GlassStrokeMiddleDark
                     } else {
                         Highlight.GlassStrokeMiddleLight

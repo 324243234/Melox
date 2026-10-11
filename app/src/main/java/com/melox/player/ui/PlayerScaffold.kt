@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -82,7 +83,7 @@ internal data class MiniPlayerChrome(
     val blurActive: Boolean,
     val liquidGlassActive: Boolean,
     val isDark: Boolean,
-    val floatingHighlight: Highlight? = null,
+    val floatingHighlight: State<Highlight>? = null,
     val smallPlayerBar: Boolean = false,
 )
 
