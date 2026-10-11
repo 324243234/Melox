@@ -464,6 +464,7 @@ internal fun LyricsView(
     seekPositionMs: Long,
     emphasisColor: Color,
     modifier: Modifier = Modifier,
+    active: Boolean = true,
 ) {
     val documentHasTimedWords = remember(document) {
         document.lines.any { it.words.isNotEmpty() }
@@ -475,7 +476,7 @@ internal fun LyricsView(
         positionUpdateElapsedRealtimeMs = positionUpdateElapsedRealtimeMs,
         playbackIteration = playbackIteration,
         playbackSpeed = playbackSpeed,
-        isPlaying = isPlaying,
+        isPlaying = isPlaying && active,
         seekRequestKey = seekRequestKey,
         seekPositionMs = seekPositionMs,
     )
@@ -570,22 +571,31 @@ internal fun LyricsView(
                 requireUnconsumed = false,
                 pass = PointerEventPass.Final,
             )
+            var movement = Offset.Zero
             var browsingStarted = false
             while (true) {
                 val event = awaitPointerEvent(PointerEventPass.Final)
-                val change = event.changes.firstOrNull { it.id == down.id }
-                    ?: break
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
                 if (change.changedToUpIgnoreConsumed()) break
-                if (
-                    !browsingStarted &&
-                        lyricVerticalDragExceedsTouchSlop(
-                            horizontalDeltaPx = change.position.x - down.position.x,
-                            verticalDeltaPx = change.position.y - down.position.y,
+                // Both positions use this event's coordinates, even when the pager moves us.
+                movement += change.position - change.previousPosition
+                if (!browsingStarted) {
+                    if (
+                        abs(movement.x) > viewConfiguration.touchSlop &&
+                            abs(movement.x) >= abs(movement.y)
+                    ) {
+                        // Once horizontal paging wins, this gesture cannot become browsing.
+                        break
+                    }
+                    if (lyricVerticalDragExceedsTouchSlop(
+                            horizontalDeltaPx = movement.x,
+                            verticalDeltaPx = movement.y,
                             touchSlopPx = viewConfiguration.touchSlop,
                         )
-                ) {
-                    browsingStarted = true
-                    isUserBrowsingLyrics = true
+                    ) {
+                        browsingStarted = true
+                        isUserBrowsingLyrics = true
+                    }
                 }
             }
         }
