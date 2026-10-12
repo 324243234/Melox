@@ -2109,6 +2109,9 @@ fun MeloxApp(
                                                         }
                                                         folder?.let {
                                                             FolderDetailScreen(
+                                                                currentTrackContentUri = compactPlayback.currentItem?.contentUri,
+                                                                miniPlayerBounds = playerTransition.miniPlayerBounds,
+                                                                playerContentBounds = playerContentBounds,
                                                                 onShufflePlay = viewModel::shuffleTracks,
                                                                 folder = it,
                                                                 sortConfig = settings.folderTrackSortConfigs[it.key]
@@ -2194,6 +2197,9 @@ fun MeloxApp(
                                                         }
                                                         playlist?.let {
                                                             PlaylistDetailScreen(
+                                                                currentTrackContentUri = compactPlayback.currentItem?.contentUri,
+                                                                miniPlayerBounds = playerTransition.miniPlayerBounds,
+                                                                playerContentBounds = playerContentBounds,
                                                                 onShufflePlay = viewModel::shuffleTracks,
                                                                 playlist = it,
                                                                 sortConfig = settings.playlistSortConfigs[it.id]

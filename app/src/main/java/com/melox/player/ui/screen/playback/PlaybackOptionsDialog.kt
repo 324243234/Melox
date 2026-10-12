@@ -245,36 +245,41 @@ internal fun PlaybackOptionsDialog(
                 .padding(bottom = bottomPadding + 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            AnimatedVisibility(
-                visible = !floatOutputActive,
-                enter = fadeIn(animationSpec = tween(200)) +
-                    expandVertically(animationSpec = tween(250)),
-                exit = fadeOut(animationSpec = tween(150)) +
-                    shrinkVertically(animationSpec = tween(200)),
-                label = "playbackSpeedVisibility",
-            ) {
-                TabRowWithContour(
-                    tabs = speedLabels,
-                    selectedTabIndex = PLAYBACK_SPEED_VALUES.indexOf(playbackSpeed)
-                        .takeIf { it >= 0 } ?: PLAYBACK_SPEED_VALUES.indexOf(1f),
-                    onTabSelected = { index ->
-                        if (!floatOutputActive) {
-                            onPlaybackSpeedChange(PLAYBACK_SPEED_VALUES[index])
-                        }
-                    },
-                    colors = TabRowDefaults.tabRowColors(backgroundColor = speedBackgroundColor),
-                )
-            }
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.defaultColors(color = bottomSheetCardColor()),
-            ) {
-                SwitchPreference(
-                    title = stringResource(R.string.playback_high_precision_output),
-                    summary = stringResource(R.string.playback_high_precision_output_summary),
-                    checked = highPrecisionOutput,
-                    onCheckedChange = onHighPrecisionOutputChange,
-                )
+            Column {
+                AnimatedVisibility(
+                    visible = !floatOutputActive,
+                    enter = fadeIn(animationSpec = tween(200)) +
+                        expandVertically(animationSpec = tween(250)),
+                    exit = fadeOut(animationSpec = tween(150)) +
+                        shrinkVertically(animationSpec = tween(200)),
+                    label = "playbackSpeedVisibility",
+                ) {
+                    Column {
+                        TabRowWithContour(
+                            tabs = speedLabels,
+                            selectedTabIndex = PLAYBACK_SPEED_VALUES.indexOf(playbackSpeed)
+                                .takeIf { it >= 0 } ?: PLAYBACK_SPEED_VALUES.indexOf(1f),
+                            onTabSelected = { index ->
+                                if (!floatOutputActive) {
+                                    onPlaybackSpeedChange(PLAYBACK_SPEED_VALUES[index])
+                                }
+                            },
+                            colors = TabRowDefaults.tabRowColors(backgroundColor = speedBackgroundColor),
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
+                }
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.defaultColors(color = bottomSheetCardColor()),
+                ) {
+                    SwitchPreference(
+                        title = stringResource(R.string.playback_high_precision_output),
+                        summary = stringResource(R.string.playback_high_precision_output_summary),
+                        checked = highPrecisionOutput,
+                        onCheckedChange = onHighPrecisionOutputChange,
+                    )
+                }
             }
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column {

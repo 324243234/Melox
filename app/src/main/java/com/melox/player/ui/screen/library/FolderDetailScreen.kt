@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
@@ -77,6 +78,9 @@ fun FolderDetailScreen(
     showLunaBeatEditor: Boolean,
     sortConfig: MusicSortConfig,
     onSortConfigChange: (MusicSortConfig) -> Unit,
+    currentTrackContentUri: String? = null,
+    miniPlayerBounds: Rect = Rect.Zero,
+    playerContentBounds: Rect = Rect.Zero,
 ) {
     var query by rememberSaveable(folder.key) { mutableStateOf("") }
     var searchVisible by rememberSaveable(folder.key) { mutableStateOf(false) }
@@ -236,6 +240,10 @@ fun FolderDetailScreen(
                 .then(backdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
         ) {
             MusicListScreen(
+                showLocateAction = true,
+                currentTrackContentUri = currentTrackContentUri,
+                miniPlayerBounds = miniPlayerBounds,
+                playerContentBounds = playerContentBounds,
                 onTrackClick = onTrackClick,
                 displayedTracks = displayedTracks,
                 sectionIndexMap = sectionIndexMap,

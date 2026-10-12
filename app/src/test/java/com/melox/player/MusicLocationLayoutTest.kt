@@ -2,8 +2,8 @@ package com.melox.player
 
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.IntOffset
-import com.melox.player.ui.screen.library.collapseMusicLocationTopBar
-import com.melox.player.ui.screen.library.musicLocationOffset
+import com.melox.player.ui.component.library.collapseMusicLocationTopBar
+import com.melox.player.ui.component.library.musicLocationOffset
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import top.yukonga.miuix.kmp.basic.TopAppBarState
