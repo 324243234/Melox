@@ -5,11 +5,67 @@ import com.melox.player.model.LyricsDocument
 import com.melox.player.model.LyricsFormat
 import com.melox.player.model.LyricsSource
 import com.melox.player.ui.screen.playback.LyricPlaybackClock
+import com.melox.player.ui.screen.playback.lyricPlaybackPositionMs
 import com.melox.player.ui.screen.playback.stabilizedLyricPlaybackPositionMs
 import org.junit.Assert.*
 import org.junit.Test
 
 class LyricPlaybackClockTest {
+    @Test
+    fun hiddenPlaybackSamplesKeepTheClockReadyWithoutFrames() {
+        val clock = LyricPlaybackClock(1_000, 0)
+        val sample = lyricPlaybackPositionMs(60_000, 10_000, 10_500, true, 2f)
+        clock.updateFromPlayback(0, sample, active = false)
+        assertEquals(61_000.0, clock.positionMs.doubleValue, 0.0)
+
+        clock.updateFromPlayback(0, sample, active = true)
+        // A slightly older active sample must not replace the smooth clock after activation.
+        clock.updateFromPlayback(0, 60_900, active = true)
+        assertEquals(61_000.0, clock.positionMs.doubleValue, 0.0)
+    }
+
+    @Test
+    fun activeSystemSeekResetsOnceAndOrdinaryBackwardSamplesStayFiltered() {
+        val clock = LyricPlaybackClock(180_000, 0)
+        clock.updateFromPlayback(0, 180_000, active = true)
+        assertTrue(clock.updateFromPlayback(0, 30_000, active = true, positionDiscontinuityRevision = 1))
+        assertEquals(30_000.0, clock.positionMs.doubleValue, 0.0)
+        assertFalse(clock.updateFromPlayback(0, 29_990, active = true, positionDiscontinuityRevision = 1))
+        assertEquals(30_000.0, clock.positionMs.doubleValue, 0.0)
+    }
+
+    @Test
+    fun reopeningReanchorsEvenWithoutASeekEventOrRunningFrames() {
+        val clock = LyricPlaybackClock(180_000, 0)
+        clock.updateFromPlayback(0, 180_000, active = true)
+        clock.updateFromPlayback(0, 180_000, active = false)
+        assertTrue(clock.updateFromPlayback(0, 30_000, active = true))
+        assertEquals(30_000.0, clock.positionMs.doubleValue, 0.0)
+    }
+
+    @Test
+    fun hiddenSystemSeeksInBothDirectionsReplaceTheOldPosition() {
+        val clock = LyricPlaybackClock(1_000, 0)
+        for (target in listOf(180_000L, 30_000L)) {
+            clock.updateFromPlayback(0, target, active = false)
+            assertEquals(target.toDouble(), clock.positionMs.doubleValue, 0.0)
+            clock.updateFromPlayback(0, target, active = true)
+            val firstFrame = stabilizedLyricPlaybackPositionMs(
+                clock.positionMs.doubleValue, target, 0L, 1f,
+            )
+            assertEquals(target.toDouble(), firstFrame, 0.0)
+        }
+    }
+
+    @Test
+    fun pausedHiddenSeekUsesTheControllerPositionWithoutExtrapolation() {
+        val clock = LyricPlaybackClock(180_000, 0)
+        val sample = lyricPlaybackPositionMs(30_000, 10_000, 30_000, false, 1f)
+        clock.updateFromPlayback(0, sample, active = false)
+        clock.updateFromPlayback(0, sample, active = true)
+        assertEquals(30_000.0, clock.positionMs.doubleValue, 0.0)
+    }
+
     @Test
     fun consecutiveRepeatsResetTheSameDocumentAndItsProgress() {
         val lyrics = LyricsDocument(

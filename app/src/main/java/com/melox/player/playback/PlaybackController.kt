@@ -73,8 +73,17 @@ class PlaybackController(context: Context) {
     private var pendingTrackSkip: PendingTrackSkip? = null
     private var trackChangeDirection = 1
     private var playbackIteration = 0L
+    private var positionDiscontinuityRevision = 0L
 
     private val listener = object : Player.Listener {
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
+            positionDiscontinuityRevision += 1L
+        }
+
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             if (!playWhenReady && mutableSleepTimerState.value.extending) {
                 cancelSleepTimer(interrupted = true)
@@ -602,6 +611,7 @@ class PlaybackController(context: Context) {
             playWhenReady = pendingPlaybackIntent ?: player.playWhenReady,
             positionMs = positionMs,
             playbackIteration = playbackIteration,
+            positionDiscontinuityRevision = positionDiscontinuityRevision,
             trackChangeDirection = trackChangeDirection,
             positionUpdateElapsedRealtimeMs = SystemClock.elapsedRealtime(),
             playbackSpeed = pendingPlaybackSpeed ?: player.playbackParameters.speed,

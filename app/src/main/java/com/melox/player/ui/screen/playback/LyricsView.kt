@@ -235,7 +235,8 @@ internal fun lyricSeekUsesAnimatedCentering(
     hasPositionedInitialFocus: Boolean,
     centerOffsetUnchanged: Boolean,
     isPreviewing: Boolean = false,
-): Boolean = hasPositionedInitialFocus && centerOffsetUnchanged && !isPreviewing
+    active: Boolean = true,
+): Boolean = hasPositionedInitialFocus && centerOffsetUnchanged && !isPreviewing && active
 
 internal fun lyricLineRenderPositionMs(
     lineIndex: Int,
@@ -375,6 +376,8 @@ private fun rememberSmoothLyricTimeProvider(
     playbackIteration: Long,
     playbackSpeed: Float,
     isPlaying: Boolean,
+    active: Boolean,
+    positionDiscontinuityRevision: Long,
     seekRequestKey: Int,
     seekPositionMs: Long,
 ): () -> Long {
@@ -385,9 +388,12 @@ private fun rememberSmoothLyricTimeProvider(
     val latestPlaybackSpeed by rememberUpdatedState(playbackSpeed)
     val latestSeekRequestKey by rememberUpdatedState(seekRequestKey)
     val latestSeekPositionMs by rememberUpdatedState(seekPositionMs)
-    val clock = remember(document) { LyricPlaybackClock(positionMs, playbackIteration) }
+    val clock = remember(document) {
+        LyricPlaybackClock(positionMs, playbackIteration, positionDiscontinuityRevision)
+    }
     val smoothPositionMs = clock.positionMs
     val latestPlaybackIteration by rememberUpdatedState(playbackIteration)
+    val latestDiscontinuityRevision by rememberUpdatedState(positionDiscontinuityRevision)
 
     fun currentPlaybackPositionMs(): Long = lyricPlaybackPositionMs(
         positionMs = latestPositionMs,
@@ -402,14 +408,22 @@ private fun rememberSmoothLyricTimeProvider(
         seekRequestKey,
         seekPositionMs,
         playbackIteration,
+        positionMs,
+        positionUpdateElapsedRealtimeMs,
+        playbackSpeed,
+        isPlaying,
+        active,
+        positionDiscontinuityRevision,
     ) {
-        clock.resetForIteration(playbackIteration, currentPlaybackPositionMs())
+        clock.updateFromPlayback(
+            playbackIteration, currentPlaybackPositionMs(), active, positionDiscontinuityRevision,
+        )
         if (seekRequestKey != 0) {
             smoothPositionMs.doubleValue = seekPositionMs.coerceAtLeast(0L).toDouble()
         }
     }
-    LaunchedEffect(document, isPlaying) {
-        if (!isPlaying) return@LaunchedEffect
+    LaunchedEffect(document, isPlaying, active) {
+        if (!isPlaying || !active) return@LaunchedEffect
         var previousFrameTimeNanos = 0L
         while (isActive) {
             val frameTimeNanos = withFrameNanos { it }
@@ -419,12 +433,12 @@ private fun rememberSmoothLyricTimeProvider(
                 0L
             }
             previousFrameTimeNanos = frameTimeNanos
-            val iterationReset = clock.resetForIteration(
-                latestPlaybackIteration, currentPlaybackPositionMs(),
+            val clockReset = clock.updateFromPlayback(
+                latestPlaybackIteration, currentPlaybackPositionMs(), active, latestDiscontinuityRevision,
             )
             smoothPositionMs.doubleValue = if (latestSeekRequestKey != 0) {
                 latestSeekPositionMs.coerceAtLeast(0L).toDouble()
-            } else if (iterationReset) {
+            } else if (clockReset) {
                 smoothPositionMs.doubleValue
             } else {
                 stabilizedLyricPlaybackPositionMs(
@@ -465,6 +479,8 @@ internal fun LyricsView(
     emphasisColor: Color,
     modifier: Modifier = Modifier,
     active: Boolean = true,
+    playerActive: Boolean = true,
+    positionDiscontinuityRevision: Long = 0L,
 ) {
     val documentHasTimedWords = remember(document) {
         document.lines.any { it.words.isNotEmpty() }
@@ -476,7 +492,9 @@ internal fun LyricsView(
         positionUpdateElapsedRealtimeMs = positionUpdateElapsedRealtimeMs,
         playbackIteration = playbackIteration,
         playbackSpeed = playbackSpeed,
-        isPlaying = isPlaying && active,
+        isPlaying = isPlaying,
+        active = playerActive,
+        positionDiscontinuityRevision = positionDiscontinuityRevision,
         seekRequestKey = seekRequestKey,
         seekPositionMs = seekPositionMs,
     )
@@ -493,6 +511,13 @@ internal fun LyricsView(
             )
         }
     }
+    // Offscreen rows need ready geometry, but do not need per-frame glyph rendering.
+    val offscreenRenderPositionMs = lyricDisplayedPositionMs(
+        previewPositionMs = previewPositionMs,
+        seekRequestPending = seekRequestKey != 0,
+        seekPositionMs = seekPositionMs,
+        smoothPositionMs = positionMs,
+    )
     val density = LocalDensity.current
     val alignmentProgress = animateFloatAsState(
         targetValue = if (centerLyrics) 1f else 0f,
@@ -650,6 +675,7 @@ internal fun LyricsView(
         previewing = isPreviewing,
         geometry = centeringGeometry,
         translationRevision = translationRevision,
+        active = active,
     )
     LaunchedEffect(document, centeringEvent) {
         if (viewportHeightPx == 0) return@LaunchedEffect
@@ -692,6 +718,7 @@ internal fun LyricsView(
                     hasPositionedInitialFocus = hasPositionedInitialFocus,
                     centerOffsetUnchanged = lastCenteringGeometry == centeringGeometry,
                     isPreviewing = isPreviewing,
+                    active = active,
                 )
                 val centeringLine = document.lines.getOrNull(visualFocusRenderIndex)
                 val nextTimestampGapMs = centeringLine?.let { line ->
@@ -1010,7 +1037,7 @@ internal fun LyricsView(
                         val lineTimeProvider = {
                             lyricLineRenderPositionMs(
                                 lineIndex = index,
-                                displayedPositionMs = lyricTimeProvider(),
+                                displayedPositionMs = if (active) lyricTimeProvider() else offscreenRenderPositionMs,
                                 outgoingSeekLineIndex = outgoingSeekLineIndex,
                                 outgoingSeekPositionMs = outgoingSeekPositionMs,
                             )

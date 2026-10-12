@@ -25,6 +25,7 @@ internal data class LyricCenteringEvent(
     val previewing: Boolean,
     val geometry: List<Any>,
     val translationRevision: Int = 0,
+    val active: Boolean = true,
 )
 
 internal data class LyricVisualRow(val index: Int, val top: Float, val height: Int)

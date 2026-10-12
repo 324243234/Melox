@@ -62,6 +62,7 @@ data class PlaybackUiState(
     val playbackMode: PlaybackMode = PlaybackMode.ORDER,
     val errorMessage: String? = null,
     val playbackIteration: Long = 0L,
+    val positionDiscontinuityRevision: Long = 0L,
     val trackChangeDirection: Int = 1,
 ) {
     val currentItem: PlaybackQueueItem?

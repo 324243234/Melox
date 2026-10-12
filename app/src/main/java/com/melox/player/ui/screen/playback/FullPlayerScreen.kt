@@ -224,6 +224,7 @@ internal fun FullPlayerScreen(
     contentLayer: GraphicsLayer,
     frameRecordingGeneration: Int,
     interactionEnabled: Boolean,
+    playerActive: Boolean,
     blockUnderlyingInput: Boolean,
     lyricsPagingEnabled: Boolean,
     drawInPlace: Boolean,
@@ -499,7 +500,7 @@ internal fun FullPlayerScreen(
                         windowHeight = safeContentHeight,
                     )
                     val headerTopPadding = playerHeaderTopPadding(playerLayout, playerSafeTop)
-                    val lyricsActive = playerLyricsAreActive(
+                    val lyricsActive = playerActive && playerLyricsAreActive(
                         layout = playerLayout,
                         currentPage = pagerState.currentPage,
                         targetPage = pagerState.targetPage,
@@ -662,6 +663,8 @@ internal fun FullPlayerScreen(
                                         previewPositionMs = lyricsPreviewPositionMs,
                                         isPlaying = playback.isPlaying,
                                         active = lyricsActive,
+                                        playerActive = playerActive,
+                                        positionDiscontinuityRevision = playback.positionDiscontinuityRevision,
                                         onSeek = onSeekFromPlayer,
                                         contentWidth = landscapePlayerLyricsContentWidth(lyricsPaneWidth),
                                         controlColor = controlColor,
@@ -713,6 +716,8 @@ internal fun FullPlayerScreen(
                                             previewPositionMs = lyricsPreviewPositionMs,
                                             isPlaying = playback.isPlaying,
                                             active = lyricsActive,
+                                            playerActive = playerActive,
+                                            positionDiscontinuityRevision = playback.positionDiscontinuityRevision,
                                             onSeek = onSeekFromPlayer,
                                             contentWidth = contentWidth,
                                             controlColor = controlColor,
@@ -811,6 +816,8 @@ internal fun FullPlayerScreen(
                                     previewPositionMs = lyricsPreviewPositionMs,
                                     isPlaying = playback.isPlaying,
                                     lyricsActive = lyricsActive,
+                                    playerActive = playerActive,
+                                    positionDiscontinuityRevision = playback.positionDiscontinuityRevision,
                                     onSeek = onSeekFromPlayer,
                                     contentWidth = artworkContentWidth,
                                     controlColor = controlColor,
@@ -892,6 +899,8 @@ internal fun FullPlayerScreen(
                                             previewPositionMs = lyricsPreviewPositionMs,
                                             isPlaying = playback.isPlaying,
                                             lyricsActive = lyricsActive,
+                                            playerActive = playerActive,
+                                            positionDiscontinuityRevision = playback.positionDiscontinuityRevision,
                                             onSeek = onSeekFromPlayer,
                                             contentWidth = artworkContentWidth,
                                             controlColor = controlColor,

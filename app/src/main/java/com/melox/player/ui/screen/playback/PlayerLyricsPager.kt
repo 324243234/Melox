@@ -179,6 +179,8 @@ internal fun PlayerContentPager(
     seekPositionMs: Long,
     artworkContent: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    playerActive: Boolean = true,
+    positionDiscontinuityRevision: Long = 0L,
 ) {
     HorizontalPager(
         state = pagerState,
@@ -203,7 +205,9 @@ internal fun PlayerContentPager(
                     playbackSpeed = playbackSpeed,
                     previewPositionMs = previewPositionMs,
                     isPlaying = isPlaying,
-                    active = lyricsActive,
+                    active = lyricsActive && playerActive,
+                    playerActive = playerActive,
+                    positionDiscontinuityRevision = positionDiscontinuityRevision,
                     onSeek = onSeek,
                     contentWidth = contentWidth,
                     controlColor = controlColor,
@@ -251,6 +255,8 @@ internal fun SyncedLyrics(
     seekRequestKey: Int,
     seekPositionMs: Long,
     modifier: Modifier = Modifier,
+    playerActive: Boolean = true,
+    positionDiscontinuityRevision: Long = 0L,
 ) {
     var displayedDocument by remember { mutableStateOf<LyricsDocument?>(null) }
     val lyricsAlpha = remember { Animatable(0f) }
@@ -322,6 +328,8 @@ internal fun SyncedLyrics(
                         previewPositionMs = previewPositionMs,
                         isPlaying = isPlaying,
                         active = active,
+                        playerActive = playerActive,
+                        positionDiscontinuityRevision = positionDiscontinuityRevision,
                         onSeek = onSeek,
                         contentWidth = contentWidth,
                         lyricFontScale = lyricFontScale,

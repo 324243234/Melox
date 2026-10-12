@@ -1,9 +1,11 @@
 package com.melox.player
 
 import android.graphics.Rect
+import android.os.Build
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.accessibilityservice.AccessibilityServiceInfo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -50,14 +52,30 @@ class LyricPagerGestureTest {
     private val texts = List(12) { "Gesture lyric row $it" }
 
     @Test
-    fun horizontalPagingRetainsAutomaticFollowButVerticalListDragSuspendsIt() {
+    fun retainedPagerIsReadyAfterHiddenPlaybackAndPausedSeek() = runPagerChecks(checkEntry = true)
+
+    @Test
+    fun retainedWordPagerIsReadyAfterHiddenPlaybackAndPausedSeek() =
+        runPagerChecks(checkEntry = true, wordProgress = true)
+
+    @Test
+    fun onlyVerticalListDraggingSuspendsFollow() = runPagerChecks(checkEntry = false)
+
+    private fun runPagerChecks(checkEntry: Boolean, wordProgress: Boolean = false) {
+        val automation = instrumentation.uiAutomation
+        automation.serviceInfo = automation.serviceInfo.apply {
+            flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        }
         val position = mutableStateOf(0L)
         val updateTime = mutableStateOf(SystemClock.elapsedRealtime())
         val playing = mutableStateOf(true)
+        val playerActive = mutableStateOf(true)
+        val discontinuityRevision = mutableStateOf(0L)
         val resumeKey = mutableStateOf(0)
         val document = LyricsDocument(
             texts.mapIndexed { index, text ->
-                LyricLine("", index * 60_000L, (index + 1) * 60_000L, text, emptyList(), null)
+                LyricLine("", index * 60_000L, (index + 1) * 60_000L, text, emptyList(),
+                    text.takeIf { wordProgress })
             },
             LyricsFormat.LRC, LyricsSource.SIDECAR,
         )
@@ -77,7 +95,7 @@ class LyricPagerGestureTest {
                     setParentCompositionContext(recomposer)
                     setContent {
                         MeloxTheme(AppSettings()) {
-                            pager = rememberPagerState(initialPage = 1, pageCount = { 2 })
+                            pager = rememberPagerState(initialPage = 0, pageCount = { 2 })
                             PlayerContentPager(
                                 pagerState = pager, lyrics = LyricsUiState.Available(document),
                                 positionMs = position.value,
@@ -87,12 +105,15 @@ class LyricPagerGestureTest {
                                 lyricsActive = playerLyricsAreActive(
                                     PlayerLayout.PORTRAIT, pager.currentPage, pager.targetPage,
                                 ),
+                                playerActive = playerActive.value,
+                                positionDiscontinuityRevision = discontinuityRevision.value,
                                 onSeek = {}, contentWidth = 280.dp,
                                 controlColor = Color.White, emphasisControlColor = Color.White,
                                 lyricsPagingEnabled = true, lyricFontScale = 1f, lyricFontWeight = 400,
-                                lyricAnimationMode = LyricAnimationMode.NEVER, lyricBlurEnabled = true,
+                                lyricAnimationMode = if (wordProgress) LyricAnimationMode.ALWAYS else LyricAnimationMode.NEVER,
+                                lyricBlurEnabled = true,
                                 centerLyrics = false, lyricCenterOffsetY = 0.dp,
-                                showLyricsTranslation = false, showBottomFade = false,
+                                showLyricsTranslation = wordProgress, showBottomFade = false,
                                 resumeFollowRequestKey = resumeKey.value, seekRequestKey = 0,
                                 seekPositionMs = 0L,
                                 artworkContent = { Box(Modifier.fillMaxSize().background(Color.Black)) },
@@ -111,7 +132,68 @@ class LyricPagerGestureTest {
                     view.getLocationOnScreen(location)
                     bounds.set(location[0], location[1], location[0] + view.width, location[1] + view.height)
                 }
+                val windowDeadline = SystemClock.uptimeMillis() + 5_000L
+                while (appRoot() == null && SystemClock.uptimeMillis() < windowDeadline) {
+                    SystemClock.sleep(50)
+                    frames(1)
+                }
+                requireNotNull(appRoot()) { "Test window was not available before pager entry" }
+                selectPage(pager, 1)
                 assertCentered(0, bounds.centerY())
+                if (checkEntry) {
+                    // Hidden playback must be positioned before any visible catch-up spring.
+                    selectPage(pager, 0)
+                    scenario.onActivity {
+                        position.value = 480_000L
+                        updateTime.value = SystemClock.elapsedRealtime()
+                    }
+                    frames(30)
+                    selectPage(pager, 1)
+                    assertCentered(8, bounds.centerY())
+                    frames(6)
+                    assertCentered(8, bounds.centerY())
+
+                    // A paused system-media seek has no frame loop to repair stale time.
+                    selectPage(pager, 0)
+                    scenario.onActivity {
+                        playing.value = false
+                        position.value = 60_000L
+                        updateTime.value = SystemClock.elapsedRealtime()
+                        discontinuityRevision.value++
+                    }
+                    frames(30)
+                    selectPage(pager, 1)
+                    assertCentered(1, bounds.centerY())
+
+                    // Resident host collapse must stop the clock even with Lyrics selected.
+                    scenario.onActivity { playerActive.value = false }
+                    frames(2)
+                    scenario.onActivity {
+                        position.value = 120_000L
+                        updateTime.value = SystemClock.elapsedRealtime()
+                    }
+                    frames(30)
+                    scenario.onActivity { playerActive.value = true }
+                    frames(4)
+                    assertCentered(2, bounds.centerY())
+
+                    // Reopen artwork after an external seek, then enter Lyrics immediately.
+                    selectPage(pager, 0)
+                    scenario.onActivity {
+                        playerActive.value = false
+                        position.value = 360_000L
+                        updateTime.value = SystemClock.elapsedRealtime()
+                        discontinuityRevision.value++
+                    }
+                    frames(30)
+                    scenario.onActivity { playerActive.value = true }
+                    frames(4)
+                    selectPage(pager, 1)
+                    assertCentered(6, bounds.centerY())
+                    frames(6)
+                    assertCentered(6, bounds.centerY())
+                    return@use
+                }
                 // Vertical noise exceeds slop after the pager has acquired the horizontal drag.
                 swipe(bounds, 0.2f, 0.8f, 28f * density)
                 frames(90)
@@ -169,10 +251,21 @@ class LyricPagerGestureTest {
                 }
                 frames(120)
                 assertCentered(4, bounds.centerY())
+
             } finally {
                 scenario.onActivity { recomposer.cancel(); recomposition.cancel() }
             }
         }
+    }
+
+    private fun selectPage(pager: PagerState, page: Int) {
+        lateinit var request: Job
+        instrumentation.runOnMainSync {
+            request = CoroutineScope(Dispatchers.Main + clock).launch { pager.scrollToPage(page) }
+        }
+        frames(4)
+        assertTrue("Pager entry did not complete", request.isCompleted)
+        assertEquals(page, pager.settledPage)
     }
 
     private fun swipe(bounds: Rect, startX: Float, endX: Float, deltaY: Float) {
@@ -194,7 +287,7 @@ class LyricPagerGestureTest {
     }
 
     private fun rowBounds(index: Int): Rect {
-        val root = requireNotNull(instrumentation.uiAutomation.rootInActiveWindow)
+        val root = requireNotNull(appRoot()) { "Missing test window" }
         fun find(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
             if (node.text?.toString() == texts[index]) return node
             for (child in 0 until node.childCount) {
@@ -202,8 +295,26 @@ class LyricPagerGestureTest {
             }
             return null
         }
-        val row = requireNotNull(find(root)) { "Missing lyric $index" }
+        var row = requireNotNull(find(root)) { "Missing lyric $index" }
+        while (!row.isClickable) row = row.parent ?: break
         return Rect().also(row::getBoundsInScreen)
+    }
+
+    private fun appRoot(): AccessibilityNodeInfo? {
+        val automation = instrumentation.uiAutomation
+        if (Build.VERSION.SDK_INT >= 33) automation.clearCache()
+        val windows = if (Build.VERSION.SDK_INT >= 30) {
+            automation.windowsOnAllDisplays.let { displays ->
+                (0 until displays.size()).flatMap { displays.valueAt(it) }
+            }
+        } else {
+            automation.windows
+        }
+        for (window in windows) {
+            val root = window.root
+            if (root?.packageName?.toString() == "com.melox.player") return root
+        }
+        return null
     }
 
     private fun assertCentered(index: Int, centerY: Int) {

@@ -890,6 +890,7 @@ class UiLogicTest {
         assertTrue(lyricSeekUsesAnimatedCentering(true, centerOffsetUnchanged = true))
         assertFalse(lyricSeekUsesAnimatedCentering(true, centerOffsetUnchanged = false))
         assertFalse(lyricSeekUsesAnimatedCentering(false, centerOffsetUnchanged = true))
+        assertFalse(lyricSeekUsesAnimatedCentering(true, centerOffsetUnchanged = true, active = false))
         assertFalse(
             lyricSeekUsesAnimatedCentering(
                 hasPositionedInitialFocus = true,

@@ -2319,6 +2319,7 @@ fun MeloxApp(
                             frameRecordingGeneration = frameRecordingGeneration,
                             interactionEnabled = playerTransition.fullPlayerAcceptsInput &&
                                 playerTransition.progress > 0f,
+                            playerActive = playerTransition.isMounted,
                             blockUnderlyingInput = playerTransition.blocksUnderlyingInput,
                             lyricsPagingEnabled = playerTransition.isFullyExpanded,
                             drawInPlace = playerTransition.fullPlayerDrawsInPlace,
@@ -2525,6 +2526,7 @@ private fun FullPlayerHost(
     contentLayer: GraphicsLayer,
     frameRecordingGeneration: Int,
     interactionEnabled: Boolean,
+    playerActive: Boolean,
     blockUnderlyingInput: Boolean,
     lyricsPagingEnabled: Boolean,
     drawInPlace: Boolean,
@@ -2609,6 +2611,7 @@ private fun FullPlayerHost(
         contentLayer = contentLayer,
         frameRecordingGeneration = frameRecordingGeneration,
         interactionEnabled = interactionEnabled,
+        playerActive = playerActive,
         blockUnderlyingInput = blockUnderlyingInput,
         lyricsPagingEnabled = lyricsPagingEnabled,
         drawInPlace = drawInPlace,

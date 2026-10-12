@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
@@ -88,6 +89,7 @@ class LyricRowMotionTest {
         val tap = LyricCenteringEvent(5, 5_000L, 1, false, false, listOf(600, 800))
         // The pending request flag is absent from the production key.
         assertEquals(tap, tap.copy())
+        assertNotEquals(tap, tap.copy(active = false))
         assertTrue(tap != tap.copy(tapRevision = 2))
         assertTrue(tap != tap.copy(focusIndex = 6))
         assertTrue(tap != tap.copy(previewing = true))
