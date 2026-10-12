@@ -1123,7 +1123,7 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val track = allLibraryTracks.value.firstOrNull { it.id == trackId }
             try {
-                val refreshedTrack = track?.let { musicRepository.refreshTrack(it) }
+                val refreshedTrack = track?.let { musicRepository.refreshTrackTags(it) }
                 if (refreshedTrack != null) {
                     val currentTracks = allLibraryTracks.value
                     if (currentTracks.any { it.id == trackId }) {
@@ -1139,7 +1139,9 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
             } catch (_: Exception) {
                 // Keep the last valid library metadata when the edited file cannot be read.
             } finally {
-                lyricsRefreshRevision.value += 1L
+                if (playbackState.value.currentItem?.trackId == trackId) {
+                    lyricsRefreshRevision.value += 1L
+                }
             }
         }
     }

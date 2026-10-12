@@ -15,6 +15,7 @@ import com.melox.player.data.library.createMusicSortKeys
 import com.melox.player.data.library.hasReusableAudioProperties
 import com.melox.player.data.library.isWavSource
 import com.melox.player.data.library.normalizeMusicFolderPath
+import com.melox.player.data.library.withRefreshedTags
 import com.melox.player.model.MusicTrack
 import java.io.IOException
 import java.util.Locale
@@ -375,21 +376,25 @@ class MusicRepository(context: Context) {
         }
     }
 
-    /** Re-reads one MediaStore row and its embedded tags without scanning the full library. */
-    suspend fun refreshTrack(track: MusicTrack): MusicTrack? {
-        val uri = runCatching { Uri.parse(track.contentUri) }.getOrNull()
-        if (uri != null && DocumentsContract.isDocumentUri(applicationContext, uri)) {
-            return withContext(Dispatchers.IO) {
-                enrichTrack(track.copy(audioPropertiesScanned = false))
+    /** Reads editable tags only; current playback keeps its original stream properties. */
+    suspend fun refreshTrackTags(track: MusicTrack): MusicTrack? = withContext(Dispatchers.IO) {
+        val tags = audioPropertiesReader.readTags(track.contentUri) ?: return@withContext null
+        val refreshed = track.withRefreshedTags(tags)
+        val uri = Uri.parse(track.contentUri)
+        if (uri.authority != MediaStore.AUTHORITY) return@withContext refreshed
+        runCatching {
+            contentResolver.query(
+                uri,
+                arrayOf(MediaStore.Audio.Media.DATE_MODIFIED, MediaStore.Audio.Media.SIZE),
+                null, null, null,
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use refreshed
+                refreshed.copy(
+                    dateModifiedEpochSeconds = cursor.getLong(0).coerceAtLeast(0L),
+                    fileSizeBytes = cursor.getLong(1).coerceAtLeast(0L),
+                )
             }
-        }
-        return scanMusic(
-            previousTracks = listOf(track),
-            refreshAudioProperties = true,
-            onlyTrackId = track.mediaStoreId
-                ?: Uri.parse(track.contentUri).lastPathSegment?.toLongOrNull()
-                ?: track.id,
-        ).firstOrNull { refreshedTrack -> refreshedTrack.contentUri == track.contentUri }
+        }.getOrNull() ?: refreshed
     }
 
     /** Atomically stores a successful scan without changing the visible scan result on failure. */

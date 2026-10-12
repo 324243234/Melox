@@ -6,27 +6,12 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import androidx.annotation.OptIn
-import androidx.media3.common.MediaItem
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.extractor.DefaultExtractorsFactory
-import androidx.media3.extractor.amr.AmrExtractor
-import androidx.media3.extractor.mp4.Mp4Extractor
-import androidx.media3.extractor.ts.AdtsExtractor
-import androidx.media3.extractor.metadata.id3.BinaryFrame
-import androidx.media3.extractor.metadata.id3.CommentFrame
-import androidx.media3.extractor.metadata.id3.InternalFrame
-import androidx.media3.extractor.metadata.id3.TextInformationFrame
-import androidx.media3.extractor.metadata.vorbis.VorbisComment
-import androidx.media3.inspector.MetadataRetriever
 import com.melox.player.data.lyrics.LyricsParser
 import com.melox.player.model.LyricsDocument
 import com.melox.player.model.LyricsFormat
 import com.melox.player.model.LyricsSidecarFormatPriority
 import com.melox.player.model.LyricsSource
 import com.melox.player.model.LyricsSourcePriority
-import com.melox.player.playback.PlaybackExtractorsFactory
 import com.kyant.taglib.TagLib
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -36,7 +21,6 @@ import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 
 data class LyricsRequest(
     val mediaId: String,
@@ -52,8 +36,7 @@ data class LyricsRequest(
 
 /** Reads timestamped lyrics from local audio metadata and sidecars. */
 class LyricsRepository(context: Context) {
-    private val applicationContext = context.applicationContext
-    private val contentResolver = applicationContext.contentResolver
+    private val contentResolver = context.applicationContext.contentResolver
 
     suspend fun load(request: LyricsRequest): LyricsDocument? {
         lyricsSourceOrder(request.sourcePriority).forEach { source ->
@@ -66,15 +49,10 @@ class LyricsRepository(context: Context) {
         return null
     }
 
-    private fun readEmbedded(request: LyricsRequest): LyricsDocument? =
-        readEmbeddedCandidates(request.contentUri)
-            .firstNotNullOfOrNull { candidate ->
-                LyricsParser.parse(
-                    raw = candidate,
-                    source = LyricsSource.EMBEDDED,
-                    durationMs = request.durationMs,
-                )
-            }
+    private fun readEmbedded(request: LyricsRequest): LyricsDocument? = parseEmbeddedLyrics(
+        candidates = readTagLibLyrics(request.contentUri),
+        durationMs = request.durationMs,
+    )
 
     private fun readSidecar(request: LyricsRequest): LyricsDocument? {
         val candidates = exactLyricsSidecarCandidates(
@@ -162,109 +140,12 @@ class LyricsRepository(context: Context) {
         contentResolver.openInputStream(uri)?.use(::readBounded)
     }.getOrNull()
 
-    @OptIn(UnstableApi::class)
-    @Suppress("DEPRECATION")
-    private fun readEmbeddedCandidates(contentUri: String): List<String> {
-        if (contentUri.isBlank()) return emptyList()
-        val groups = runCatching {
-            MetadataRetriever.Builder(
-                applicationContext,
-                MediaItem.fromUri(contentUri),
-            ).setMediaSourceFactory(
-                DefaultMediaSourceFactory(
-                    applicationContext,
-                    PlaybackExtractorsFactory(
-                        DefaultExtractorsFactory()
-                            .setAdtsExtractorFlags(AdtsExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING)
-                            .setAmrExtractorFlags(AmrExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING)
-                            .setMp4ExtractorFlags(
-                                Mp4Extractor.FLAG_READ_SEF_DATA or
-                                    Mp4Extractor.FLAG_OMIT_TRACK_SAMPLE_TABLE,
-                            ),
-                    ),
-                ),
-            ).build().use { retriever ->
-                retriever.retrieveTrackGroups().get(METADATA_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-            }
-        }.getOrNull()
-        if (groups == null) return readTagLibLyrics(contentUri)
-        val metadataCandidates = buildList {
-            for (groupIndex in 0 until groups.length) {
-                val group = groups[groupIndex]
-                for (formatIndex in 0 until group.length) {
-                    val metadata = group.getFormat(formatIndex).metadata ?: continue
-                    for (entryIndex in 0 until metadata.length()) {
-                        extractLyricsText(metadata[entryIndex])?.let { text ->
-                            if (text.isNotBlank() && none { it == text }) {
-                                add(text.take(MAX_EMBEDDED_CHARS))
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if (metadataCandidates.isNotEmpty()) return metadataCandidates
-        return readTagLibLyrics(contentUri)
-    }
-
     private fun readTagLibLyrics(contentUri: String): List<String> = runCatching {
         contentResolver.openFileDescriptor(Uri.parse(contentUri), "r")?.use { descriptor ->
             val properties = TagLib.getMetadata(descriptor.dup().detachFd(), false)?.propertyMap.orEmpty()
-            properties.entries.asSequence()
-                .filter { (key, _) -> key.isLyricsKey() }
-                .flatMap { (_, values) -> values.asSequence() }
-                .map(String::trim)
-                .filter(String::isNotBlank)
-                .filterNot { it.contains('�') }
-                .map { it.take(MAX_EMBEDDED_CHARS) }
-                .distinct()
-                .toList()
+            embeddedLyricsCandidates(properties)
         }.orEmpty()
     }.getOrDefault(emptyList())
-
-    @OptIn(UnstableApi::class)
-    private fun extractLyricsText(entry: Any): String? = when (entry) {
-        is TextInformationFrame -> when {
-            entry.id.equals("USLT", ignoreCase = true) -> entry.values.joinToString("\n")
-            entry.id.equals("TXXX", ignoreCase = true) &&
-                entry.description.isLyricsKey() -> entry.values.joinToString("\n")
-            else -> null
-        }
-        is VorbisComment -> entry.value.takeIf { entry.key.isLyricsKey() }
-        is BinaryFrame -> entry.data.takeIf {
-            entry.id.equals("USLT", ignoreCase = true)
-        }?.let(::decodeUsltFrame)
-        is CommentFrame -> entry.text.takeIf { entry.description.isLyricsKey() }
-        is InternalFrame -> entry.text.takeIf { entry.description.isLyricsKey() }
-        else -> null
-    }
-
-    private fun decodeUsltFrame(data: ByteArray): String? {
-        if (data.size < 5 || data.size > MAX_EMBEDDED_CHARS) return null
-        val encoding = data[0].toInt() and 0xFF
-        val charset = when (encoding) {
-            1 -> StandardCharsets.UTF_16
-            2 -> StandardCharsets.UTF_16BE
-            3 -> StandardCharsets.UTF_8
-            else -> StandardCharsets.ISO_8859_1
-        }
-        val delimiterLength = if (encoding == 1 || encoding == 2) 2 else 1
-        var delimiterStart = 4
-        while (delimiterStart + delimiterLength <= data.size) {
-            val isDelimiter = if (delimiterLength == 1) {
-                data[delimiterStart].toInt() == 0
-            } else {
-                data[delimiterStart].toInt() == 0 && data[delimiterStart + 1].toInt() == 0
-            }
-            if (isDelimiter) break
-            delimiterStart += delimiterLength
-        }
-        val textStart = (delimiterStart + delimiterLength).coerceAtMost(data.size)
-        if (textStart >= data.size) return null
-        return String(data, textStart, data.size - textStart, charset)
-            .trim('\u0000', '\uFEFF', ' ')
-            .takeIf(String::isNotBlank)
-    }
 
     private fun readBounded(input: InputStream): String? {
         val output = ByteArrayOutputStream()
@@ -301,14 +182,6 @@ class LyricsRepository(context: Context) {
         }
     }
 
-    private fun String?.isLyricsKey(): Boolean {
-        val normalized = this?.uppercase(Locale.ROOT).orEmpty()
-            .substringAfterLast(':')
-            .replace(" ", "")
-            .replace("_", "")
-        return normalized in LYRICS_KEYS || normalized.contains("LYRIC")
-    }
-
     private fun String?.toRelativeMediaStorePath(): String? {
         var path = this?.replace('\\', '/')?.trim().orEmpty()
         if (path.isEmpty()) return null
@@ -333,20 +206,6 @@ class LyricsRepository(context: Context) {
 
     private companion object {
         private const val MAX_SIDECAR_BYTES = 2L * 1024L * 1024L
-        private const val MAX_EMBEDDED_CHARS = 2 * 1024 * 1024
-        private const val METADATA_TIMEOUT_SECONDS = 5L
-        private val LYRICS_KEYS = setOf(
-            "LYRICS",
-            "SYNCEDLYRICS",
-            "UNSYNCEDLYRICS",
-            "USLT",
-            "LYRIC",
-            "LYRICSENG",
-            "UNSYNCEDLYRICS",
-            "ITXT",
-            "ITEXT",
-            "LYRICIST",
-        )
         private val SHARED_STORAGE_ROOTS = listOf(
             "/storage/emulated/0",
             "/storage/self/primary",
@@ -355,6 +214,37 @@ class LyricsRepository(context: Context) {
         )
     }
 }
+
+private const val MAX_EMBEDDED_CHARS = 2 * 1024 * 1024
+private val LYRICS_KEYS = setOf(
+    "LYRICS", "SYNCEDLYRICS", "UNSYNCEDLYRICS", "USLT", "SYLT", "LYRIC",
+    "LYRICSENG", "ITXT", "ITEXT", "LYRICIST", "TTML", "©LYR",
+)
+
+private fun String.normalizedLyricsKey(): String = uppercase(Locale.ROOT)
+    .substringAfterLast(':')
+    .replace(" ", "")
+    .replace("_", "")
+
+internal fun embeddedLyricsCandidates(properties: Map<String, Array<String>>): List<String> =
+    properties.entries.asSequence()
+        .filter { (key, _) ->
+            val normalized = key.normalizedLyricsKey()
+            normalized in LYRICS_KEYS || normalized.contains("LYRIC")
+        }
+        .sortedBy { (key, _) -> if (key.normalizedLyricsKey().contains("TTML")) 0 else 1 }
+        .flatMap { (_, values) -> values.asSequence() }
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .filterNot { it.contains('�') }
+        .map { it.take(MAX_EMBEDDED_CHARS) }
+        .distinct()
+        .toList()
+
+internal fun parseEmbeddedLyrics(candidates: List<String>, durationMs: Long): LyricsDocument? =
+    candidates.firstNotNullOfOrNull { text ->
+        LyricsParser.parse(text, LyricsSource.EMBEDDED, durationMs = durationMs)
+    }
 
 internal fun exactLyricsSidecarCandidates(
     audioFileName: String?,
