@@ -1,0 +1,266 @@
+package com.melox.player
+
+import com.melox.player.data.lyrics.LyricsParser
+import com.melox.player.data.repository.parseEmbeddedLyrics
+import com.melox.player.model.LyricsFormat
+import com.melox.player.model.LyricsSource
+import org.junit.Assert.*
+import org.junit.Test
+
+class TtmlCompatibilityTest {
+    private fun document(body: String, head: String = "", attributes: String = "") =
+        requireNotNull(LyricsParser.parse(
+            """<tt xmlns="http://www.w3.org/ns/ttml"
+                xmlns:ttm="http://www.w3.org/ns/ttml#metadata"
+                xmlns:tts="http://www.w3.org/ns/ttml#styling"
+                xmlns:itunes="http://itunes.apple.com/lyric-ttml-extensions"
+                xmlns:amll="http://www.example.com/ns/amll" $attributes>
+                <head><metadata>$head</metadata></head><body>$body</body></tt>""",
+            LyricsSource.SIDECAR,
+        ))
+
+    @Test
+    fun allWikiTimestampFormsApplyToLinesWordsAndDurations() {
+        val cases = listOf(
+            "45" to 45_000L, "12.5" to 12_500L, "120.456" to 120_456L,
+            "01:30" to 90_000L, "2:45.500" to 165_500L, "00:15.5" to 15_500L,
+            "01:02:03" to 3_723_000L, "1:4.150" to 64_150L,
+            "0:00.000" to 0L, "00012.050" to 12_050L,
+            "0:0:12.123" to 12_123L, "000:001:000.001" to 60_001L,
+            "12.123456" to 12_123L,
+        )
+        for ((time, expected) in cases) {
+            val line = document("""<p begin="$time" dur="1.25"><span begin="$time" dur="0.5">Word</span></p>""")
+                .lines.single()
+            assertEquals(time, expected, line.startTimeMs)
+            assertEquals(time, expected + 1_250L, line.endTimeMs)
+            assertEquals(time, expected, line.words.single().startTimeMs)
+            assertEquals(time, expected + 500L, line.words.single().endTimeMs)
+            if (expected > 0L) {
+                val ended = document("""<p begin="0" end="$time"><span begin="0" end="$time">End</span></p>""")
+                    .lines.single()
+                assertEquals(time, expected, ended.endTimeMs)
+                assertEquals(time, expected, ended.words.single().endTimeMs)
+                val duration = document("""<p begin="1" dur="$time">Duration</p>""").lines.single()
+                assertEquals(time, expected + 1_000L, duration.endTimeMs)
+            }
+        }
+    }
+
+    @Test
+    fun plainSecondsBeforeOneMinuteRemainInBothSources() {
+        val raw = """<tt><body><p begin="12.300" end="13.500">Before</p>
+            <p begin="59.900" end="1:00.100">Across</p>
+            <p begin="1:02.300" end="65">After</p></body></tt>"""
+        for (source in LyricsSource.entries) {
+            val doc = requireNotNull(LyricsParser.parse(raw, source))
+            assertEquals(listOf("Before", "Across", "After"), doc.lines.map { it.displayText })
+            assertEquals(listOf(12_300L, 59_900L, 62_300L), doc.lines.map { it.startTimeMs })
+            assertEquals(0, doc.currentLineIndex(12_500L))
+            assertEquals(1, doc.currentLineIndex(60_000L))
+        }
+        assertEquals(3, parseEmbeddedLyrics(listOf(raw), 70_000L)!!.lines.size)
+    }
+
+    @Test
+    fun fractionalSecondsDoNotLoseAMillisecondToFloatingPoint() {
+        for (millisecond in 0..999) {
+            val stamp = "1.${millisecond.toString().padStart(3, '0')}"
+            val line = document("""<p begin="$stamp" end="2.1">Precise</p>""").lines.single()
+            assertEquals(stamp, 1_000L + millisecond, line.startTimeMs)
+        }
+    }
+
+    @Test
+    fun malformedOrOverflowTimesDoNotCreateBogusLines() {
+        for (time in listOf("NaN", "Infinity", "1e3", "-1", "1::2", "1:NaN", "1:2:3:4:5",
+            "1:2:3:bad", "999999999999999999999999999", "1:99999999999999999999999")) {
+            val doc = document("""<p begin="$time" end="10">Invalid</p><p begin="11" end="12">Valid</p>""")
+            assertEquals(time, listOf("Valid"), doc.lines.map { it.displayText })
+        }
+    }
+
+    @Test
+    fun prefixedNamespaceAndBomDoNotPreventReading() {
+        val doc = LyricsParser.parse("""\uFEFF<t:tt xmlns:t="http://www.w3.org/ns/ttml"><t:body>
+            <t:p begin="1.2" end="2.3">Namespaced</t:p></t:body></t:tt>""".replace("\\uFEFF", "\uFEFF"),
+            LyricsSource.SIDECAR)!!
+        assertEquals(LyricsFormat.TTML, doc.format)
+        assertEquals("Namespaced", doc.lines.single().displayText)
+    }
+
+    @Test
+    fun lineAuxiliariesNeverLeakIntoMainTextAndAllLanguagesSurvive() {
+        val line = document("""<p begin="1" end="3" itunes:key="L1" ttm:agent="singer">
+            Hello <span ttm:role="x-translation" xml:lang="zh-Hans" begin="1" end="3">你好</span>world
+            <span ttm:role="x-translation" xml:lang="fr">Bonjour</span>
+            <span ttm:role="x-roman" xml:lang="en-Latn">he lo</span></p>""",
+            attributes = "xml:lang=\"en\" itunes:timing=\"Word\"",
+        ).lines.single()
+        assertEquals("Hello world", line.displayText)
+        assertTrue(line.words.isEmpty())
+        assertEquals("你好\nBonjour", line.translation)
+        assertEquals(listOf("zh-Hans", "fr"), line.translations.map { it.language })
+        assertEquals("he lo", line.romanizations.single().text)
+        assertEquals("en", line.language)
+        assertEquals("singer", line.agent)
+        assertEquals("L1", line.key)
+    }
+
+    @Test
+    fun wordModeDependsOnContentAndNestedWrappersAreNotDuplicated() {
+        val line = document("""<p begin="1" end="4"><span begin="1" end="4">
+            <span begin="1" end="2">Hello </span><span begin="2" end="4">world</span>
+            </span></p>""", attributes = "itunes:timing=\"Line\"",
+        ).lines.single()
+        assertEquals("Hello world", line.displayText)
+        assertEquals(2, line.words.size)
+    }
+
+    @Test
+    fun indentationDoesNotInventSpacesAndInlineSpacesRemain() {
+        val lines = document("""<p begin="1" end="3">
+            <span begin="1" end="2">你</span>
+            <span begin="2" end="3">好</span>
+            </p><p begin="4" end="6"><span begin="4" end="5">Hello</span> <span begin="5" end="6">world</span></p>
+            <p begin="7" end="9"><span begin="7" end="8">Hello </span>
+            <span begin="8" end="9">world</span></p>""").lines
+        assertEquals(listOf("你好", "Hello world", "Hello world"), lines.map { it.displayText })
+    }
+
+    @Test
+    fun backgroundVocalsHaveIndependentTimingAndAuxiliaries() {
+        val lines = document("""<p begin="1" end="8" ttm:agent="v1">
+            <span begin="1" end="8">Main</span>
+            <span ttm:role="x-bg"><span begin="3" end="4">(Back </span><span begin="4" end="5">voice)</span>
+              <span ttm:role="x-translation" xml:lang="zh">和声</span>
+              <span ttm:role="x-roman">back voice</span></span>
+            <span ttm:role="x-translation">主唱</span></p>""").lines
+        assertEquals(listOf("Main", "(Back voice)"), lines.map { it.displayText })
+        assertEquals(listOf(false, true), lines.map { it.isBackground })
+        assertEquals(8_000L, lines[0].endTimeMs)
+        assertEquals(3_000L, lines[1].startTimeMs)
+        assertEquals(5_000L, lines[1].endTimeMs)
+        assertEquals("主唱", lines[0].translation)
+        assertEquals("和声", lines[1].translation)
+        assertEquals("back voice", lines[1].romanizations.single().text)
+    }
+
+    @Test
+    fun backgroundOnlyAndUntimedBackgroundContainersAreReadable() {
+        val lines = document("""<p begin="1" end="5"><span ttm:role="x-bg" begin="2" end="4">(Echo)</span></p>
+            <p begin="6" end="8"><span ttm:role="x-bg">(Again)</span></p>""").lines
+        assertEquals(listOf("(Echo)", "(Again)"), lines.map { it.displayText })
+        assertTrue(lines.all { it.isBackground && it.words.isEmpty() })
+        assertEquals(2_000L, lines[0].startTimeMs)
+        assertEquals(8_000L, lines[1].endTimeMs)
+    }
+
+    @Test
+    fun headTranslationsAndTransliterationsLinkByKeyIncludingBackground() {
+        val line = """<p begin="1" end="5" itunes:key="L1"><span begin="1" end="5">主</span>
+            <span ttm:role="x-bg"><span begin="2" end="3">(和)</span></span>
+            <span ttm:role="x-translation" xml:lang="en">Inline</span></p>"""
+        val head = """<iTunesMetadata xmlns="http://music.apple.com/lyric-ttml-internal">
+            <translations><translation type="subtitle" xml:lang="zh-Hans">
+              <text for="L1"><span begin="1" end="5">主译</span><span ttm:role="x-bg">和译</span></text>
+              <text for="L99">Unmatched</text></translation>
+              <translation type="replacement" xml:lang="zh-Hant"><text for="L1">主譯</text></translation></translations>
+            <transliterations><transliteration xml:lang="ja-Latn"><text for="L1">
+              <span begin="1" end="5">shu</span><span ttm:role="x-bg"><span begin="2" end="3">wa</span></span>
+              </text></transliteration></transliterations></iTunesMetadata>"""
+        val lines = document(line, head).lines
+        assertEquals("Inline\n主译\n主譯", lines[0].translation)
+        assertEquals(listOf("en", "zh-Hans", "zh-Hant"), lines[0].translations.map { it.language })
+        assertEquals("主译", lines[0].translations[1].words.single().text)
+        assertEquals("shu", lines[0].romanizations.single().text)
+        assertEquals("和译", lines[1].translation)
+        assertEquals("wa", lines[1].romanizations.single().words.single().text)
+        assertEquals("ja-Latn", lines[1].romanizations.single().language)
+    }
+
+    @Test
+    fun rubyReadsBaseTextAndRetainsMultipleTimedPronunciations() {
+        val line = document("""<p begin="1" end="3">
+            <span tts:ruby="container"><span tts:ruby="base">所</span>
+              <span tts:ruby="textContainer"><span tts:ruby="text" begin="1.1" end="1.2">しょ</span></span></span>
+            <span tts:ruby="container"><span tts:ruby="base">詮</span>
+              <span tts:ruby="textContainer"><span tts:ruby="text" begin="1.2" end="1.3">せ</span>
+                <span tts:ruby="text" begin="1.3" end="1.4">ん</span></span></span>
+            </p>""").lines.single()
+        assertEquals("所詮", line.displayText)
+        assertEquals(2, line.words.size)
+        assertEquals(1_100L, line.words[0].startTimeMs)
+        assertEquals(1_400L, line.words[1].endTimeMs)
+        assertEquals(listOf("せ", "ん"), line.words[1].ruby.map { it.text })
+        assertEquals(listOf(1_200L, 1_300L), line.words[1].ruby.map { it.startTimeMs })
+    }
+
+    @Test
+    fun explicitOverlappingVoicesRemainActiveAfterTheLaterShortLineEnds() {
+        val doc = document("""<p begin="1" end="8" ttm:agent="v1"><span begin="1" end="8">Long</span></p>
+            <p begin="3" end="4" ttm:agent="v2"><span begin="3" end="4">Short</span></p>
+            <p begin="3" end="6" ttm:agent="v3">Third</p>""")
+        assertEquals(listOf(8_000L, 4_000L, 6_000L), doc.lines.map { it.endTimeMs })
+        assertEquals(8_000L, doc.lines.first().words.single().endTimeMs)
+        assertEquals(2, doc.currentLineIndex(5_000L))
+        assertEquals(0, doc.currentLineIndex(7_000L))
+        assertEquals(-1, doc.currentLineIndex(9_000L))
+    }
+
+    @Test
+    fun rubyCanInheritTimingFromItsEnclosingWord() {
+        val line = document("""<p begin="1" end="4"><span begin="2" end="3">
+            <span tts:ruby="container"><span tts:ruby="base">字</span>
+              <span tts:ruby="textContainer"><span tts:ruby="text">zi</span></span></span>
+            </span></p>""").lines.single()
+        val word = line.words.single()
+        assertEquals("字", line.displayText)
+        assertEquals("zi", word.ruby.single().text)
+        assertEquals(2_000L, word.ruby.single().startTimeMs)
+        assertEquals(3_000L, word.ruby.single().endTimeMs)
+    }
+
+    @Test
+    fun backgroundRubyInheritsItsOwnContainerInsteadOfTheParagraph() {
+        val lines = document("""<p begin="1" end="8">Main
+            <span ttm:role="x-bg" begin="2" end="4"><span tts:ruby="container">
+              <span tts:ruby="base">和</span><span tts:ruby="textContainer">
+                <span tts:ruby="text">wa</span></span></span></span></p>""").lines
+        val background = lines.single { it.isBackground }
+        assertEquals("和", background.displayText)
+        assertEquals(2_000L, background.words.single().startTimeMs)
+        assertEquals(4_000L, background.words.single().endTimeMs)
+        assertEquals(2_000L, background.words.single().ruby.single().startTimeMs)
+        assertEquals(4_000L, background.words.single().ruby.single().endTimeMs)
+        assertEquals("Main", lines.single { !it.isBackground }.displayText)
+    }
+
+    @Test
+    fun metadataLanguageAndSongPartAreRetainedWithoutOffsettingTimes() {
+        val doc = document("""<div begin="10" end="30" itunes:songPart="Verse">
+            <p begin="12" end="15" itunes:key="L1" ttm:agent="v1">Text</p></div>""",
+            head = """<ttm:title>Title</ttm:title><ttm:agent xml:id="v1" type="person"><ttm:name type="full">Singer</ttm:name></ttm:agent>
+            <amll:meta key="artists" value="One"/><amll:meta key="artists" value="Two"/>
+            <amll:meta key="album" value="Album"/><amll:meta key="ncmMusicId" value="123"/>
+            <iTunesMetadata xmlns="http://music.apple.com/lyric-ttml-internal"><songwriters><songwriter>Writer</songwriter></songwriters></iTunesMetadata>""",
+            attributes = "xml:lang=\"ja\"",
+        )
+        assertEquals(listOf("Title"), doc.metadata["musicName"])
+        assertEquals(listOf("One", "Two"), doc.metadata["artists"])
+        assertEquals("Singer", doc.agents.single().name)
+        assertEquals("person", doc.agents.single().type)
+        assertEquals(listOf("Writer"), doc.songwriters)
+        assertEquals("ja", doc.language)
+        assertEquals("Verse", doc.lines.single().songPart)
+        assertEquals(12_000L, doc.lines.single().startTimeMs)
+    }
+
+    @Test
+    fun onlyBodyParagraphsAreLyricsAndExternalEntitiesAreRejected() {
+        val doc = document("""<p begin="1" end="2">Body</p>""", head = """<p begin="3" end="4">Head</p>""")
+        assertEquals(listOf("Body"), doc.lines.map { it.displayText })
+        assertNull(LyricsParser.parse("""<!DOCTYPE tt [<!ENTITY xxe SYSTEM "file:///missing">]>
+            <tt><body><p begin="1" end="2">&xxe;</p></body></tt>""", LyricsSource.SIDECAR))
+    }
+}

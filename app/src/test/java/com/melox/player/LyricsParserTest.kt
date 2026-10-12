@@ -186,14 +186,14 @@ class LyricsParserTest {
     }
 
     @Test
-    fun ttmlTailAlsoContinuesToTheFollowingLine() {
+    fun ttmlRetainsExplicitTailAndLineEndBeforeTheFollowingLine() {
         val doc = LyricsParser.parse(
             "<tt><body><p begin='1s' end='4s'><span begin='1s' end='2s'>First </span><span begin='2s' end='4s'>tail</span></p><p begin='7s' end='8s'>Next</p></body></tt>",
             LyricsSource.SIDECAR,
         )!!
         assertEquals(2_000L, doc.lines.first().words.first().endTimeMs)
-        assertEquals(7_000L, doc.lines.first().words.last().endTimeMs)
-        assertEquals(7_000L, doc.lines.first().endTimeMs)
+        assertEquals(4_000L, doc.lines.first().words.last().endTimeMs)
+        assertEquals(4_000L, doc.lines.first().endTimeMs)
     }
 
     @Test
@@ -319,7 +319,7 @@ class LyricsParserTest {
                 <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
                   <body><div>
                     <p begin="00:00:10.000" end="00:00:12.000" ttm:agent="v1">
-                      <span begin="00:00:10.000" end="00:00:10.500">Hello</span>
+                      <span begin="00:00:10.000" end="00:00:10.500">Hello </span>
                       <span begin="00:00:10.500" end="00:00:12.000">world</span>
                       <span ttm:role="x-translation">你好世界</span>
                     </p>

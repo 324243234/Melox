@@ -10,11 +10,30 @@ enum class LyricsSource {
     SIDECAR,
 }
 
+data class LyricRuby(
+    val text: String,
+    val startTimeMs: Long,
+    val endTimeMs: Long,
+)
+
 data class LyricWord(
     val startTimeMs: Long,
     val endTimeMs: Long,
     val text: String,
     val hasTrailingSpace: Boolean,
+    val ruby: List<LyricRuby> = emptyList(),
+)
+
+data class LyricAuxiliaryText(
+    val text: String,
+    val language: String? = null,
+    val words: List<LyricWord> = emptyList(),
+)
+
+data class LyricAgent(
+    val id: String,
+    val type: String?,
+    val name: String?,
 )
 
 data class LyricLine(
@@ -24,6 +43,12 @@ data class LyricLine(
     val text: String?,
     val words: List<LyricWord>,
     val translation: String?,
+    val translations: List<LyricAuxiliaryText> = emptyList(),
+    val romanizations: List<LyricAuxiliaryText> = emptyList(),
+    val isBackground: Boolean = false,
+    val key: String? = null,
+    val songPart: String? = null,
+    val language: String? = null,
 ) {
     val displayText: String
         get() = text ?: words.joinToString(separator = "") { word ->
@@ -68,16 +93,31 @@ data class LyricsDocument(
     val lines: List<LyricLine>,
     val format: LyricsFormat,
     val source: LyricsSource,
+    val metadata: Map<String, List<String>> = emptyMap(),
+    val agents: List<LyricAgent> = emptyList(),
+    val songwriters: List<String> = emptyList(),
+    val language: String? = null,
 ) {
+    private val prefixEndTimes = LongArray(lines.size).also { ends ->
+        lines.forEachIndexed { index, line ->
+            ends[index] = maxOf(line.endTimeMs, ends.getOrElse(index - 1) { Long.MIN_VALUE })
+        }
+    }
+
     fun currentLineIndex(positionMs: Long): Int {
         if (lines.isEmpty() || positionMs < lines.first().startTimeMs) return -1
         val candidate = lastLineIndexAtOrBefore(positionMs)
         if (candidate < 0) return -1
-        val line = lines[candidate]
-        return candidate.takeIf {
-            positionMs < line.endTimeMs ||
-                (candidate == lines.lastIndex && line.endTimeMs <= line.startTimeMs)
-        } ?: -1
+        var index = candidate
+        while (index >= 0) {
+            val line = lines[index]
+            if (positionMs < line.endTimeMs ||
+                (index == lines.lastIndex && line.endTimeMs <= line.startTimeMs)
+            ) return index
+            if (format != LyricsFormat.TTML || prefixEndTimes[index] <= positionMs) break
+            index--
+        }
+        return -1
     }
 
     /** Keeps a completed line visually focused until the next line starts. */
