@@ -6,6 +6,7 @@ import android.os.Build
 import android.provider.DocumentsContract
 import java.util.ArrayDeque
 import java.util.Locale
+import java.io.IOException
 
 internal data class CustomFolderScope(
     val volumeName: String,
@@ -32,10 +33,10 @@ internal class CustomFolderAudioDiscovery(
         val treeUri = runCatching { Uri.parse(treeUriString) }
             .getOrNull()
             ?.takeIf { uri -> DocumentsContract.isTreeUri(uri) }
-            ?: return emptyList()
+            ?: throw IOException("Invalid music folder: $treeUriString")
         val rootDocumentId = runCatching {
             DocumentsContract.getTreeDocumentId(treeUri)
-        }.getOrNull() ?: return emptyList()
+        }.getOrThrow()
         val pendingDirectories = ArrayDeque<String>().apply { add(rootDocumentId) }
         val seenDocumentIds = HashSet<String>()
         val documents = mutableListOf<CustomFolderAudioDocument>()
@@ -43,69 +44,70 @@ internal class CustomFolderAudioDiscovery(
         while (pendingDirectories.isNotEmpty()) {
             val parentDocumentId = pendingDirectories.removeFirst()
             if (!seenDocumentIds.add(parentDocumentId)) continue
-            val childrenUri = runCatching {
-                DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocumentId)
-            }.getOrNull() ?: continue
-            runCatching {
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+                treeUri,
+                parentDocumentId,
+            )
+            readScanSource(parentDocumentId) {
                 contentResolver.query(
                     childrenUri,
                     DOCUMENT_PROJECTION,
                     null,
                     null,
                     null,
-                )?.use { cursor ->
-                    val idColumn = cursor.getColumnIndexOrThrow(
-                        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                    )
-                    val nameColumn = cursor.getColumnIndexOrThrow(
-                        DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                    )
-                    val mimeColumn = cursor.getColumnIndexOrThrow(
-                        DocumentsContract.Document.COLUMN_MIME_TYPE,
-                    )
-                    val sizeColumn = cursor.getColumnIndex(
-                        DocumentsContract.Document.COLUMN_SIZE,
-                    )
-                    val modifiedColumn = cursor.getColumnIndex(
-                        DocumentsContract.Document.COLUMN_LAST_MODIFIED,
-                    )
-                    while (cursor.moveToNext()) {
-                        val documentId = cursor.getString(idColumn) ?: continue
-                        val displayName = cursor.getString(nameColumn)?.trim().orEmpty()
-                        val mimeType = cursor.getString(mimeColumn)
-                        if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR) {
-                            pendingDirectories.add(documentId)
-                            continue
-                        }
-                        if (!isSupportedAudioDocument(displayName, mimeType)) continue
-                        val documentUri = DocumentsContract.buildDocumentUriUsingTree(
-                            treeUri,
-                            documentId,
-                        )
-                        val location = documentLocationForId(documentId, Build.VERSION.SDK_INT)
-                        documents += CustomFolderAudioDocument(
-                            uri = documentUri,
-                            volumeName = location?.volumeName,
-                            documentId = documentId,
-                            displayName = displayName,
-                            mimeType = mimeType,
-                            folderPath = location?.folderPath,
-                            fileSizeBytes = sizeColumn
-                                .takeIf { it >= 0 }
-                                ?.let(cursor::getLong)
-                                ?.coerceAtLeast(0L)
-                                ?: 0L,
-                            dateModifiedEpochSeconds = modifiedColumn
-                                .takeIf { it >= 0 }
-                                ?.let(cursor::getLong)
-                                ?.coerceAtLeast(0L)
-                                ?.div(MILLIS_PER_SECOND)
-                                ?: 0L,
-                            scannerPath = location?.scannerPath?.takeIf {
-                                treeUri.authority == EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY
-                            },
-                        )
+                )
+            }.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                )
+                val nameColumn = cursor.getColumnIndexOrThrow(
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                )
+                val mimeColumn = cursor.getColumnIndexOrThrow(
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                )
+                val sizeColumn = cursor.getColumnIndex(
+                    DocumentsContract.Document.COLUMN_SIZE,
+                )
+                val modifiedColumn = cursor.getColumnIndex(
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+                )
+                while (cursor.moveToNext()) {
+                    val documentId = cursor.getString(idColumn) ?: continue
+                    val displayName = cursor.getString(nameColumn)?.trim().orEmpty()
+                    val mimeType = cursor.getString(mimeColumn)
+                    if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        pendingDirectories.add(documentId)
+                        continue
                     }
+                    if (!isSupportedAudioDocument(displayName, mimeType)) continue
+                    val documentUri = DocumentsContract.buildDocumentUriUsingTree(
+                        treeUri,
+                        documentId,
+                    )
+                    val location = documentLocationForId(documentId, Build.VERSION.SDK_INT)
+                    documents += CustomFolderAudioDocument(
+                        uri = documentUri,
+                        volumeName = location?.volumeName,
+                        documentId = documentId,
+                        displayName = displayName,
+                        mimeType = mimeType,
+                        folderPath = location?.folderPath,
+                        fileSizeBytes = sizeColumn
+                            .takeIf { it >= 0 }
+                            ?.let(cursor::getLong)
+                            ?.coerceAtLeast(0L)
+                            ?: 0L,
+                        dateModifiedEpochSeconds = modifiedColumn
+                            .takeIf { it >= 0 }
+                            ?.let(cursor::getLong)
+                            ?.coerceAtLeast(0L)
+                            ?.div(MILLIS_PER_SECOND)
+                            ?: 0L,
+                        scannerPath = location?.scannerPath?.takeIf {
+                            treeUri.authority == EXTERNAL_STORAGE_DOCUMENTS_AUTHORITY
+                        },
+                    )
                 }
             }
         }

@@ -20,12 +20,13 @@ internal fun isMusicFolderHidden(path: String?, hiddenPaths: List<String>): Bool
 internal fun visibleMusicTracks(
     tracks: List<MusicTrack>,
     hiddenPaths: List<String>,
+    hiddenTrackUris: Set<String> = emptySet(),
 ): List<MusicTrack> {
-    if (hiddenPaths.isEmpty()) return tracks
+    if (hiddenPaths.isEmpty() && hiddenTrackUris.isEmpty()) return tracks
     val prefixes = normalizedHiddenFolderPaths(hiddenPaths)
     val hiddenByFolder = HashMap<Pair<String?, String>, Boolean>()
     return tracks.filterNot { track ->
-        hiddenByFolder.getOrPut(musicFolderIdentity(track)) {
+        track.contentUri in hiddenTrackUris || hiddenByFolder.getOrPut(musicFolderIdentity(track)) {
             isMusicFolderHidden(fullMusicFolderPath(track), prefixes) ||
                 isMusicFolderHidden(track.folderPath, prefixes)
         }
@@ -56,4 +57,20 @@ internal fun hiddenFolderDisplayPaths(
             }
         }
     }
+}
+
+/** Resolve folders encoded in document/file URIs without opening the source. */
+internal fun musicFolderPathFromSourceUri(contentUri: String): String? {
+    val uri = runCatching { java.net.URI(contentUri) }.getOrNull() ?: return null
+    if (uri.scheme == "file") {
+        val parent = normalizeMusicFolderPath(uri.path, includesFileName = true) ?: return null
+        val primaryRoot = listOf("/sdcard", "/storage/self/primary", "/mnt/sdcard")
+            .firstOrNull { parent == it || parent.startsWith("$it/") }
+        return if (primaryRoot == null) parent else "/storage/emulated/0" + parent.removePrefix(primaryRoot)
+    }
+    if (uri.host != "com.android.externalstorage.documents") return null
+    val documentId = uri.path.orEmpty().substringAfterLast("/document/", "")
+    if (':' !in documentId) return null
+    val path = documentId.substringAfter(':')
+    return normalizeMusicFolderPath(path, includesFileName = true) ?: "/"
 }

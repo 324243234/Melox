@@ -11,12 +11,16 @@ import android.util.AtomicFile
 import android.util.Log
 import com.melox.player.data.library.AudioPropertiesReader
 import com.melox.player.data.library.MusicLibrarySnapshotCodec
+import com.melox.player.data.library.MusicLibraryCacheAccess
 import com.melox.player.data.library.createMusicSortKeys
 import com.melox.player.data.library.hasReusableAudioProperties
 import com.melox.player.data.library.isWavSource
+import com.melox.player.data.library.musicFolderPathFromSourceUri
+import com.melox.player.data.library.visibleMusicTracks
 import com.melox.player.data.library.normalizeMusicFolderPath
 import com.melox.player.data.library.withRefreshedTags
 import com.melox.player.model.MusicTrack
+import com.melox.player.model.PlaybackQueueItem
 import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
@@ -36,26 +40,36 @@ class MusicRepository(context: Context) {
             applicationContext.noBackupFilesDir.resolve(SNAPSHOT_FILE_NAME),
         )
     }
+    private val cacheAccess by lazy {
+        MusicLibraryCacheAccess.forPath(snapshotFile.baseFile.absolutePath)
+    }
 
     /** Returns the last successful scan, or null when no compatible snapshot is available. */
     suspend fun loadCachedMusic(): List<MusicTrack>? = withContext(Dispatchers.IO) {
-        if (!snapshotFile.baseFile.exists() || snapshotFile.baseFile.length() > MAX_SNAPSHOT_BYTES) {
+        var readFailed = false
+        val (revision, cached) = cacheAccess.read {
+            if (!snapshotFile.baseFile.exists() || snapshotFile.baseFile.length() > MAX_SNAPSHOT_BYTES) {
+                return@read null
+            }
+            try {
+                snapshotFile.openRead().use(MusicLibrarySnapshotCodec::read)
+            } catch (exception: IOException) {
+                Log.w(TAG, "Ignoring unreadable music snapshot", exception)
+                readFailed = true
+                null
+            }
+        }
+        if (cached == null) {
+            if (readFailed) cacheAccess.writeBack(revision) { snapshotFile.delete(); true }
             return@withContext null
         }
-        try {
-            val cached = snapshotFile.openRead().use(MusicLibrarySnapshotCodec::read)
-            val refreshed = cached.map { track ->
-                if (!track.audioPropertiesScanned && isWavSource(track.fileName, track.mimeType)) {
-                    enrichTrack(track)
-                } else track
-            }
-            if (refreshed != cached) cacheMusic(refreshed)
-            refreshed
-        } catch (exception: IOException) {
-            Log.w(TAG, "Ignoring unreadable music snapshot", exception)
-            snapshotFile.delete()
-            null
+        val refreshed = cached.map { track ->
+            if (!track.audioPropertiesScanned && isWavSource(track.fileName, track.mimeType)) {
+                enrichTrack(track)
+            } else track
         }
+        if (refreshed != cached) cacheAccess.writeBack(revision) { writeCachedMusic(refreshed) }
+        refreshed
     }
 
     /** Returns MediaStore music rows ordered by title without blocking the caller's dispatcher. */
@@ -116,7 +130,9 @@ class MusicRepository(context: Context) {
         val directDocumentTracks = customDocuments
             .asSequence()
             .filterNot { it.audioFileIdentity() in indexedKeys }
-            .map(::createDocumentTrack)
+            .map { document ->
+                createDocumentTrack(document, previousTracksByUri, refreshAudioProperties)
+            }
             .filter { track -> !skipShortAudio || track.durationMs >= MIN_AUDIO_DURATION_MS }
             .toList()
         (enrichedIndexedTracks + directDocumentTracks)
@@ -170,7 +186,7 @@ class MusicRepository(context: Context) {
         val tracks = mutableListOf<MusicTrack>()
         val seenContentUris = HashSet<String>()
         collections.forEach { mediaCollection ->
-            val cursor = runCatching {
+            val cursor = readScanSource(mediaCollection.volumeName) {
                 contentResolver.query(
                     mediaCollection.uri,
                     projection,
@@ -178,9 +194,7 @@ class MusicRepository(context: Context) {
                     selectionArgs,
                     null,
                 )
-            }.onFailure { exception ->
-                Log.w(TAG, "Unable to query audio volume ${mediaCollection.volumeName}", exception)
-            }.getOrNull() ?: return@forEach
+            }
             cursor.use {
             val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
             val titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
@@ -307,8 +321,26 @@ class MusicRepository(context: Context) {
         )
     }
 
-    private fun createDocumentTrack(document: CustomFolderAudioDocument): MusicTrack {
+    private fun createDocumentTrack(
+        document: CustomFolderAudioDocument,
+        previousTracksByUri: Map<String, MusicTrack>,
+        refreshAudioProperties: Boolean,
+    ): MusicTrack {
         val uriString = document.uri.toString()
+        previousTracksByUri[uriString]?.takeIf { previous ->
+            !refreshAudioProperties && previous.hasReusableDocumentProperties(
+                contentUri = uriString,
+                dateModifiedEpochSeconds = document.dateModifiedEpochSeconds,
+                fileSizeBytes = document.fileSizeBytes,
+                displayName = document.displayName,
+            )
+        }?.let { previous ->
+            return previous.copy(
+                fileName = document.displayName,
+                folderPath = document.folderPath,
+                mimeType = document.mimeType,
+            )
+        }
         val fileTitle = document.displayName.substringBeforeLast('.', document.displayName)
             .metadataOrNull()
         val titleSortKeys = createMusicSortKeys(fileTitle)
@@ -341,11 +373,7 @@ class MusicRepository(context: Context) {
                 ),
             )
         }
-        val volumeNames = runCatching {
-            MediaStore.getExternalVolumeNames(applicationContext)
-        }.onFailure { exception ->
-            Log.w(TAG, "Unable to enumerate external media volumes", exception)
-        }.getOrDefault(emptySet())
+        val volumeNames = MediaStore.getExternalVolumeNames(applicationContext)
         return volumeNames
             .ifEmpty { setOf(MediaStore.VOLUME_EXTERNAL_PRIMARY) }
             .sorted()
@@ -397,29 +425,107 @@ class MusicRepository(context: Context) {
         }.getOrNull() ?: refreshed
     }
 
+    /** Resolve missing parent-directory evidence before admitting restored or external queue items. */
+    suspend fun hiddenQueueContentUris(
+        queue: List<PlaybackQueueItem>,
+        cachedTracks: List<MusicTrack>,
+        hiddenPaths: List<String>,
+        hiddenTrackUris: Set<String>,
+    ): Set<String> = withContext(Dispatchers.IO) {
+        if (hiddenPaths.isEmpty()) return@withContext hiddenTrackUris
+        val cachedByUri = cachedTracks.associateBy(MusicTrack::contentUri)
+        val excluded = hiddenTrackUris.toMutableSet()
+        queue.distinctBy(PlaybackQueueItem::contentUri).forEach { item ->
+            if (item.contentUri in excluded) return@forEach
+            val cached = cachedByUri[item.contentUri]
+            val folderPath = cached?.folderPath ?: sourceFolderPath(item.contentUri)
+            // An undisclosed external-provider path is not evidence of a hidden folder.
+            if (folderPath == null) return@forEach
+            val track = cached?.copy(folderPath = folderPath) ?: MusicTrack(
+                id = item.trackId ?: 0L,
+                title = item.title,
+                artist = item.artist,
+                album = item.album,
+                durationMs = item.durationMs,
+                dateAddedEpochSeconds = 0L,
+                dateModifiedEpochSeconds = item.dateModifiedEpochSeconds,
+                fileName = null,
+                fileSizeBytes = item.fileSizeBytes,
+                contentUri = item.contentUri,
+                titleSectionKey = "",
+                titleSortKey = "",
+                folderPath = folderPath,
+            )
+            if (visibleMusicTracks(listOf(track), hiddenPaths).isEmpty()) excluded += item.contentUri
+        }
+        excluded
+    }
+
+    private fun sourceFolderPath(contentUri: String): String? {
+        musicFolderPathFromSourceUri(contentUri)?.let { return it }
+        val uri = Uri.parse(contentUri)
+        if (uri.authority != MediaStore.AUTHORITY) return null
+        val folderColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            MediaStore.Audio.Media.RELATIVE_PATH
+        } else {
+            @Suppress("DEPRECATION")
+            MediaStore.Audio.Media.DATA
+        }
+        return runCatching {
+            contentResolver.query(uri, arrayOf(folderColumn), null, null, null)?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
+                val index = cursor.getColumnIndex(folderColumn)
+                if (index < 0 || cursor.isNull(index)) return@use null
+                val path = cursor.getString(index)?.takeIf(String::isNotBlank) ?: return@use null
+                normalizeMusicFolderPath(
+                    path,
+                    includesFileName = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q,
+                ) ?: "/"
+            }
+        }.getOrNull()
+    }
+
     /** Atomically stores a successful scan without changing the visible scan result on failure. */
-    suspend fun cacheMusic(tracks: List<MusicTrack>) = withContext(Dispatchers.IO) {
+    suspend fun cacheMusic(tracks: List<MusicTrack>, invalidate: Boolean = false): Boolean {
+        val access = cacheAccess
+        val request = access.nextWrite()
+        return withContext(Dispatchers.IO) {
+            access.write(request) {
+                if (invalidate) snapshotFile.delete()
+                writeCachedMusic(tracks)
+            }
+        }
+    }
+
+    private fun writeCachedMusic(tracks: List<MusicTrack>): Boolean {
         val output = try {
             snapshotFile.startWrite()
         } catch (exception: IOException) {
             Log.w(TAG, "Unable to start music snapshot write", exception)
-            return@withContext
+            return false
         }
 
-        try {
+        return try {
             MusicLibrarySnapshotCodec.write(output, tracks)
             snapshotFile.finishWrite(output)
+            true
         } catch (exception: IOException) {
             snapshotFile.failWrite(output)
             Log.w(TAG, "Unable to write music snapshot", exception)
+            false
         } catch (exception: IllegalArgumentException) {
             snapshotFile.failWrite(output)
             Log.w(TAG, "Unable to encode music snapshot", exception)
+            false
         }
     }
 
-    suspend fun clearCachedMusic() = withContext(Dispatchers.IO) {
-        snapshotFile.delete()
+    suspend fun clearCachedMusic() {
+        val access = cacheAccess
+        val request = access.nextWrite()
+        withContext(Dispatchers.IO) {
+            access.write(request) { snapshotFile.delete(); true }
+        }
     }
 
     private companion object {
