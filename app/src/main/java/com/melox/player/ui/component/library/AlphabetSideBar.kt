@@ -10,8 +10,11 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,8 +64,10 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 internal val LocalAlphabetIndexBottomPadding = staticCompositionLocalOf { 12.dp }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 internal fun fixedAlphabetIndexTopPadding(): Dp =
-    WindowInsets.systemBars.asPaddingValues().calculateTopPadding() +
+    WindowInsets.systemBars.union(WindowInsets.statusBarsIgnoringVisibility)
+        .asPaddingValues().calculateTopPadding() +
         TopAppBarDefaults.CollapsedHeight
 
 internal val AlphabetSections =

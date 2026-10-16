@@ -41,11 +41,14 @@ internal fun musicTrackComparator(config: MusicSortConfig): Comparator<MusicTrac
         MusicSortField.TITLE -> compareBy<MusicTrack>(MusicTrack::titleSortKey)
             .thenBy(MusicTrack::id)
 
-        MusicSortField.ARTIST -> compareBy<MusicTrack> {
-            createMusicSortKeys(it.artist).value
+        MusicSortField.ARTIST -> {
+            val keys = HashMap<String?, String>()
+            compareBy<MusicTrack> { track ->
+                keys.getOrPut(track.artist) { createMusicSortKeys(track.artist).value }
+            }
+                .thenBy(MusicTrack::titleSortKey)
+                .thenBy(MusicTrack::id)
         }
-            .thenBy(MusicTrack::titleSortKey)
-            .thenBy(MusicTrack::id)
 
         MusicSortField.DATE_ADDED -> compareBy<MusicTrack>(MusicTrack::dateAddedEpochSeconds)
             .thenBy(MusicTrack::titleSortKey)

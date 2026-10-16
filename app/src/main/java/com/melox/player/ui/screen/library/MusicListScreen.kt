@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,6 +46,7 @@ import com.melox.player.ui.component.library.AlphabetSideBar
 import com.melox.player.ui.component.library.MusicTrackRow
 import com.melox.player.ui.component.library.TrackActionsOverlay
 import com.melox.player.ui.component.library.toggleTrackSelection
+import com.melox.player.ui.component.library.offsetSectionIndices
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon
@@ -81,6 +83,7 @@ fun MusicListScreen(
     listState: LazyListState,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(),
+    topContentSpacing: Dp = 12.dp,
     showIndex: Boolean = true,
     selectionMode: Boolean = false,
     selectedTrackUris: Set<String> = emptySet(),
@@ -90,11 +93,18 @@ fun MusicListScreen(
     currentTrackContentUri: String? = null,
     miniPlayerBounds: Rect = Rect.Zero,
     playerContentBounds: Rect = Rect.Zero,
+    leadingItemCount: Int = 0,
+    leadingContent: LazyListScope.() -> Unit = {},
+    emptyContent: (@Composable (Modifier) -> Unit)? = null,
 ) {
     val layoutDirection = LocalLayoutDirection.current
     val density = LocalDensity.current
     val locateActionSize = ButtonDefaults.MinHeight
-    val currentIndex = displayedTracks.indexOfFirst { it.contentUri == currentTrackContentUri }
+    val trackIndex = displayedTracks.indexOfFirst { it.contentUri == currentTrackContentUri }
+    val currentIndex = if (trackIndex < 0) -1 else trackIndex + leadingItemCount
+    val listSectionIndexMap = remember(sectionIndexMap, leadingItemCount) {
+        offsetSectionIndices(sectionIndexMap, leadingItemCount)
+    }
     val locateActionVisible = showLocateAction && currentIndex >= 0 && !selectionMode &&
         miniPlayerBounds.width > 0f && playerContentBounds.width > 0f
     val locateBottomPadding = if (locateActionVisible) {
@@ -107,7 +117,7 @@ fun MusicListScreen(
     PreserveSortScrollPosition(
         sortKey = sortConfig,
         query = query,
-        itemCount = displayedTracks.size,
+        itemCount = displayedTracks.size + leadingItemCount,
         scrollState = listState,
     ) {
         listState.requestScrollToItem(
@@ -118,7 +128,7 @@ fun MusicListScreen(
     var selectedTrack by remember { mutableStateOf<MusicTrack?>(null) }
     val listContentPadding = PaddingValues(
         start = contentPadding.calculateStartPadding(layoutDirection),
-        top = contentPadding.calculateTopPadding() + 12.dp,
+        top = contentPadding.calculateTopPadding() + topContentSpacing,
         end = contentPadding.calculateEndPadding(layoutDirection),
         bottom = maxOf(contentPadding.calculateBottomPadding(), locateBottomPadding) + 12.dp,
     )
@@ -150,13 +160,19 @@ fun MusicListScreen(
             contentPadding = listContentPadding,
             overscrollEffect = null,
         ) {
-            if (displayedTracks.isEmpty()) {
+            leadingContent()
+            if (displayedTracks.isEmpty() && leadingItemCount == 0) {
                 item(key = "empty_music") {
-                    EmptyMusicState(
-                        scanStatus = scanStatus,
-                        query = query,
-                        modifier = Modifier.fillParentMaxSize(),
-                    )
+                    val emptyModifier = Modifier.fillParentMaxSize()
+                    if (emptyContent != null) {
+                        emptyContent(emptyModifier)
+                    } else {
+                        EmptyMusicState(
+                            scanStatus = scanStatus,
+                            query = query,
+                            modifier = emptyModifier,
+                        )
+                    }
                 }
             } else {
                 itemsIndexed(
@@ -208,8 +224,8 @@ fun MusicListScreen(
             query.isBlank()
         ) {
             AlphabetSideBar(
-                sectionIndexMap = sectionIndexMap,
-                itemCount = displayedTracks.size,
+                sectionIndexMap = listSectionIndexMap,
+                itemCount = displayedTracks.size + leadingItemCount,
                 scrollStateKey = listState,
                 isAtTarget = { targetIndex ->
                     listState.firstVisibleItemIndex == targetIndex &&
@@ -350,7 +366,7 @@ internal fun MusicLibraryEmptyMessage(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            tint = MiuixTheme.colorScheme.disabledOnSecondaryVariant,
             modifier = Modifier.size(48.dp),
         )
         Spacer(Modifier.height(12.dp))
