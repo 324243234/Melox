@@ -2,7 +2,6 @@ package com.melox.player.playback
 
 import android.os.SystemClock
 import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -10,8 +9,10 @@ import kotlinx.coroutines.launch
 
 /** Applies the optional play/pause volume fade to the session player. */
 internal class PlaybackVolumeFade(
-    private val player: ExoPlayer,
+    private val player: Player,
     private val scope: CoroutineScope,
+    private val nowMs: () -> Long = SystemClock::elapsedRealtime,
+    private val awaitFrame: suspend () -> Unit = { delay(16L) },
 ) {
     private var enabled = false
     private var volumeJob: Job? = null
@@ -69,10 +70,19 @@ internal class PlaybackVolumeFade(
         }
     }
 
-    fun onEvents() {
-        val playWhenReady = player.playWhenReady
-        if (playWhenReady == lastPlayWhenReady) return
+    fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+        val changed = playWhenReady != lastPlayWhenReady
         lastPlayWhenReady = playWhenReady
+        if (isForcedPlaybackPause(playWhenReady, reason)) {
+            volumeJob?.cancel()
+            volumeJob = null
+            pauseFadeOutPending = false
+            internalPause = false
+            resumingForFade = false
+            player.volume = 1f
+            return
+        }
+        if (!changed) return
         if (internalPause) {
             internalPause = false
             return
@@ -87,10 +97,12 @@ internal class PlaybackVolumeFade(
             player.volume = 0f
             volumeJob = scope.launch { rampVolume(0f, 1f, 250L) }
         } else if (player.playbackState == Player.STATE_READY) {
+            pauseFadeOutPending = true
             resumingForFade = true
             player.play()
             volumeJob = scope.launch {
                 rampVolume(player.volume, 0f, 250L)
+                pauseFadeOutPending = false
                 internalPause = true
                 player.pause()
                 player.volume = 1f
@@ -99,13 +111,13 @@ internal class PlaybackVolumeFade(
     }
 
     private suspend fun rampVolume(start: Float, end: Float, durationMs: Long) {
-        val startMs = SystemClock.elapsedRealtime()
+        val startMs = nowMs()
         while (true) {
-            val fraction = ((SystemClock.elapsedRealtime() - startMs).toFloat() / durationMs)
+            val fraction = ((nowMs() - startMs).toFloat() / durationMs)
                 .coerceIn(0f, 1f)
             player.volume = start + (end - start) * fraction
             if (fraction >= 1f) break
-            delay(16L)
+            awaitFrame()
         }
     }
 
@@ -114,3 +126,8 @@ internal class PlaybackVolumeFade(
         player.volume = 1f
     }
 }
+
+internal fun isForcedPlaybackPause(playWhenReady: Boolean, reason: Int): Boolean =
+    !playWhenReady &&
+        reason != Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST &&
+        reason != Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE

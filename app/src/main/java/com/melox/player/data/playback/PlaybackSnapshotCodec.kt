@@ -15,6 +15,7 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.UUID
 import java.util.zip.CRC32
 import java.util.zip.CheckedInputStream
 import java.util.zip.CheckedOutputStream
@@ -22,12 +23,16 @@ import java.util.zip.CheckedOutputStream
 /** Compact, checksummed encoding for playback restoration. */
 internal object PlaybackSnapshotCodec {
     private const val MAGIC = 0x4D454C50
-    private const val VERSION = 2
+    private const val VERSION = 3
     private const val MIN_SUPPORTED_VERSION = 1
     private const val MAX_QUEUE_SIZE = 100_000
     private const val MAX_STRING_BYTES = 1_048_576
 
-    fun write(outputStream: OutputStream, snapshot: PlaybackSnapshot) {
+    fun write(
+        outputStream: OutputStream,
+        snapshot: PlaybackSnapshot,
+        generation: Long = UUID.randomUUID().mostSignificantBits or 1L,
+    ): Long {
         require(snapshot.queue.size <= MAX_QUEUE_SIZE)
         val checksum = CRC32()
         val output = DataOutputStream(
@@ -35,6 +40,7 @@ internal object PlaybackSnapshotCodec {
         )
         output.writeInt(MAGIC)
         output.writeInt(VERSION)
+        output.writeLong(generation)
         output.writeInt(snapshot.queue.size)
         snapshot.queue.forEach { item ->
             output.writeSizedString(item.mediaId)
@@ -54,9 +60,12 @@ internal object PlaybackSnapshotCodec {
         output.writeInt(snapshot.playbackMode.ordinal)
         output.writeLong(checksum.value)
         output.flush()
+        return generation
     }
 
-    fun read(inputStream: InputStream): PlaybackSnapshot {
+    fun read(inputStream: InputStream): PlaybackSnapshot = readRecord(inputStream).snapshot
+
+    fun readRecord(inputStream: InputStream): PlaybackSnapshotRecord {
         val checksum = CRC32()
         val input = DataInputStream(
             CheckedInputStream(BufferedInputStream(inputStream), checksum),
@@ -66,6 +75,7 @@ internal object PlaybackSnapshotCodec {
         if (version !in MIN_SUPPORTED_VERSION..VERSION) {
             throw IOException("Unsupported playback snapshot version: $version")
         }
+        val generation = if (version >= 3) input.readLong() else 0L
         val itemCount = input.readInt()
         if (itemCount !in 0..MAX_QUEUE_SIZE) {
             throw IOException("Invalid playback queue size: $itemCount")
@@ -121,11 +131,14 @@ internal object PlaybackSnapshotCodec {
             throw IOException("Invalid playback queue index: $currentIndex")
         }
         val queue = encodedQueue.map { it.copy(playbackMode = playbackMode) }
-        return PlaybackSnapshot(
-            queue = queue,
-            currentIndex = currentIndex,
-            positionMs = positionMs.coerceAtLeast(0L),
-            playbackMode = playbackMode,
+        return PlaybackSnapshotRecord(
+            snapshot = PlaybackSnapshot(
+                queue = queue,
+                currentIndex = currentIndex,
+                positionMs = positionMs.coerceAtLeast(0L),
+                playbackMode = playbackMode,
+            ),
+            generation = generation,
         )
     }
 
@@ -172,11 +185,25 @@ internal class PlaybackSnapshotStore(context: Context) {
     private val applicationContext = context.applicationContext
     private val atomicFile = AtomicFile(File(applicationContext.noBackupFilesDir, FILE_NAME))
 
-    fun loadUnvalidated(): PlaybackSnapshot? = runCatching {
-        atomicFile.openRead().use(PlaybackSnapshotCodec::read)
-    }.getOrElse {
-        atomicFile.delete()
-        null
+    private val positionFile = AtomicFile(
+        File(applicationContext.noBackupFilesDir, "playback_position_checkpoint.bin"),
+    )
+    private var savedRecord: PlaybackSnapshotRecord? = null
+
+    fun loadUnvalidated(): PlaybackSnapshot? {
+        val record = runCatching {
+            atomicFile.openRead().use(PlaybackSnapshotCodec::readRecord)
+        }.getOrElse {
+            atomicFile.delete()
+            positionFile.delete()
+            savedRecord = null
+            return null
+        }
+        savedRecord = record
+        val checkpoint = runCatching {
+            positionFile.openRead().use(PlaybackPositionCheckpointCodec::read)
+        }.getOrNull()
+        return checkpoint?.applyTo(record) ?: record.snapshot
     }
 
     fun validate(snapshot: PlaybackSnapshot): PlaybackSnapshot? =
@@ -185,12 +212,37 @@ internal class PlaybackSnapshotStore(context: Context) {
     fun save(snapshot: PlaybackSnapshot) {
         if (snapshot.queue.isEmpty()) {
             atomicFile.delete()
+            positionFile.delete()
+            savedRecord = null
+            return
+        }
+        val previous = savedRecord
+        if (previous != null && previous.generation != 0L &&
+            previous.snapshot.queue == snapshot.queue &&
+            previous.snapshot.playbackMode == snapshot.playbackMode
+        ) {
+            val checkpoint = PlaybackPositionCheckpoint(
+                generation = previous.generation,
+                currentIndex = snapshot.currentIndex,
+                positionMs = snapshot.positionMs,
+            )
+            val output = positionFile.startWrite()
+            try {
+                PlaybackPositionCheckpointCodec.write(output, checkpoint)
+                positionFile.finishWrite(output)
+            } catch (exception: Exception) {
+                positionFile.failWrite(output)
+                throw exception
+            }
             return
         }
         val output = atomicFile.startWrite()
         try {
-            PlaybackSnapshotCodec.write(output, snapshot)
+            val generation = PlaybackSnapshotCodec.write(output, snapshot)
             atomicFile.finishWrite(output)
+            savedRecord = PlaybackSnapshotRecord(snapshot, generation)
+            // Older progress is bound to its own queue generation, including after a crash.
+            positionFile.delete()
         } catch (exception: Exception) {
             atomicFile.failWrite(output)
             throw exception
