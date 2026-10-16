@@ -85,7 +85,9 @@ class LyricClockPerformanceTest {
                                 centerLyrics = false, lyricCenterOffsetY = 0.dp,
                                 showLyricsTranslation = true, showBottomFade = false,
                                 resumeFollowRequestKey = 0, seekRequestKey = 0, seekPositionMs = 0L,
-                                artworkContent = { Box(Modifier.fillMaxSize().background(Color.Black)) },
+                                artworkContent = { overscrollModifier ->
+                                    Box(Modifier.fillMaxSize().then(overscrollModifier).background(Color.Black))
+                                },
                                 modifier = Modifier.fillMaxSize().background(Color.Black),
                             )
                         }

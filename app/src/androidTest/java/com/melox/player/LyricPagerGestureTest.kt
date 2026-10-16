@@ -7,6 +7,9 @@ import android.view.MotionEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.accessibilityservice.AccessibilityServiceInfo
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.pager.PagerState
@@ -16,6 +19,9 @@ import androidx.compose.runtime.Recomposer
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
@@ -61,7 +67,15 @@ class LyricPagerGestureTest {
     @Test
     fun onlyVerticalListDraggingSuspendsFollow() = runPagerChecks(checkEntry = false)
 
-    private fun runPagerChecks(checkEntry: Boolean, wordProgress: Boolean = false) {
+    @Test
+    fun onlyArtworkReboundsWhileHiddenControlsStillPage() =
+        runPagerChecks(checkEntry = false, checkOverscroll = true)
+
+    private fun runPagerChecks(
+        checkEntry: Boolean,
+        wordProgress: Boolean = false,
+        checkOverscroll: Boolean = false,
+    ) {
         val automation = instrumentation.uiAutomation
         automation.serviceInfo = automation.serviceInfo.apply {
             flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
@@ -84,6 +98,8 @@ class LyricPagerGestureTest {
         lateinit var recomposer: Recomposer
         lateinit var recomposition: Job
         val bounds = Rect()
+        var artworkCoordinates: LayoutCoordinates? = null
+        var controlCoordinates: LayoutCoordinates? = null
         var density = 1f
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
@@ -116,7 +132,20 @@ class LyricPagerGestureTest {
                                 showLyricsTranslation = wordProgress, showBottomFade = false,
                                 resumeFollowRequestKey = resumeKey.value, seekRequestKey = 0,
                                 seekPositionMs = 0L,
-                                artworkContent = { Box(Modifier.fillMaxSize().background(Color.Black)) },
+                                artworkContent = { overscrollModifier ->
+                                    if (checkOverscroll) {
+                                        Column(Modifier.fillMaxSize()) {
+                                            Box(Modifier.fillMaxWidth().weight(1f)
+                                                .then(overscrollModifier)
+                                                .onGloballyPositioned { artworkCoordinates = it })
+                                            Box(Modifier.fillMaxWidth().height(120.dp)
+                                                .onGloballyPositioned { controlCoordinates = it })
+                                        }
+                                    } else {
+                                        Box(Modifier.fillMaxSize().then(overscrollModifier)
+                                            .background(Color.Black))
+                                    }
+                                },
                                 modifier = Modifier.fillMaxSize().background(Color.Black),
                             )
                         }
@@ -138,6 +167,42 @@ class LyricPagerGestureTest {
                     frames(1)
                 }
                 requireNotNull(appRoot()) { "Test window was not available before pager entry" }
+                if (checkOverscroll) {
+                    fun visualLeft(coordinates: LayoutCoordinates?): Float {
+                        var left = 0f
+                        instrumentation.runOnMainSync {
+                            left = requireNotNull(coordinates).localToWindow(Offset.Zero).x
+                        }
+                        return left
+                    }
+                    fun checkArtworkEdge() {
+                        val artworkLeft = visualLeft(artworkCoordinates)
+                        val controlLeft = visualLeft(controlCoordinates)
+                        swipe(bounds, 0.5f, 0.85f, 0f) {
+                            assertTrue("Artwork did not rebound", visualLeft(artworkCoordinates) > artworkLeft + 8f)
+                            assertTrue("Controls joined edge rebound", abs(visualLeft(controlCoordinates) - controlLeft) <= 1f)
+                        }
+                        frames(90)
+                        assertTrue("Artwork rebound did not settle", abs(visualLeft(artworkCoordinates) - artworkLeft) <= 1f)
+                    }
+                    checkArtworkEdge()
+                    val controlLeft = visualLeft(controlCoordinates)
+                    swipe(bounds, 0.8f, 0.2f, 0f) {
+                        assertTrue("Controls did not move with normal paging", visualLeft(controlCoordinates) < controlLeft - 8f)
+                    }
+                    frames(90)
+                    assertEquals(1, pager.settledPage)
+                    val lyricRight = rowBounds(0).right
+                    swipe(bounds, 0.5f, 0.15f, 0f) {
+                        assertTrue("Lyrics did not receive edge rebound", rowBounds(0).right < lyricRight - 8)
+                    }
+                    frames(90)
+                    swipe(bounds, 0.2f, 0.8f, 0f)
+                    frames(90)
+                    assertEquals(0, pager.settledPage)
+                    checkArtworkEdge()
+                    return@use
+                }
                 selectPage(pager, 1)
                 assertCentered(0, bounds.centerY())
                 if (checkEntry) {
@@ -268,7 +333,13 @@ class LyricPagerGestureTest {
         assertEquals(page, pager.settledPage)
     }
 
-    private fun swipe(bounds: Rect, startX: Float, endX: Float, deltaY: Float) {
+    private fun swipe(
+        bounds: Rect,
+        startX: Float,
+        endX: Float,
+        deltaY: Float,
+        onHeld: () -> Unit = {},
+    ) {
         val downTime = SystemClock.uptimeMillis()
         fun pointer(action: Int, fraction: Float) {
             val event = MotionEvent.obtain(
@@ -283,7 +354,7 @@ class LyricPagerGestureTest {
         for (step in 1..12) pointer(MotionEvent.ACTION_MOVE, step / 12f)
         // Release without a fling so the subsequent follow assertion measures browsing state.
         frames(15)
-        pointer(MotionEvent.ACTION_UP, 1f)
+        try { onHeld() } finally { pointer(MotionEvent.ACTION_UP, 1f) }
     }
 
     private fun rowBounds(index: Int): Rect {

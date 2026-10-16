@@ -5,6 +5,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.runtime.BroadcastFrameClock
 import com.melox.player.ui.component.playback.PlayerSheetTransitionState
 import com.melox.player.ui.component.playback.sharedContainerRect
+import com.melox.player.ui.component.playback.sharedContainerRenderRect
+import com.melox.player.ui.component.playback.playerSheetUsesFullPlayerStatusBar
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -16,6 +18,52 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 
 class PlayerResizeTransitionTest {
+    @Test
+    fun sharedBackgroundBoundsAndStatusBarProgressSurviveBothWindowSizes() {
+        for (window in listOf(portrait, landscape)) {
+            for (progress in listOf(0.2f, 0.95f, 0.96f, 1f, 0.96f, 0.95f)) {
+                val state = PlayerSheetTransitionState(initialProgress = progress)
+                state.updateWindowSize(window)
+                reportBounds(state, window)
+                state.updateMiniPlayerBounds(
+                    Rect(0f, window.height - 64f, 300f, window.height.toFloat()),
+                    window,
+                )
+                reportFrames(state, window)
+
+                val drawnBounds = sharedContainerRenderRect(
+                    state.overlayMiniPlayerBounds,
+                    state.fullPlayerBounds,
+                    progress,
+                )
+                assertEquals(drawnBounds, state.visibleBackgroundBounds)
+                assertEquals(
+                    progress >= 0.96f,
+                    playerSheetUsesFullPlayerStatusBar(state.progress),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun livePlayerFallbackUsesItsRealBoundsWhileHiddenRecordingSourcesDoNot() {
+        for (progress in listOf(0f, 0.1f, 0.9f, 1f)) {
+            val state = PlayerSheetTransitionState(initialProgress = progress)
+            state.updateWindowSize(portrait)
+            reportBounds(state, portrait)
+
+            assertFalse(state.sharedLayersReady)
+            assertEquals(
+                if (progress > 0.2f) state.fullPlayerBounds else Rect.Zero,
+                state.visibleBackgroundBounds,
+            )
+            assertEquals(
+                progress >= 0.96f,
+                playerSheetUsesFullPlayerStatusBar(state.progress),
+            )
+        }
+    }
+
     @Test
     fun liveGlassClickRequiresCurrentFramesAndKeepsPressedSourceSize() {
         val state = PlayerSheetTransitionState()

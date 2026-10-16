@@ -7,6 +7,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -21,6 +22,8 @@ import com.melox.player.ui.component.library.loadCachedArtworkDerivative
 import com.melox.player.ui.component.library.loadPlaceholderArtworkBitmap
 import com.melox.player.ui.component.library.normalizeArtworkTargetSize
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 internal data class PlaybackArtworkResource(
@@ -30,6 +33,7 @@ internal data class PlaybackArtworkResource(
     val blurredArtwork: Bitmap?,
     val backgroundColor: Color,
     val isLoading: Boolean,
+    val isArtworkReady: Boolean = !isLoading,
 )
 
 @Composable
@@ -78,6 +82,10 @@ internal fun rememberPlaybackArtworkResource(
                 }
         }
     }
+    val request = remember(cacheKey, blurredCacheKey, placeholderArtworkResId, prioritizeBlurredBackground) {
+        Any()
+    }
+    val currentRequest by rememberUpdatedState(request)
     var resource by remember {
         mutableStateOf(
             PlaybackArtworkResource(
@@ -91,12 +99,7 @@ internal fun rememberPlaybackArtworkResource(
         )
     }
 
-    LaunchedEffect(
-        cacheKey,
-        blurredCacheKey,
-        placeholderArtworkResId,
-        prioritizeBlurredBackground,
-    ) {
+    LaunchedEffect(request) {
         if (contentUri.isBlank()) {
             resource = PlaybackArtworkResource(
                 cacheKey = cacheKey,
@@ -120,13 +123,15 @@ internal fun rememberPlaybackArtworkResource(
                 placeholderArtworkResId = placeholderArtworkResId,
                 cachedArtwork = resource.artwork,
             )?.let { (layerKey, bitmap) ->
+                currentCoroutineContext().ensureActive()
+                if (currentRequest !== request) return@LaunchedEffect
                 resource = resource.copy(
                     blurredCacheKey = layerKey,
                     blurredArtwork = bitmap,
                 )
             }
         }
-        resource = loadPlaybackArtworkResource(
+        val loaded = loadPlaybackArtworkResource(
             context = context,
             contentUri = contentUri,
             dateModifiedEpochSeconds = dateModifiedEpochSeconds,
@@ -135,9 +140,15 @@ internal fun rememberPlaybackArtworkResource(
             placeholderArtworkResId = placeholderArtworkResId,
             includeBlurredArtwork = prioritizeBlurredBackground,
         )
+        currentCoroutineContext().ensureActive()
+        if (currentRequest === request) resource = loaded
     }
 
-    return resource
+    return resource.copy(
+        isLoading = resource.isLoading || resource.cacheKey != cacheKey,
+        isArtworkReady = resource.cacheKey == cacheKey &&
+            (resource.artwork != null || !resource.isLoading),
+    )
 }
 
 internal suspend fun prefetchPlaybackBackground(
@@ -183,6 +194,7 @@ private suspend fun loadFirstPlaybackBackground(
         dateModifiedEpochSeconds = dateModifiedEpochSeconds,
         fileSizeBytes = fileSizeBytes,
         targetSizePx = PLAYBACK_BACKGROUND_BLUR_SIZE_PX,
+        foreground = true,
     )
     val artwork = embeddedArtwork ?: loadPlaceholderArtwork(
         context = context,
@@ -246,6 +258,7 @@ private suspend fun loadPlaybackArtworkResource(
         dateModifiedEpochSeconds = dateModifiedEpochSeconds,
         fileSizeBytes = fileSizeBytes,
         targetSizePx = normalizedTargetSizePx,
+        foreground = true,
     )
     val usesPlaceholderArtwork = embeddedArtwork == null
     val artwork = embeddedArtwork ?: loadPlaceholderArtwork(

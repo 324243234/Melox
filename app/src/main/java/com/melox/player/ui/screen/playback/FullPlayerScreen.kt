@@ -2,6 +2,7 @@ package com.melox.player.ui.screen.playback
 
 import android.graphics.Bitmap
 import android.content.res.Configuration
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.slideInHorizontally
@@ -26,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -42,7 +44,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -78,6 +80,7 @@ import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -168,6 +171,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 internal fun FullPlayerScreen(
     playback: PlaybackUiState,
     currentTrack: MusicTrack?,
@@ -181,6 +185,8 @@ internal fun FullPlayerScreen(
     centerLyrics: Boolean,
     leftAlignPlayerTitle: Boolean,
     hideControlsOnLyrics: Boolean,
+    immersiveMode: Boolean,
+    onImmersiveModeChange: (Boolean) -> Unit,
     showLyricsTranslation: Boolean,
     onLyricFontScaleChange: (Float) -> Unit,
     onLyricFontWeightChange: (Int) -> Unit,
@@ -192,8 +198,8 @@ internal fun FullPlayerScreen(
     onShowLyricsTranslationChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     onTogglePlayPause: () -> Unit,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
+    onPrevious: () -> Boolean,
+    onNext: () -> Boolean,
     onSeek: (Long) -> Unit,
     onCyclePlaybackMode: () -> Unit,
     onPlaybackSpeedChange: (Float) -> Unit,
@@ -239,12 +245,14 @@ internal fun FullPlayerScreen(
     onPlayerBoundsChanged: (Rect) -> Unit,
     onArtworkBoundsChanged: (Rect) -> Unit,
     onArtworkPageSelectedChanged: (Boolean) -> Unit,
-    onStatusBarBackgroundDarkChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    circularArtwork: Boolean = false,
+    artworkFlipAnimation: Boolean = false,
 ) {
     val item = playback.currentItem?.let { queueItem ->
         currentTrack?.let(queueItem::withTrackMetadata) ?: queueItem
     }
+    val context = LocalContext.current
     val density = LocalDensity.current
     val backgroundArtworkTargetSizePx = normalizeArtworkTargetSize(
         with(density) { PLAYER_FULL_ARTWORK_REQUEST_SIZE.roundToPx() },
@@ -274,6 +282,9 @@ internal fun FullPlayerScreen(
         animate = true,
         contentKey = item?.contentUri,
         sameContentDurationMillis = PLAYER_ARTWORK_RESOLUTION_CROSSFADE_DURATION_MILLIS,
+        transitionDirection = playback.trackChangeDirection,
+        flipAnimationEnabled = artworkFlipAnimation,
+        targetReady = fullPlayerArtwork != null || artworkResource.isArtworkReady,
     )
     val onArtworkDisplaySizeChanged: (Int) -> Unit = { sizePx ->
         artworkDisplaySizePx = sizePx
@@ -303,6 +314,18 @@ internal fun FullPlayerScreen(
     }
     var displayedHideControlsOnLyrics by remember {
         mutableStateOf(hideControlsOnLyrics)
+    }
+    val hideLyricsControls = displayedHideControlsOnLyrics
+    val onToggleImmersiveMode = {
+        val enabled = !immersiveMode
+        onImmersiveModeChange(enabled)
+        if (enabled) {
+            Toast.makeText(
+                context,
+                R.string.settings_immersive_mode_title,
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
     }
     var displayedShowLyricsTranslation by remember {
         mutableStateOf(showLyricsTranslation)
@@ -334,7 +357,7 @@ internal fun FullPlayerScreen(
         1.dp +
         playerHeaderArtistSlotHeight
     val layoutDirection = LocalLayoutDirection.current
-    val playerSafeDrawingPadding = WindowInsets.systemBars
+    val playerSafeDrawingPadding = WindowInsets.systemBarsIgnoringVisibility
         .union(WindowInsets.displayCutout)
         .asPaddingValues()
     val playerSafeStart = playerSafeDrawingPadding.calculateStartPadding(layoutDirection)
@@ -406,6 +429,9 @@ internal fun FullPlayerScreen(
     LaunchedEffect(hideControlsOnLyrics) {
         displayedHideControlsOnLyrics = hideControlsOnLyrics
     }
+    LaunchedEffect(immersiveMode) {
+        lyricsPreviewPositionMs = null
+    }
     LaunchedEffect(showLyricsTranslation) {
         displayedShowLyricsTranslation = showLyricsTranslation
     }
@@ -463,7 +489,6 @@ internal fun FullPlayerScreen(
                         resource = artworkResource,
                         animate = drawInPlace && playback.isPlaying,
                         animateArtworkTransition = true,
-                        onStatusBarBackgroundDarkChanged = onStatusBarBackgroundDarkChanged,
                         modifier = Modifier.fillMaxSize(),
                     )
 
@@ -473,7 +498,6 @@ internal fun FullPlayerScreen(
                         artworkLoading = artworkResource.isLoading,
                         backgroundColor = artworkResource.backgroundColor,
                         animate = drawInPlace && playback.isPlaying,
-                        onStatusBarBackgroundDarkChanged = onStatusBarBackgroundDarkChanged,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
@@ -534,7 +558,7 @@ internal fun FullPlayerScreen(
                             ),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                    val lyricsCenterOffsetY = if (displayedHideControlsOnLyrics) {
+                    val lyricsCenterOffsetY = if (hideLyricsControls) {
                         hiddenLyricsCenterOffsetY(
                             pageHeight = pageHeight,
                             headerTopPadding = headerTopPadding,
@@ -556,16 +580,17 @@ internal fun FullPlayerScreen(
                             modifier = Modifier
                                 .width(portraitArtworkContentWidth)
                                 .padding(top = headerTopPadding)
+                                .playerChromeVisibility(!immersiveMode)
                                 .then(
                                     rememberPlayerHeaderGestureModifier(
-                                        enabled = displayedHideControlsOnLyrics &&
+                                        enabled = !immersiveMode && hideLyricsControls &&
                                             lyricsPagingEnabled && item != null &&
                                             pagerState.settledPage == 1 &&
                                             !pagerState.isScrollInProgress,
                                         playWhenReady = playback.playWhenReady,
                                         onTogglePlayPause = onTogglePlayPause,
-                                        onPrevious = onPrevious,
-                                        onNext = onNext,
+                                        onPrevious = { onPrevious() },
+                                        onNext = { onNext() },
                                         onOpenLyricsSettings = { showLyricsSettings = true },
                                     ),
                                 ),
@@ -603,7 +628,9 @@ internal fun FullPlayerScreen(
                                         leftAligned = displayedLeftAlignPlayerTitle,
                                         titleSlotHeight = playerHeaderTitleSlotHeight,
                                         artistSlotHeight = playerHeaderArtistSlotHeight,
-                                        modifier = Modifier.width(artworkContentWidth),
+                                        modifier = Modifier
+                                            .width(artworkContentWidth)
+                                            .playerChromeVisibility(!immersiveMode),
                                     )
                                     Spacer(Modifier.height(LANDSCAPE_PLAYER_TITLE_TO_ARTWORK_SPACING))
                                     BoxWithConstraints(
@@ -613,6 +640,7 @@ internal fun FullPlayerScreen(
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         PlayerArtwork(
+                                            circularArtwork = circularArtwork,
                                             size = fitPlayerArtworkSize(
                                                 preferredSize = artworkSize,
                                                 availableHeight = maxHeight,
@@ -628,6 +656,8 @@ internal fun FullPlayerScreen(
                                     }
                                     Spacer(Modifier.height(LANDSCAPE_PLAYER_ARTWORK_TO_PROGRESS_SPACING))
                                     PlayerDetails(
+                                        immersiveMode = immersiveMode,
+                                        onToggleImmersiveMode = onToggleImmersiveMode,
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .wrapContentHeight(),
@@ -690,6 +720,7 @@ internal fun FullPlayerScreen(
                                 lyricsPagingEnabled = lyricsPagingEnabled,
                                 artworkContent = { artworkSize ->
                                     PlayerArtwork(
+                                        circularArtwork = circularArtwork,
                                         size = artworkSize,
                                         artworkPadding = artworkPadding,
                                         artworkBlend = artworkBlend,
@@ -752,10 +783,14 @@ internal fun FullPlayerScreen(
                                             leftAligned = displayedLeftAlignPlayerTitle,
                                             titleSlotHeight = playerHeaderTitleSlotHeight,
                                             artistSlotHeight = playerHeaderArtistSlotHeight,
-                                            modifier = Modifier.width(contentWidth),
+                                            modifier = Modifier
+                                                .width(contentWidth)
+                                                .playerChromeVisibility(!immersiveMode),
                                         )
                                         Spacer(Modifier.height(COMPACT_LANDSCAPE_HEADER_TO_CONTROLS_SPACING))
                                         PlayerDetails(
+                                            immersiveMode = immersiveMode,
+                                            onToggleImmersiveMode = onToggleImmersiveMode,
                                             modifier = Modifier.fillMaxWidth(),
                                             contentWidth = contentWidth,
                                             spacing = compactLandscapePlayerSpacing(),
@@ -804,7 +839,7 @@ internal fun FullPlayerScreen(
                                 preferredArtworkSize = artworkSize,
                                 panelBottom = playerControlsBottomPadding,
                             )
-                            if (displayedHideControlsOnLyrics) {
+                            if (hideLyricsControls) {
                                 PlayerContentPager(
                                     pagerState = pagerState,
                                     lyrics = lyrics,
@@ -835,11 +870,13 @@ internal fun FullPlayerScreen(
                                     seekRequestKey = lyricsSeekRequestKey,
                                     seekPositionMs = lyricsSeekPositionMs,
                                     modifier = Modifier.fillMaxSize(),
-                                    artworkContent = {
+                                    artworkContent = { overscrollModifier ->
                                         PortraitPlayerLayout(
                                             spacing = spacing,
+                                            artworkModifier = overscrollModifier,
                                             artworkContent = { artworkHeight ->
                                                 PlayerArtwork(
+                                                    circularArtwork = circularArtwork,
                                                     size = fitPlayerArtworkSize(
                                                         artworkSize,
                                                         artworkHeight,
@@ -855,6 +892,8 @@ internal fun FullPlayerScreen(
                                             },
                                             detailsContent = {
                                                 PlayerDetails(
+                                                    immersiveMode = immersiveMode,
+                                                    onToggleImmersiveMode = onToggleImmersiveMode,
                                                     modifier = Modifier.fillMaxWidth(),
                                                     contentWidth = artworkContentWidth,
                                                     secondaryControlsWidth = maxWidth,
@@ -920,26 +959,34 @@ internal fun FullPlayerScreen(
                                             seekRequestKey = lyricsSeekRequestKey,
                                             seekPositionMs = lyricsSeekPositionMs,
                                             modifier = Modifier.fillMaxSize(),
-                                            artworkContent = {
-                                                PlayerArtwork(
-                                                    size = fitPlayerArtworkSize(
-                                                        artworkSize,
-                                                        artworkHeight,
-                                                    ),
-                                                    artworkPadding = artworkPadding,
-                                                    artworkBlend = artworkBlend,
-                                                    cornerRadius = artworkCornerRadius,
-                                                    sharedArtworkVisible = sharedArtworkVisible,
-                                                    onArtworkBoundsChanged =
-                                                        onArtworkBoundsChanged,
-                                                    onArtworkDisplaySizeChanged =
-                                                        onArtworkDisplaySizeChanged,
-                                                )
+                                            artworkContent = { overscrollModifier ->
+                                                Box(
+                                                    modifier = Modifier.fillMaxSize().then(overscrollModifier),
+                                                    contentAlignment = Alignment.Center,
+                                                ) {
+                                                    PlayerArtwork(
+                                                        circularArtwork = circularArtwork,
+                                                        size = fitPlayerArtworkSize(
+                                                            artworkSize,
+                                                            artworkHeight,
+                                                        ),
+                                                        artworkPadding = artworkPadding,
+                                                        artworkBlend = artworkBlend,
+                                                        cornerRadius = artworkCornerRadius,
+                                                        sharedArtworkVisible = sharedArtworkVisible,
+                                                        onArtworkBoundsChanged =
+                                                            onArtworkBoundsChanged,
+                                                        onArtworkDisplaySizeChanged =
+                                                            onArtworkDisplaySizeChanged,
+                                                    )
+                                                }
                                             },
                                         )
                                     },
                                     detailsContent = {
                                         PlayerDetails(
+                                            immersiveMode = immersiveMode,
+                                            onToggleImmersiveMode = onToggleImmersiveMode,
                                             modifier = Modifier.fillMaxWidth(),
                                             contentWidth = artworkContentWidth,
                                             secondaryControlsWidth = maxWidth,

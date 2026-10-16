@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,6 +63,25 @@ enum class MusicTrackDescriptionMode {
     Artist,
 }
 
+internal val LocalSongListArtworkVisible = compositionLocalOf { true }
+internal val LocalSongListFileNameVisible = compositionLocalOf { false }
+
+internal fun MusicTrack.songListTitle(showFileName: Boolean): String? =
+    if (showFileName) fileName?.takeIf { it.isNotBlank() } ?: title else title
+
+internal fun handleSongListTrackClick(
+    selectedTrack: MusicTrack,
+    currentTrackContentUri: String?,
+    onOpenPlayer: () -> Unit,
+    onPlayTrack: () -> Unit,
+) {
+    if (selectedTrack.contentUri == currentTrackContentUri) {
+        onOpenPlayer()
+    } else {
+        onPlayTrack()
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MusicTrackRow(
@@ -79,7 +99,8 @@ fun MusicTrackRow(
     selected: Boolean = false,
     onLongClick: (() -> Unit)? = null,
 ) {
-    val title = track.title ?: stringResource(R.string.music_unknown_title)
+    val title = track.songListTitle(LocalSongListFileNameVisible.current)
+        ?: stringResource(R.string.music_unknown_title)
     val moreActionLabel = stringResource(R.string.music_more_actions, title)
     val rowActionLabel = stringResource(R.string.music_play_track_action, title)
     val rowGestureModifier = if (selectionMode) {
@@ -117,6 +138,8 @@ fun MusicTrackRow(
             artworkOverlayText = artworkOverlayText,
             enabled = enabled,
             descriptionOverride = descriptionOverride,
+            showArtwork = LocalSongListArtworkVisible.current,
+            titleOverride = title,
         )
 
         Row(
@@ -222,8 +245,10 @@ private fun RowScope.MusicTrackLeadingContent(
     enabled: Boolean = true,
     descriptionOverride: String? = null,
     artworkContent: (@Composable () -> Unit)? = null,
+    showArtwork: Boolean = true,
+    titleOverride: String? = null,
 ) {
-    val title = track.title ?: stringResource(R.string.music_unknown_title)
+    val title = titleOverride ?: track.title ?: stringResource(R.string.music_unknown_title)
     val artist = displayArtistName(track.artist) ?: stringResource(R.string.music_unknown_artist)
     val description = descriptionOverride ?: when (descriptionMode) {
         MusicTrackDescriptionMode.ArtistAndAlbum -> track.album?.let { album ->
@@ -273,7 +298,7 @@ private fun RowScope.MusicTrackLeadingContent(
 
     if (artworkContent != null) {
         artworkContent()
-    } else if (artworkOverlayText == null) {
+    } else if (artworkOverlayText == null && showArtwork) {
         TrackArtwork(
             contentUri = track.contentUri,
             dateModifiedEpochSeconds = track.dateModifiedEpochSeconds,
@@ -282,12 +307,12 @@ private fun RowScope.MusicTrackLeadingContent(
             size = artworkSize,
             cornerRadius = artworkCornerRadius,
         )
-    } else {
+    } else if (artworkOverlayText != null) {
         Box(
             modifier = Modifier.size(artworkSize),
             contentAlignment = Alignment.Center,
         ) {
-            TrackArtwork(
+            if (showArtwork) TrackArtwork(
                 contentUri = track.contentUri,
                 dateModifiedEpochSeconds = track.dateModifiedEpochSeconds,
                 fileSizeBytes = track.fileSizeBytes,

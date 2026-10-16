@@ -78,7 +78,7 @@ import kotlin.math.sign
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.IconButtonDefaults
 import top.yukonga.miuix.kmp.basic.DividerDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -115,28 +115,22 @@ internal fun MiniPlayer(
     onPlayerControlsBoundsChanged: (Rect) -> Unit,
     onArtworkBoundsChanged: (Rect) -> Unit,
     modifier: Modifier = Modifier,
+    circularArtwork: Boolean = false,
+    artworkFlipAnimation: Boolean = false,
 ) {
     val item = playback.currentItem
     val hasItem = item != null
     val isNormal = chrome.style == BottomBarStyle.NORMAL
     val isSmallFloating = chrome.smallPlayerBar && !isNormal
     val surfaceCornerRadius = if (isNormal) 18.dp else 32.dp
-    val artworkCornerRadius = miniPlayerArtworkCornerRadius(isNormal, chrome.smallPlayerBar)
+    val artworkCornerRadius = miniPlayerArtworkCornerRadius(isNormal, chrome.smallPlayerBar, circularArtwork)
     val normalOutlineColor = DividerDefaults.DividerColor.copy(
         alpha = NORMAL_BAR_STROKE_ALPHA,
     )
     val playerHeight = miniPlayerHeight(chrome.style, chrome.smallPlayerBar)
-    val artworkSize = when {
-        isSmallFloating -> 32.dp
-        chrome.smallPlayerBar -> 36.dp
-        else -> playerHeight - 20.dp
-    }
-    val metadataSpacing = when {
-        isNormal -> 6.dp
-        isSmallFloating -> 4.dp
-        else -> 8.dp
-    }
-    val controlSize = miniPlayerControlSize(isNormal, chrome.smallPlayerBar)
+    val artworkSize = miniPlayerArtworkSize(isNormal, chrome.smallPlayerBar)
+    val metadataSpacing = miniPlayerArtworkMetadataSpacing(isNormal, chrome.smallPlayerBar)
+    val controlSize = miniPlayerControlSize()
     val playPauseIconSize = 22.dp
     val controlIconSize = 24.dp
     val pressEnabled = chrome.liquidGlassActive && chrome.backdrop != null
@@ -170,6 +164,12 @@ internal fun MiniPlayer(
             ?: (1f + pressGrowth / playerBounds.width.coerceAtLeast(1f) * pressProgress.value)
     } else {
         1f
+    }
+    fun swipeTranslationX(): Float {
+        if (!pressEnabled) return 0f
+        val fraction = (swipeDragDistance / playerBounds.width.coerceAtLeast(1f))
+            .coerceIn(-1f, 1f)
+        return swipeOffsetLimit * fraction.sign * EaseOut.transform(abs(fraction))
     }
     fun layoutBounds(coordinates: LayoutCoordinates): Rect {
         val content = contentCoordinates
@@ -280,22 +280,29 @@ internal fun MiniPlayer(
                     ),
             )
         }
+        if (pressEnabled && surfaceVisible) {
+            // Follow the glass press without changing its inverse backdrop sampling.
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer {
+                        translationX = swipeTranslationX()
+                        val scale = pressScale()
+                        scaleX = scale
+                        scaleY = scale
+                    }
+                    .miuixFloatingBarShadow(surfaceCornerRadius, chrome.isDark),
+            )
+        }
         Box(
             modifier = Modifier
                 .matchParentSize()
                 .graphicsLayer {
-                    val fraction = (swipeDragDistance / playerBounds.width.coerceAtLeast(1f))
-                        .coerceIn(-1f, 1f)
-                    translationX = if (pressEnabled) {
-                        swipeOffsetLimit * fraction.sign * EaseOut.transform(abs(fraction))
-                    } else {
-                        0f
-                    }
+                    translationX = swipeTranslationX()
                 }
                 .then(
                     when {
                         pressEnabled && surfaceVisible -> Modifier
-                            .miuixFloatingBarShadow(surfaceCornerRadius, chrome.isDark)
                             .miniPlayerSurface(
                                 cornerRadius = surfaceCornerRadius,
                                 backdrop = chrome.backdrop,
@@ -337,7 +344,7 @@ internal fun MiniPlayer(
                         else Modifier,
                     )
                     .padding(
-                        start = if (isNormal) 10.dp else if (isSmallFloating) 14.dp else 16.dp,
+                        start = miniPlayerArtworkStartPadding(isNormal, chrome.smallPlayerBar, circularArtwork),
                         end = when {
                             isSmallFloating -> 8.dp
                             chrome.smallPlayerBar -> (playerHeight - controlSize) / 2
@@ -370,6 +377,10 @@ internal fun MiniPlayer(
                         bitmapCrossfadeEasing = PLAYER_TRACK_ARTWORK_CROSSFADE_EASING,
                         rectangularCornerRadiusReduction =
                             MINI_PLAYER_RECTANGULAR_ARTWORK_CORNER_REDUCTION,
+                        circular = circularArtwork,
+                        flipAnimationEnabled = artworkFlipAnimation,
+                        transitionDirection = playback.trackChangeDirection,
+                        foreground = true,
                     )
                 }
                 Spacer(modifier = Modifier.width(metadataSpacing))
@@ -396,26 +407,26 @@ internal fun MiniPlayer(
                 Spacer(modifier = Modifier.width(if (isNormal) 6.dp else 2.dp))
                 Row(
                     modifier = Modifier
-                        .offset(
-                            x = if (isSmallFloating) {
-                                8.dp - (playerHeight - controlSize) / 2
-                            } else {
-                                0.dp
-                            },
-                        )
                         .onGloballyPositioned { coordinates ->
                             onPlayerControlsBoundsChanged(layoutBounds(coordinates))
                         },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconButton(
-                        modifier = Modifier.offset(x = if (chrome.smallPlayerBar) 0.dp else (-6).dp),
+                    val playPausePress = rememberPlayerControlPressFeedback(hasItem)
+                    PlayerControlIconButton(
+                        modifier = Modifier
+                            .offset(x = if (chrome.smallPlayerBar) 0.dp else (-6).dp)
+                            .then(playPausePress.modifier),
                         enabled = hasItem,
                         onClick = onTogglePlayPause,
                         minWidth = controlSize,
                         minHeight = controlSize,
                     ) {
                         AnimatedContent(
+                            modifier = Modifier.graphicsLayer {
+                                scaleX = playPausePress.scale.value
+                                scaleY = playPausePress.scale.value
+                            },
                             targetState = playback.playWhenReady,
                             transitionSpec = { playerControlIconTransition() },
                             label = "miniPlayPauseIcon",
@@ -435,8 +446,8 @@ internal fun MiniPlayer(
                             )
                         }
                     }
-                    IconButton(
-                        modifier = Modifier.offset(x = if (isNormal || isSmallFloating) 0.dp else (-2).dp),
+                    PlayerControlIconButton(
+                        modifier = Modifier.offset(x = miniPlayerQueueOffset(isNormal, chrome.smallPlayerBar)),
                         onClick = onOpenQueue,
                         minWidth = controlSize,
                         minHeight = controlSize,
@@ -723,11 +734,54 @@ internal fun miniPlayerHeight(style: BottomBarStyle, smallPlayerBar: Boolean): D
 
 internal val FLOATING_MINI_PLAYER_BOTTOM_PADDING = 8.dp
 
-internal fun miniPlayerControlSize(normalChrome: Boolean, smallPlayerBar: Boolean): Dp =
-    if (!normalChrome && smallPlayerBar) 36.dp else 40.dp
+internal fun miniPlayerControlSize(): Dp = IconButtonDefaults.MinWidth
 
-internal fun miniPlayerArtworkCornerRadius(normalChrome: Boolean, smallPlayerBar: Boolean): Dp =
+internal fun miniPlayerArtworkSize(normalChrome: Boolean, smallPlayerBar: Boolean): Dp = when {
+    !normalChrome && smallPlayerBar -> 32.dp
+    smallPlayerBar -> 36.dp
+    else -> miniPlayerHeight(
+        if (normalChrome) BottomBarStyle.NORMAL else BottomBarStyle.FLOATING,
+        false,
+    ) - 20.dp
+}
+
+internal fun miniPlayerArtworkStartPadding(
+    normalChrome: Boolean,
+    smallPlayerBar: Boolean,
+    circular: Boolean,
+): Dp =
     when {
+        normalChrome -> 10.dp
+        circular -> {
+            val height = miniPlayerHeight(BottomBarStyle.FLOATING, smallPlayerBar)
+            (height - miniPlayerArtworkSize(false, smallPlayerBar)) / 2
+        }
+        smallPlayerBar -> 14.dp
+        else -> 16.dp
+    }
+
+internal fun miniPlayerArtworkMetadataSpacing(
+    normalChrome: Boolean,
+    smallPlayerBar: Boolean,
+): Dp = when {
+    normalChrome -> 6.dp
+    smallPlayerBar -> 4.dp
+    else -> 8.dp
+}
+
+internal fun miniPlayerQueueOffset(normalChrome: Boolean, smallPlayerBar: Boolean): Dp = when {
+    normalChrome -> 0.dp
+    smallPlayerBar -> 0.dp
+    else -> (-2).dp
+}
+
+internal fun miniPlayerArtworkCornerRadius(
+    normalChrome: Boolean,
+    smallPlayerBar: Boolean,
+    circular: Boolean = false,
+): Dp =
+    when {
+        circular -> miniPlayerArtworkSize(normalChrome, smallPlayerBar) / 2
         normalChrome -> 7.dp
         smallPlayerBar -> 6.dp
         else -> 8.dp

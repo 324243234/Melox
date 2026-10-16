@@ -18,6 +18,8 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberOverscrollEffect
+import androidx.compose.foundation.withoutVisualEffect
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -177,25 +179,36 @@ internal fun PlayerContentPager(
     resumeFollowRequestKey: Int,
     seekRequestKey: Int,
     seekPositionMs: Long,
-    artworkContent: @Composable () -> Unit,
+    artworkContent: @Composable (overscrollModifier: Modifier) -> Unit,
     modifier: Modifier = Modifier,
     playerActive: Boolean = true,
     positionDiscontinuityRevision: Long = 0L,
 ) {
+    val overscrollEffect = rememberOverscrollEffect()
+    val pagerOverscroll = remember(overscrollEffect) {
+        overscrollEffect?.let(::PlayerPagerOverscroll)
+    }
+    val eventOverscrollEffect = remember(overscrollEffect) {
+        overscrollEffect?.withoutVisualEffect()
+    }
     HorizontalPager(
         state = pagerState,
         userScrollEnabled = lyricsPagingEnabled,
+        overscrollEffect = eventOverscrollEffect,
         modifier = modifier.clipToBounds(),
         beyondViewportPageCount = 1,
         verticalAlignment = Alignment.CenterVertically,
         key = { it },
     ) { page ->
+        val overscrollModifier = pagerOverscroll?.run {
+            Modifier.visualModifier(page == pagerState.currentPage)
+        } ?: Modifier
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center,
         ) {
             if (page == 0) {
-                artworkContent()
+                artworkContent(overscrollModifier)
             } else {
                 SyncedLyrics(
                     lyrics = lyrics,
@@ -223,7 +236,7 @@ internal fun PlayerContentPager(
                     resumeFollowRequestKey = resumeFollowRequestKey,
                     seekRequestKey = seekRequestKey,
                     seekPositionMs = seekPositionMs,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().then(overscrollModifier),
                 )
             }
         }
@@ -353,6 +366,7 @@ internal fun SyncedLyrics(
             Text(
                 text = stringResource(R.string.lyrics_unavailable),
                 modifier = Modifier.width(contentWidth)
+                    .offset(y = lyricCenterOffsetY)
                     .animatedPlayerTextAlignment(unavailableTextLayout, alignmentProgress),
                 style = MiuixTheme.textStyles.title3.copy(
                     fontSize = (LYRIC_PRIMARY_FONT_SIZE_SP * lyricFontScale).sp,

@@ -181,7 +181,6 @@ internal fun DynamicFlowBackground(
     artwork: Bitmap?,
     animate: Boolean,
     modifier: Modifier = Modifier,
-    onStatusBarBackgroundDarkChanged: (Boolean) -> Unit = {},
     artworkLoading: Boolean = false,
     backgroundColor: Color? = null,
     onFrameReady: () -> Unit = {},
@@ -300,10 +299,6 @@ internal fun DynamicFlowBackground(
                     }
             }
         }
-    }
-
-    LaunchedEffect(artwork) {
-        onStatusBarBackgroundDarkChanged(true)
     }
 
     Box(

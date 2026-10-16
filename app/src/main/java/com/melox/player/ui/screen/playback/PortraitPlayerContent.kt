@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.Dp
 internal fun PortraitPlayerLayout(
     spacing: PlayerVerticalSpacing,
     modifier: Modifier = Modifier,
+    artworkModifier: Modifier = Modifier,
     artworkContent: @Composable (Dp) -> Unit,
     detailsContent: @Composable () -> Unit,
 ) {
@@ -32,7 +33,8 @@ internal fun PortraitPlayerLayout(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
+                .weight(1f)
+                .then(artworkModifier),
             contentAlignment = Alignment.Center,
         ) {
             artworkContent(maxHeight)

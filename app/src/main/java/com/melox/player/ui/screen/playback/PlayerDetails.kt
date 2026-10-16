@@ -120,6 +120,9 @@ import com.melox.player.ui.component.playback.PLAYER_TRACK_ARTWORK_CROSSFADE_DUR
 import com.melox.player.ui.component.playback.PLAYER_TRACK_ARTWORK_CROSSFADE_EASING
 import com.melox.player.ui.component.playback.rememberPlaybackArtworkResource
 import com.melox.player.ui.component.playback.playerControlIconTransition
+import com.melox.player.ui.component.playback.PlayerTrackSkipButton
+import com.melox.player.ui.component.playback.rememberPlayerControlPressFeedback
+import com.melox.player.ui.component.playback.PlayerControlIconButton
 import com.melox.player.ui.component.playback.recordPlayerLayer
 import com.melox.player.ui.component.playback.WeightedCrossfadeFrame
 import com.melox.player.ui.component.playback.weightedCrossfadeFrames
@@ -155,8 +158,10 @@ internal fun PlayerDetails(
     playback: PlaybackUiState,
     emphasisControlColor: Color,
     onTogglePlayPause: () -> Unit,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
+    immersiveMode: Boolean,
+    onToggleImmersiveMode: () -> Unit,
+    onPrevious: () -> Boolean,
+    onNext: () -> Boolean,
     onSeek: (Long) -> Unit,
     onPreviewPositionChange: (Long?) -> Unit,
     onCyclePlaybackMode: () -> Unit,
@@ -182,12 +187,14 @@ internal fun PlayerDetails(
             Box(
                 modifier = Modifier
                     .width(contentWidth)
-                    .zIndex(1f),
+                    .zIndex(1f)
+                    .playerChromeVisibility(!immersiveMode),
             ) {
                 PlayerProgress(
                     positionMs = playback.positionMs,
                     durationMs = playback.durationMs,
                     enabled = playback.currentItem != null,
+                    interactive = !immersiveMode,
                     indicatorColor = progressIndicatorColor,
                     labelColor = progressLabelColor,
                     primaryControlSpacing = spacing.progressToPrimary,
@@ -201,58 +208,59 @@ internal fun PlayerDetails(
                     .height(PLAYER_PLAY_PAUSE_TOUCH_SIZE),
             ) {
                 val layout = playerPrimaryControlLayout(maxWidth)
-                IconButton(
+                PlayerTrackSkipButton(
+                    direction = -1,
+                    tint = emphasisControlColor,
+                    iconSize = PLAYER_SIDE_CONTROL_ICON_SIZE,
+                    touchSize = PLAYER_SIDE_CONTROL_TOUCH_SIZE,
+                    enabled = playback.currentItem != null,
                     onClick = onPrevious,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .offset(x = layout.previousTouchOffset),
-                    minWidth = PLAYER_SIDE_CONTROL_TOUCH_SIZE,
-                    minHeight = PLAYER_SIDE_CONTROL_TOUCH_SIZE,
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_player_previous_track),
-                        contentDescription = stringResource(R.string.previous_track),
-                        modifier = Modifier.size(PLAYER_SIDE_CONTROL_ICON_SIZE),
-                        tint = emphasisControlColor,
-                    )
-                }
+                )
                 AnimatedPlayPauseButton(
                     playWhenReady = playback.playWhenReady,
                     tint = emphasisControlColor,
                     onClick = onTogglePlayPause,
+                    onLongClick = onToggleImmersiveMode,
+                    onLongClickLabel = stringResource(
+                        if (immersiveMode) R.string.player_immersive_mode_disable
+                        else R.string.player_immersive_mode_enable,
+                    ),
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .offset(x = layout.playPauseTouchOffset),
                 )
-                IconButton(
+                PlayerTrackSkipButton(
+                    direction = 1,
+                    tint = emphasisControlColor,
+                    iconSize = PLAYER_SIDE_CONTROL_ICON_SIZE,
+                    touchSize = PLAYER_SIDE_CONTROL_TOUCH_SIZE,
+                    enabled = playback.currentItem != null,
                     onClick = onNext,
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .offset(x = layout.nextTouchOffset),
-                    minWidth = PLAYER_SIDE_CONTROL_TOUCH_SIZE,
-                    minHeight = PLAYER_SIDE_CONTROL_TOUCH_SIZE,
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_player_next_track),
-                        contentDescription = stringResource(R.string.next_track),
-                        modifier = Modifier.size(PLAYER_SIDE_CONTROL_ICON_SIZE),
-                        tint = emphasisControlColor,
-                    )
-                }
+                )
             }
             Spacer(Modifier.height(spacing.controlGroup))
             Row(
-                modifier = Modifier.width(secondaryControlsWidth),
+                modifier = Modifier
+                    .width(secondaryControlsWidth)
+                    .playerChromeVisibility(!immersiveMode),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 PlaybackModeButton(
                     mode = playback.playbackMode,
                     tint = secondaryControlColor,
+                    enabled = !immersiveMode,
                     onClick = onCyclePlaybackMode,
                 )
                 IconButton(
                     onClick = onOpenLyricsSettings,
+                    enabled = !immersiveMode,
                 ) {
                     Icon(
                         imageVector = MiuixIcons.Tune,
@@ -261,7 +269,10 @@ internal fun PlayerDetails(
                         tint = secondaryControlColor,
                     )
                 }
-                IconButton(onClick = onOpenPlaybackOptions) {
+                IconButton(
+                    onClick = onOpenPlaybackOptions,
+                    enabled = !immersiveMode,
+                ) {
                     Icon(
                         imageVector = MiuixIcons.SearchDevice,
                         contentDescription = stringResource(R.string.playback_options_open),
@@ -273,6 +284,7 @@ internal fun PlayerDetails(
                     description = stringResource(R.string.open_queue),
                     size = 24.dp,
                     tint = secondaryControlColor,
+                    enabled = !immersiveMode,
                     onClick = onOpenQueue,
                 )
                 PlayerIconButton(
@@ -280,6 +292,7 @@ internal fun PlayerDetails(
                     description = stringResource(R.string.track_actions),
                     size = 23.dp,
                     tint = secondaryControlColor,
+                    enabled = !immersiveMode,
                     onClick = onOpenTrackActions,
                 )
             }
@@ -291,15 +304,24 @@ private fun AnimatedPlayPauseButton(
     playWhenReady: Boolean,
     tint: Color,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onLongClickLabel: String,
     modifier: Modifier = Modifier,
 ) {
-    IconButton(
+    val press = rememberPlayerControlPressFeedback()
+    PlayerControlIconButton(
         onClick = onClick,
-        modifier = modifier,
+        onLongClick = onLongClick,
+        onLongClickLabel = onLongClickLabel,
+        modifier = modifier.then(press.modifier),
         minWidth = PLAYER_PLAY_PAUSE_TOUCH_SIZE,
         minHeight = PLAYER_PLAY_PAUSE_TOUCH_SIZE,
     ) {
         AnimatedContent(
+            modifier = Modifier.graphicsLayer {
+                scaleX = press.scale.value
+                scaleY = press.scale.value
+            },
             targetState = playWhenReady,
             transitionSpec = { playerControlIconTransition() },
             label = "playPauseIcon",
@@ -321,9 +343,11 @@ private fun PlaybackModeButton(
     mode: PlaybackMode,
     tint: Color,
     onClick: () -> Unit,
+    enabled: Boolean,
 ) {
     IconButton(
         onClick = onClick,
+        enabled = enabled,
     ) {
         val (icon, description) = when (mode) {
             PlaybackMode.ORDER -> R.drawable.ic_player_repeat_all to
@@ -347,6 +371,7 @@ private fun PlayerProgress(
     positionMs: Long,
     durationMs: Long,
     enabled: Boolean,
+    interactive: Boolean,
     indicatorColor: Color,
     labelColor: Color,
     primaryControlSpacing: Dp,
@@ -354,7 +379,7 @@ private fun PlayerProgress(
     onPreviewPositionChange: (Long?) -> Unit,
 ) {
     val safeDuration = durationMs.coerceAtLeast(1L)
-    val interactionEnabled = enabled && durationMs > 0L
+    val interactionEnabled = enabled && interactive && durationMs > 0L
     var seekPositionMs by remember { mutableFloatStateOf(positionMs.toFloat()) }
     var isSeeking by remember { mutableStateOf(false) }
     val currentOnSeek by rememberUpdatedState(onSeek)
@@ -492,9 +517,11 @@ private fun PlayerIconButton(
     onClick: () -> Unit,
     size: Dp = 26.dp,
     tint: Color = MiuixTheme.colorScheme.onSurface,
+    enabled: Boolean = true,
 ) {
     IconButton(
         onClick = onClick,
+        enabled = enabled,
     ) {
         Icon(
             imageVector = icon,
