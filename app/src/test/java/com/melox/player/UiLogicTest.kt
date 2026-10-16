@@ -83,7 +83,7 @@ import com.melox.player.ui.component.library.findAlphabetTargetIndex
 import com.melox.player.ui.component.library.fitArtworkDimensions
 import com.melox.player.ui.component.library.formatDuration
 import com.melox.player.ui.component.library.fullPlayerArtworkTargetSizePx
-import com.melox.player.ui.screen.playback.artworkCrossfadeDurationMillis
+import com.melox.player.ui.component.playback.artworkCrossfadeDurationMillis
 import com.melox.player.ui.component.library.playbackArtworkShadowBounds
 import com.melox.player.ui.component.library.artworkCacheFileStem
 import com.melox.player.ui.component.library.createArtworkCacheKey
@@ -395,7 +395,10 @@ class UiLogicTest {
 
         assertEquals(ThemeMode.SYSTEM, settings.themeMode)
         assertFalse(settings.dynamicColorEnabled)
+        assertTrue(settings.showSongListArtwork)
         assertTrue(settings.showSongListDuration)
+        assertFalse(settings.circularArtwork)
+        assertFalse(settings.showSongListFileName)
         assertEquals(DynamicColorSource.PLAYBACK_ARTWORK, settings.dynamicColorSource)
         assertEquals(
             PlaybackBackgroundStyle.BLURRED_ARTWORK,
@@ -2112,11 +2115,12 @@ class UiLogicTest {
     }
 
     @Test
-    fun fullPlayerStatusBarIconsFollowTheSharedLayerHandoff() {
-        assertFalse(playerSheetUsesFullPlayerStatusBar(0f))
-        assertFalse(playerSheetUsesFullPlayerStatusBar(PLAYER_LAYER_HANDOFF_END_PROGRESS))
-        assertTrue(playerSheetUsesFullPlayerStatusBar(PLAYER_LAYER_HANDOFF_END_PROGRESS + 0.001f))
-        assertTrue(playerSheetUsesFullPlayerStatusBar(1f))
+    fun fullPlayerStatusBarIconsSwitchAtNinetySixPercentInBothDirections() {
+        for (progress in listOf(0f, 0.2f, 0.959f, 0.96f, 0.961f, 1f, 0.96f, 0.959f, 0f)) {
+            assertEquals(progress >= 0.96f, playerSheetUsesFullPlayerStatusBar(progress))
+        }
+        assertFalse(playerSheetUsesFullPlayerStatusBar(0.959999f))
+        assertTrue(playerSheetUsesFullPlayerStatusBar(0.96f))
     }
 
     @Test

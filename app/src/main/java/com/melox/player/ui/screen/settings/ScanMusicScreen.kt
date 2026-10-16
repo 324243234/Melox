@@ -86,6 +86,7 @@ fun ScanMusicScreen(
     onAddCustomFolder: (Uri) -> Unit,
     onRemoveCustomFolder: (String) -> Unit,
     onOpenBlockedFolders: () -> Unit,
+    onOpenHiddenSongs: () -> Unit,
     onStartScan: () -> Unit,
     onClearMusicLibrary: () -> Unit,
 ) {
@@ -262,6 +263,10 @@ fun ScanMusicScreen(
                         ArrowPreference(
                             title = stringResource(R.string.scan_blocked_folder_title),
                             onClick = onOpenBlockedFolders,
+                        )
+                        ArrowPreference(
+                            title = stringResource(R.string.scan_hidden_songs_title),
+                            onClick = onOpenHiddenSongs,
                         )
                     }
                 }

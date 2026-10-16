@@ -10,6 +10,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.compose.NavigationBackHandler
+import androidx.navigationevent.compose.rememberNavigationEventState
 import androidx.navigationevent.NavigationEventDispatcher
 import androidx.navigationevent.NavigationEventDispatcherOwner
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
@@ -24,6 +27,9 @@ import top.yukonga.miuix.kmp.nav.core.rememberNavSystemCornerRadius
 import top.yukonga.miuix.kmp.nav.transition.NavTransitions
 import top.yukonga.miuix.kmp.nav.transition.NavSettleSpec
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+internal val LocalWindowBackDispatcherOwner =
+    compositionLocalOf<NavigationEventDispatcherOwner?> { null }
 
 internal val LocalOrdinaryBackDispatcherOwner =
     compositionLocalOf<NavigationEventDispatcherOwner?> { null }
@@ -49,6 +55,7 @@ fun PredictiveNavDisplay(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     backEnabled: Boolean = true,
+    withinPageBackEnabled: Boolean = false,
     content: NavEntryBuilder.() -> Unit,
 ) {
     val hasPreviousEntries = backStack.size > 1
@@ -90,9 +97,14 @@ fun PredictiveNavDisplay(
         }
     }
     val activeDispatcherOwner = dispatcherOwner.takeIf {
-        backEnabled && predictiveBackEnabled
+        backEnabled && predictiveBackEnabled && !withinPageBackEnabled
     }
         ?: disabledDispatcherOwner
+    NavigationBackHandler(
+        state = rememberNavigationEventState(NavigationEventInfo.None),
+        isBackEnabled = backEnabled && predictiveBackEnabled && withinPageBackEnabled,
+        onBackCompleted = onBack,
+    )
     BackHandler(
         enabled = ordinaryBackHandlerEnabled(
             predictiveBackEnabled = predictiveBackEnabled,
@@ -103,6 +115,7 @@ fun PredictiveNavDisplay(
     )
     CompositionLocalProvider(
         LocalNavigationEventDispatcherOwner provides activeDispatcherOwner,
+        LocalWindowBackDispatcherOwner provides dispatcherOwner.takeIf { backEnabled },
         LocalOrdinaryBackDispatcherOwner provides dispatcherOwner.takeIf {
             backEnabled && !predictiveBackEnabled
         },

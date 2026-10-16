@@ -79,6 +79,7 @@ import com.melox.player.R
 import com.melox.player.model.MusicTrack
 import com.melox.player.ui.component.BlurredBar
 import com.melox.player.ui.component.rememberBlurBackdrop
+import com.melox.player.ui.component.stableTopAppBarInsets
 import com.melox.player.ui.component.playback.sourceOverAlphas
 import com.melox.player.ui.screen.playback.rememberArtworkBlend
 import kotlinx.coroutines.launch
@@ -492,15 +493,18 @@ internal fun ArtworkPreviewOverlay(
                 blurEnabled = topBarBackdrop != null,
                 surfaceColor = toolbarSurfaceColor,
             ) {
+            val topBarColor = if (topBarBackdrop == null) toolbarSurfaceColor else Color.Transparent
             TopAppBar(
                 title = asset?.let { stringResource(R.string.artwork_dimensions, it.width, it.height) }
                     .orEmpty(),
-                modifier = Modifier.onGloballyPositioned {
-                    if (topAppBarState.heightOffset != topAppBarState.heightOffsetLimit) {
-                        topAppBarState.heightOffset = topAppBarState.heightOffsetLimit
+                modifier = Modifier
+                    .onGloballyPositioned {
+                        if (topAppBarState.heightOffset != topAppBarState.heightOffsetLimit) {
+                            topAppBarState.heightOffset = topAppBarState.heightOffsetLimit
+                        }
                     }
-                },
-                color = if (topBarBackdrop == null) toolbarSurfaceColor else Color.Transparent,
+                    .stableTopAppBarInsets(topBarColor),
+                color = topBarColor,
                 titleColor = previewContentColor,
                 largeTitleColor = previewContentColor,
                 scrollBehavior = topAppBarScrollBehavior,
