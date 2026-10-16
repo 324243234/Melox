@@ -2,7 +2,10 @@ package com.melox.player.ui.screen.library
 
 import com.melox.player.ui.component.library.LocalAlphabetIndexBottomPadding
 import com.melox.player.ui.component.library.PreserveSortScrollPosition
+import com.melox.player.ui.component.library.offsetSectionIndices
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import top.yukonga.miuix.kmp.utils.SinkFeedback
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -49,6 +52,8 @@ import com.melox.player.model.ScanStatus
 import com.melox.player.ui.component.library.AlphabetSections
 import com.melox.player.ui.component.library.AlphabetSideBar
 import top.yukonga.miuix.kmp.basic.Icon
+import com.melox.player.ui.component.PageCard
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -57,6 +62,7 @@ import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.ArrowRight
 import top.yukonga.miuix.kmp.icon.extended.Folder
+import top.yukonga.miuix.kmp.icon.extended.FolderFill
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
@@ -69,6 +75,7 @@ fun FolderLibraryScreen(
     scanStatus: ScanStatus,
     sortConfig: FolderSortConfig,
     onFolderClick: (FolderGroup) -> Unit,
+    onOpenInternalStorage: () -> Unit,
     onBlockFolder: (String) -> Unit = {},
     scrollBehavior: ScrollBehavior,
     indexTopPadding: Dp,
@@ -79,10 +86,11 @@ fun FolderLibraryScreen(
 ) {
     var pendingBlockFolder by remember { mutableStateOf<FolderGroup?>(null) }
     val layoutDirection = LocalLayoutDirection.current
+    val listSectionIndexMap = remember(sectionIndexMap) { offsetSectionIndices(sectionIndexMap, 1) }
     PreserveSortScrollPosition(
         sortKey = sortConfig,
         query = query,
-        itemCount = displayedFolders.size,
+        itemCount = maxOf(displayedFolders.size, 1) + 1,
         scrollState = listState,
     ) {
         listState.requestScrollToItem(
@@ -110,6 +118,24 @@ fun FolderLibraryScreen(
             ),
             overscrollEffect = null,
         ) {
+            item(key = "internal_storage") {
+                PageCard(
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(horizontal = 20.dp).padding(bottom = 12.dp),
+                ) {
+                    ArrowPreference(
+                        title = stringResource(R.string.folder_internal_storage),
+                        onClick = onOpenInternalStorage,
+                        startAction = {
+                            Icon(
+                                imageVector = MiuixIcons.FolderFill,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                            )
+                        },
+                    )
+                }
+            }
             if (displayedFolders.isEmpty()) {
                 item(key = "empty_folder") {
                     Box(
@@ -146,8 +172,8 @@ fun FolderLibraryScreen(
             query.isBlank()
         ) {
             AlphabetSideBar(
-                sectionIndexMap = sectionIndexMap,
-                itemCount = displayedFolders.size,
+                sectionIndexMap = listSectionIndexMap,
+                itemCount = displayedFolders.size + 1,
                 scrollStateKey = listState,
                 isAtTarget = { targetIndex ->
                     listState.firstVisibleItemIndex == targetIndex &&
@@ -177,15 +203,28 @@ fun FolderLibraryScreen(
         }
     }
 
+    FolderHideDialog(
+        folder = pendingBlockFolder,
+        onDismiss = { pendingBlockFolder = null },
+        onBlockFolder = onBlockFolder,
+    )
+}
+
+@Composable
+internal fun FolderHideDialog(
+    folder: FolderGroup?,
+    onDismiss: () -> Unit,
+    onBlockFolder: (String) -> Unit,
+) {
     OverlayDialog(
-        show = pendingBlockFolder != null,
+        show = folder != null,
         title = stringResource(R.string.folder_block_title),
         summary = stringResource(
             R.string.folder_block_message,
-            pendingBlockFolder?.path.orEmpty(),
+            folder?.path.orEmpty(),
         ),
         enableWindowDim = true,
-        onDismissRequest = { pendingBlockFolder = null },
+        onDismissRequest = onDismiss,
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -193,15 +232,15 @@ fun FolderLibraryScreen(
         ) {
             TextButton(
                 text = stringResource(R.string.clear_queue_confirm_cancel),
-                onClick = { pendingBlockFolder = null },
+                onClick = onDismiss,
                 modifier = Modifier.weight(1f),
             )
             Spacer(modifier = Modifier.width(20.dp))
             TextButton(
                 text = stringResource(R.string.clear_queue_confirm_confirm),
                 onClick = {
-                    val path = pendingBlockFolder?.path
-                    pendingBlockFolder = null
+                    val path = folder?.path
+                    onDismiss()
                     path?.let(onBlockFolder)
                 },
                 modifier = Modifier.weight(1f),
@@ -218,16 +257,23 @@ internal fun FolderListItem(
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier,
+    songCount: Int = folder.tracks.size,
 ) {
-    val songCount = pluralStringResource(
+    val interactionSource = remember { MutableInteractionSource() }
+    val songCountText = pluralStringResource(
         R.plurals.folder_song_count,
-        folder.tracks.size,
-        folder.tracks.size,
+        songCount,
+        songCount,
     )
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = SinkFeedback(),
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
             .padding(start = 30.dp, end = 28.dp, top = 16.dp, bottom = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(20.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -249,7 +295,7 @@ internal fun FolderListItem(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = songCount,
+                text = songCountText,
                 style = MiuixTheme.textStyles.footnote1.copy(fontSize = 12.sp),
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 maxLines = 1,
