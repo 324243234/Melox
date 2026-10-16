@@ -16,6 +16,8 @@ import com.kyant.taglib.TagLib
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
@@ -39,13 +41,23 @@ class LyricsRepository(context: Context) {
     private val contentResolver = context.applicationContext.contentResolver
 
     suspend fun load(request: LyricsRequest): LyricsDocument? {
+        var readFailure: Exception? = null
+        val failedSources = mutableSetOf<LyricsSource>()
         lyricsSourceOrder(request.sourcePriority).forEach { source ->
-            val document = when (source) {
-                LyricsSource.EMBEDDED -> readEmbedded(request)
-                LyricsSource.SIDECAR -> readSidecar(request)
+            try {
+                val document = when (source) {
+                    LyricsSource.EMBEDDED -> readEmbedded(request)
+                    LyricsSource.SIDECAR -> readSidecar(request)
+                }
+                if (document != null) return document
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (exception: Exception) {
+                readFailure = exception
+                failedSources += source
             }
-            if (document != null) return document
         }
+        readFailure?.let { throw LyricsReadException(failedSources, it) }
         return null
     }
 
@@ -60,92 +72,89 @@ class LyricsRepository(context: Context) {
             formatPriority = request.sidecarFormatPriority,
         )
         if (candidates.isEmpty()) return null
-        val directCandidates = readDirectSidecars(request.folderPath, candidates)
-        directCandidates.firstNotNullOfOrNull { (text, format) ->
-            LyricsParser.parse(
-                raw = text,
-                source = LyricsSource.SIDECAR,
-                preferredFormat = format,
-                durationMs = request.durationMs,
-            )
-        }?.let { return it }
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
-        val relativePath = request.folderPath.toRelativeMediaStorePath() ?: return null
-        val collection = request.contentUri.toMediaStoreFilesCollection() ?: return null
-        val candidateNames = candidates.mapTo(mutableSetOf()) { it.first }
-        val textByName = runCatching {
-            contentResolver.query(
-                collection,
-                arrayOf(
-                    MediaStore.Files.FileColumns._ID,
-                    MediaStore.Files.FileColumns.DISPLAY_NAME,
-                ),
-                "${MediaStore.Files.FileColumns.RELATIVE_PATH} = ?",
-                arrayOf(relativePath),
-                null,
-            )?.use { cursor ->
-                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
-                val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DISPLAY_NAME)
-                val result = mutableMapOf<String, String>()
-                while (cursor.moveToNext()) {
-                    val displayName = cursor.getString(nameColumn).orEmpty()
-                    if (displayName !in candidateNames || displayName in result) continue
-                    val uri = ContentUris.withAppendedId(collection, cursor.getLong(idColumn))
-                    readText(uri)?.let { result[displayName] = it }
-                }
-                result
+        var directReadFailure: Exception? = null
+        val directDocument = readFirstSidecar(candidates, request.durationMs) { name ->
+            try {
+                readDirectSidecar(request.folderPath, name)
+            } catch (exception: Exception) {
+                directReadFailure = exception
+                null
             }
-        }.getOrNull().orEmpty()
-        return candidates.firstNotNullOfOrNull { (name, format) ->
-            val text = textByName[name] ?: return@firstNotNullOfOrNull null
-            LyricsParser.parse(
-                raw = text,
-                source = LyricsSource.SIDECAR,
-                preferredFormat = format,
-                durationMs = request.durationMs,
-            )
         }
+        if (directDocument != null) return directDocument
+        val relativePath = request.folderPath.toRelativeMediaStorePath()
+        val collection = request.contentUri.toMediaStoreFilesCollection()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            relativePath == null || collection == null
+        ) {
+            directReadFailure?.let { throw it }
+            return null
+        }
+        val candidateNames = candidates.map { it.first }
+        val cursor = contentResolver.query(
+            collection,
+            arrayOf(MediaStore.Files.FileColumns._ID, MediaStore.Files.FileColumns.DISPLAY_NAME),
+            "${MediaStore.Files.FileColumns.RELATIVE_PATH} = ? AND " +
+                "${MediaStore.Files.FileColumns.DISPLAY_NAME} IN (${candidateNames.joinToString { "?" }})",
+            (listOf(relativePath) + candidateNames).toTypedArray(),
+            null,
+        ) ?: throw IOException("Unable to query lyric sidecars")
+        val uriByName = cursor.use {
+            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
+            val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DISPLAY_NAME)
+            buildMap {
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(nameColumn).orEmpty()
+                    if (name in candidateNames && name !in this) {
+                        put(name, ContentUris.withAppendedId(collection, cursor.getLong(idColumn)))
+                    }
+                }
+            }
+        }
+        var indexedReadFailure: Exception? = null
+        val indexedDocument = readFirstSidecar(candidates, request.durationMs) { name ->
+            uriByName[name]?.let { uri ->
+                try {
+                    readText(uri)
+                } catch (exception: Exception) {
+                    indexedReadFailure = exception
+                    null
+                }
+            }
+        }
+        if (indexedDocument != null) return indexedDocument
+        (indexedReadFailure ?: directReadFailure)?.let { throw it }
+        return null
     }
 
     @Suppress("DEPRECATION")
-    private fun readDirectSidecars(
-        folderPath: String?,
-        candidates: List<Pair<String, LyricsFormat>>,
-    ): List<Pair<String, LyricsFormat>> {
-        val path = folderPath ?: return emptyList()
+    private fun readDirectSidecar(folderPath: String?, name: String): String? {
+        val path = folderPath ?: return null
         val directory = when {
-            path.startsWith("/storage/") ||
-                path.startsWith("/sdcard/") ||
+            path.startsWith("/storage/") || path.startsWith("/sdcard/") ||
                 path.startsWith("/mnt/") -> File(path)
             else -> File(Environment.getExternalStorageDirectory(), path.trimStart('/'))
-        }
-        val canonicalDirectory = runCatching { directory.canonicalFile }.getOrNull()
-            ?: return emptyList()
-        return candidates.mapNotNull { (name, format) ->
-            val file = runCatching { File(canonicalDirectory, name).canonicalFile }.getOrNull()
-                ?.takeIf { it.parentFile == canonicalDirectory }
-                ?: return@mapNotNull null
-            val text = runCatching {
-                if (file.isFile && file.length() in 1..MAX_SIDECAR_BYTES) {
-                    file.inputStream().use(::readBounded)
-                } else {
-                    null
-                }
-            }.getOrNull()
-            text?.let { it to format }
-        }
+        }.canonicalFile
+        val file = File(directory, name).canonicalFile
+        if (file.parentFile != directory || !file.isFile ||
+            file.length() !in 1..MAX_SIDECAR_BYTES
+        ) return null
+        return file.inputStream().use(::readBounded)
     }
 
-    private fun readText(uri: Uri): String? = runCatching {
-        contentResolver.openInputStream(uri)?.use(::readBounded)
-    }.getOrNull()
+    private fun readText(uri: Uri): String? =
+        (contentResolver.openInputStream(uri) ?: throw IOException("Unable to open lyric sidecar"))
+            .use(::readBounded)
 
-    private fun readTagLibLyrics(contentUri: String): List<String> = runCatching {
-        contentResolver.openFileDescriptor(Uri.parse(contentUri), "r")?.use { descriptor ->
-            val properties = TagLib.getMetadata(descriptor.dup().detachFd(), false)?.propertyMap.orEmpty()
-            embeddedLyricsCandidates(properties)
-        }.orEmpty()
-    }.getOrDefault(emptyList())
+    private fun readTagLibLyrics(contentUri: String): List<String> {
+        val descriptor = contentResolver.openFileDescriptor(Uri.parse(contentUri), "r")
+            ?: throw IOException("Unable to open embedded lyrics")
+        return descriptor.use {
+            val metadata = TagLib.getMetadata(descriptor.dup().detachFd(), false)
+                ?: throw IOException("Unable to read embedded lyrics")
+            embeddedLyricsCandidates(metadata.propertyMap.orEmpty())
+        }
+    }
 
     private fun readBounded(input: InputStream): String? {
         val output = ByteArrayOutputStream()
@@ -215,6 +224,11 @@ class LyricsRepository(context: Context) {
     }
 }
 
+internal class LyricsReadException(
+    val failedSources: Set<LyricsSource>,
+    cause: Exception,
+) : IOException("Unable to read lyrics", cause)
+
 private const val MAX_EMBEDDED_CHARS = 2 * 1024 * 1024
 private val LYRICS_KEYS = setOf(
     "LYRICS", "SYNCEDLYRICS", "UNSYNCEDLYRICS", "USLT", "SYLT", "LYRIC",
@@ -269,4 +283,15 @@ internal fun exactLyricsSidecarCandidates(
 internal fun lyricsSourceOrder(priority: LyricsSourcePriority): List<LyricsSource> = when (priority) {
     LyricsSourcePriority.EMBEDDED -> listOf(LyricsSource.EMBEDDED, LyricsSource.SIDECAR)
     LyricsSourcePriority.SIDECAR -> listOf(LyricsSource.SIDECAR, LyricsSource.EMBEDDED)
+}
+
+/** Reads only as far as the first parseable sidecar in the user's format order. */
+internal fun readFirstSidecar(
+    candidates: List<Pair<String, LyricsFormat>>,
+    durationMs: Long,
+    read: (String) -> String?,
+): LyricsDocument? = candidates.firstNotNullOfOrNull { (name, format) ->
+    read(name)?.let { text ->
+        LyricsParser.parse(text, LyricsSource.SIDECAR, format, durationMs)
+    }
 }

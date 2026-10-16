@@ -38,7 +38,7 @@ class EmbeddedLyricsReadTest {
     }
 
     @Test
-    fun wordLyricsAliasesTakePriorityOverPlainLyricsLikeHalcyon() {
+    fun wordLyricsAliasesTakePriorityOverPlainLyrics() {
         for (key in listOf("TTML", "TTML LYRICS", "TTML_LYRIC", "TXXX:TTML", "ttmllyrics")) {
             val candidates = embeddedLyricsCandidates(linkedMapOf(
                 "LYRICS" to arrayOf(lineLyrics),
