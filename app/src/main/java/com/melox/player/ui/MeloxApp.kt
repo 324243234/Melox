@@ -21,6 +21,7 @@ import androidx.compose.animation.core.AnimationState
 import androidx.compose.animation.core.animateTo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,7 +43,6 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.animation.AnimatedVisibility
@@ -126,6 +126,7 @@ import com.melox.player.model.normalizeCustomBackgroundDimPercent
 import com.melox.player.model.DefaultHomePage
 import com.melox.player.model.DynamicColorSource
 import com.melox.player.model.PlaybackBackgroundStyle
+import com.melox.player.model.usesDarkPlaybackBackground
 import com.melox.player.model.ScanStatus
 import com.melox.player.model.ThemeMode
 import com.melox.player.model.MusicTrack
@@ -217,6 +218,8 @@ import com.melox.player.ui.screen.settings.LyricsInterfaceSettingsScreen
 import com.melox.player.ui.screen.settings.BlockedFoldersScreen
 import com.melox.player.ui.viewmodel.MeloxViewModel
 import com.melox.player.ui.theme.MeloxTheme
+import com.melox.player.ui.theme.rememberPlaybackContentColor
+import com.melox.player.ui.component.library.LocalSongListDurationVisible
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.InputField
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -397,6 +400,13 @@ fun MeloxApp(
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
+    val dynamicFlowDark = settings.dynamicFlowStyle.isDark(systemDark)
+    val playerBackgroundDark = usesDarkPlaybackBackground(
+        backgroundStyle = settings.playbackBackgroundStyle,
+        dynamicFlowDark = dynamicFlowDark,
+        appDark = isDark,
+        hasItem = compactPlayback.currentItem != null,
+    )
     val dynamicFlowBackgroundState = rememberDynamicFlowBackgroundState()
     PlaybackArtworkPrefetchEffect(
         viewModel = viewModel,
@@ -486,7 +496,8 @@ fun MeloxApp(
     var showQueue by rememberSaveable { mutableStateOf(false) }
     val playerTransition = rememberPlayerSheetTransitionState()
     var playerContentBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
-    val sharedPlayerArtworkEnabled = playerTransition.fullPlayerArtworkPageSelected
+    val sharedPlayerArtworkEnabled = compactPlayback.currentItem != null &&
+        playerTransition.fullPlayerArtworkPageSelected
     val miniPlayerLayer = rememberGraphicsLayer()
     val miniPlayerContentLayer = rememberGraphicsLayer()
     val miniPlayerHighlightScope = rememberCoroutineScope()
@@ -561,15 +572,12 @@ fun MeloxApp(
     val playerUsesFullPlayerStatusBar = playerSheetUsesFullPlayerStatusBar(
         progress = playerTransition.progress,
     )
-    val statusBarUsesDarkMode = if (playerUsesFullPlayerStatusBar) {
-        playerStatusBarBackgroundIsDark
-    } else {
-        isDark
-    }
-
-    LaunchedEffect(currentTrackId, isDark) {
-        playerStatusBarBackgroundIsDark = isDark
-    }
+    val statusBarUsesDarkMode = if (playerUsesFullPlayerStatusBar) playerBackgroundDark else isDark
+    val navigationBarUsesDarkMode = if (
+        playerUsesFullPlayerStatusBar &&
+            (settings.playbackBackgroundStyle == PlaybackBackgroundStyle.DYNAMIC_FLOW ||
+                compactPlayback.currentItem == null)
+    ) playerBackgroundDark else isDark
     LaunchedEffect(uiState.settingsLoaded) {
         if (uiState.settingsLoaded && !libraryPreferencesHydrated) {
             musicSortFieldOrdinal = settings.musicSortFieldOrdinal
@@ -727,7 +735,7 @@ fun MeloxApp(
         settings = settings,
         playbackArtworkColor = playbackArtworkColor,
     ) {
-        DisposableEffect(activity, isDark, statusBarUsesDarkMode) {
+        DisposableEffect(activity, navigationBarUsesDarkMode, statusBarUsesDarkMode) {
             val componentActivity = activity as? ComponentActivity
             val statusBarStyle = SystemBarStyle.auto(
                 Color.TRANSPARENT,
@@ -736,7 +744,7 @@ fun MeloxApp(
             val navigationBarStyle = SystemBarStyle.auto(
                 Color.TRANSPARENT,
                 Color.TRANSPARENT,
-            ) { isDark }
+            ) { navigationBarUsesDarkMode }
             componentActivity?.enableEdgeToEdge(
                 statusBarStyle = statusBarStyle,
                 navigationBarStyle = navigationBarStyle,
@@ -1616,6 +1624,7 @@ fun MeloxApp(
         }
         CompositionLocalProvider(
             LocalCustomPageBackground provides customPageBackground,
+            LocalSongListDurationVisible provides settings.showSongListDuration,
             LocalCustomBackgroundDimAlpha provides
                 (normalizeCustomBackgroundDimPercent(customBackgroundDimPreview ?: settings.customBackgroundDimPercent) / 100f),
             LocalPageCardBlurRadius provides pageCardBlurRadius(
@@ -1840,6 +1849,10 @@ fun MeloxApp(
                                                                 viewModel::setDynamicColorSource,
                                                             onPlaybackBackgroundStyleChange =
                                                                 viewModel::setPlaybackBackgroundStyle,
+                                                            onDynamicFlowStyleChange =
+                                                                viewModel::setDynamicFlowStyle,
+                                                            onShowSongListDurationChange =
+                                                                viewModel::setShowSongListDuration,
                                                             onBlurChange =
                                                                 viewModel::setBlurEnabled,
                                                             onProgressiveTopBarBlurChange =
@@ -2296,6 +2309,13 @@ fun MeloxApp(
                             playbackBackgroundStyle =
                                 settings.playbackBackgroundStyle,
                             dynamicFlowBackgroundState = dynamicFlowBackgroundState,
+                            playbackBackgroundDark = playerBackgroundDark,
+                            playbackContentColor = rememberPlaybackContentColor(
+                                settings = settings,
+                                playbackArtworkColor = playbackArtworkColor,
+                                backgroundDark = playerBackgroundDark,
+                                hasItem = compactPlayback.currentItem != null,
+                            ),
                             lyricFontScale = settings.lyricFontScale,
                             lyricFontWeight = settings.lyricFontWeight,
                             lyricAnimationMode = settings.lyricAnimationMode,
@@ -2386,7 +2406,7 @@ fun MeloxApp(
                     }
                     PlayerSheetDragInputOverlay(
                         transition = playerTransition,
-                        hasItem = compactPlayback.currentItem != null,
+                        hasItem = true,
                         modifier = Modifier.zIndex(2f),
                     )
                     PlayerSheetMiniControlsInputOverlay(
@@ -2506,6 +2526,8 @@ private fun FullPlayerHost(
     artistGroups: List<ArtistGroup>,
     playbackBackgroundStyle: PlaybackBackgroundStyle,
     dynamicFlowBackgroundState: DynamicFlowBackgroundState,
+    playbackBackgroundDark: Boolean,
+    playbackContentColor: androidx.compose.ui.graphics.Color,
     lyricFontScale: Float,
     lyricFontWeight: Int,
     lyricAnimationMode: LyricAnimationMode,
@@ -2561,6 +2583,8 @@ private fun FullPlayerHost(
         lyrics = lyrics,
         playbackBackgroundStyle = playbackBackgroundStyle,
         dynamicFlowBackgroundState = dynamicFlowBackgroundState,
+        playbackBackgroundDark = playbackBackgroundDark,
+        playbackContentColor = playbackContentColor,
         lyricFontScale = lyricFontScale,
         lyricFontWeight = lyricFontWeight,
         lyricAnimationMode = lyricAnimationMode,

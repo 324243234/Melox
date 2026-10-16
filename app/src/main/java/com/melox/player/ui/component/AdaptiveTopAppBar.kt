@@ -20,10 +20,11 @@ internal fun AdaptiveTopAppBar(
     actions: @Composable RowScope.() -> Unit = {},
     bottomContent: @Composable () -> Unit = {},
 ) {
+    val barModifier = modifier.stableTopAppBarInsets(color)
     if (usesMiuixSmallTopAppBar()) {
         SmallTopAppBar(
             title = title,
-            modifier = modifier,
+            modifier = barModifier,
             color = color,
             navigationIcon = navigationIcon,
             actions = actions,
@@ -33,7 +34,7 @@ internal fun AdaptiveTopAppBar(
     } else {
         TopAppBar(
             title = title,
-            modifier = modifier,
+            modifier = barModifier,
             color = color,
             navigationIcon = navigationIcon,
             actions = actions,

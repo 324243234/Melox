@@ -36,6 +36,7 @@ import com.melox.player.model.normalizeCustomBackgroundCardOpacityPercent
 import com.melox.player.model.BottomBarStyle
 import com.melox.player.model.DefaultHomePage
 import com.melox.player.model.DynamicColorSource
+import com.melox.player.model.DynamicFlowStyle
 import com.melox.player.model.LyricsSidecarFormatPriority
 import com.melox.player.model.LyricsSourcePriority
 import com.melox.player.model.NavigationTransitionStyle
@@ -109,6 +110,14 @@ class SettingsRepository(context: Context) {
                         )
                     }
                     ?: PlaybackBackgroundStyle.BLURRED_ARTWORK,
+                dynamicFlowStyle = preferences[Keys.DynamicFlowStyle]
+                    ?.let { enumValueOrDefault(it, DynamicFlowStyle.SYSTEM) }
+                    ?: DynamicFlowStyle.SYSTEM,
+                showSongListArtwork = preferences[Keys.ShowSongListArtwork] ?: true,
+                circularArtwork = preferences[Keys.CircularArtwork] ?: false,
+                artworkFlipAnimation = preferences[Keys.ArtworkFlipAnimation] ?: false,
+                showSongListFileName = preferences[Keys.ShowSongListFileName] ?: false,
+                showSongListDuration = preferences[Keys.ShowSongListDuration] ?: true,
                 playbackSpeed = preferences[Keys.PlaybackSpeed]
                     ?.let(::normalizePlaybackSpeed) ?: 1f,
                 highPrecisionOutput = preferences[Keys.HighPrecisionOutput] ?: false,
@@ -151,6 +160,8 @@ class SettingsRepository(context: Context) {
                     preferences[Keys.ProgressiveTopBarBlurEnabled] ?: false,
                 smallPlayerBar = preferences[Keys.SmallPlayerBar] ?: false,
                 hideBottomBar = preferences[Keys.HideBottomBar] ?: false,
+                immersiveMode = preferences[Keys.ImmersiveMode] ?: false,
+                hideStatusBar = preferences[Keys.HideStatusBar] ?: false,
                 floatingBottomBar = preferences[Keys.FloatingBottomBar]
                     ?: (preferences[Keys.BottomBarStyle] != null &&
                         preferences[Keys.BottomBarStyle] != BottomBarStyle.NORMAL.name),
@@ -175,6 +186,7 @@ class SettingsRepository(context: Context) {
                     ?.distinctBy { it.lowercase() }
                     ?.sorted()
                     ?: emptyList(),
+                hiddenTrackUris = preferences[Keys.HiddenTrackUris].orEmpty(),
                 libraryTabIndex = preferences[Keys.LibraryTabIndex]
                     ?.coerceIn(0, LIBRARY_TAB_COUNT - 1)
                     ?: 0,
@@ -296,6 +308,32 @@ class SettingsRepository(context: Context) {
         dataStore.edit { preferences ->
             preferences[Keys.PlaybackBackgroundStyle] = style.name
         }
+    }
+
+    suspend fun setDynamicFlowStyle(style: DynamicFlowStyle) {
+        dataStore.edit { preferences ->
+            preferences[Keys.DynamicFlowStyle] = style.name
+        }
+    }
+
+    suspend fun setShowSongListArtwork(enabled: Boolean) {
+        dataStore.edit { it[Keys.ShowSongListArtwork] = enabled }
+    }
+
+    suspend fun setCircularArtwork(enabled: Boolean) {
+        dataStore.edit { it[Keys.CircularArtwork] = enabled }
+    }
+
+    suspend fun setArtworkFlipAnimation(enabled: Boolean) {
+        dataStore.edit { it[Keys.ArtworkFlipAnimation] = enabled }
+    }
+
+    suspend fun setShowSongListFileName(enabled: Boolean) {
+        dataStore.edit { it[Keys.ShowSongListFileName] = enabled }
+    }
+
+    suspend fun setShowSongListDuration(enabled: Boolean) {
+        dataStore.edit { it[Keys.ShowSongListDuration] = enabled }
     }
 
     suspend fun setPlaybackSpeed(speed: Float) {
@@ -425,6 +463,18 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    suspend fun setImmersiveMode(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.ImmersiveMode] = enabled
+        }
+    }
+
+    suspend fun setHideStatusBar(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.HideStatusBar] = enabled
+        }
+    }
+
     suspend fun setFloatingBottomBar(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[Keys.FloatingBottomBar] = enabled
@@ -484,6 +534,12 @@ class SettingsRepository(context: Context) {
     suspend fun setBlockedFolderPaths(paths: List<String>) {
         dataStore.edit { preferences ->
             preferences[Keys.BlockedFolderPaths] = paths.toSet()
+        }
+    }
+
+    suspend fun setHiddenTrackUris(contentUris: Set<String>) {
+        dataStore.edit { preferences ->
+            preferences[Keys.HiddenTrackUris] = contentUris
         }
     }
 
@@ -562,6 +618,12 @@ class SettingsRepository(context: Context) {
         val CustomBackgroundCardOpacityPercent = intPreferencesKey("custom_background_card_opacity_percent")
         val DynamicColorSource = stringPreferencesKey("dynamic_color_source")
         val PlaybackBackgroundStyle = stringPreferencesKey("playback_background_style")
+        val DynamicFlowStyle = stringPreferencesKey("dynamic_flow_style")
+        val ShowSongListArtwork = booleanPreferencesKey("show_song_list_artwork")
+        val CircularArtwork = booleanPreferencesKey("circular_artwork")
+        val ArtworkFlipAnimation = booleanPreferencesKey("artwork_flip_animation")
+        val ShowSongListFileName = booleanPreferencesKey("show_song_list_file_name")
+        val ShowSongListDuration = booleanPreferencesKey("show_song_list_duration")
         val PlaybackSpeed = floatPreferencesKey("playback_speed")
         val HighPrecisionOutput = booleanPreferencesKey("high_precision_output")
         val SleepTimerSeconds = intPreferencesKey("sleep_timer_seconds")
@@ -590,6 +652,8 @@ class SettingsRepository(context: Context) {
         val NavigationRailExpanded = booleanPreferencesKey("navigation_rail_expanded")
         val SmallPlayerBar = booleanPreferencesKey("small_player_bar")
         val HideBottomBar = booleanPreferencesKey("hide_bottom_bar")
+        val ImmersiveMode = booleanPreferencesKey("immersive_mode")
+        val HideStatusBar = booleanPreferencesKey("hide_status_bar")
         val LiquidGlass = booleanPreferencesKey("liquid_glass")
         val PredictiveBackEnabled = booleanPreferencesKey("predictive_back_enabled")
         val NavigationTransitionStyle = stringPreferencesKey("navigation_transition_style")
@@ -597,6 +661,7 @@ class SettingsRepository(context: Context) {
         val SkipShortAudio = booleanPreferencesKey("skip_short_audio")
         val CustomFolderUris = stringSetPreferencesKey("custom_folder_uris")
         val BlockedFolderPaths = stringSetPreferencesKey("blocked_folder_paths")
+        val HiddenTrackUris = stringSetPreferencesKey("hidden_track_uris")
         val DefaultHomePage = stringPreferencesKey("default_home_page")
         val LibraryTabIndex = intPreferencesKey("library_tab_index")
         val MusicSortField = intPreferencesKey("music_sort_field")

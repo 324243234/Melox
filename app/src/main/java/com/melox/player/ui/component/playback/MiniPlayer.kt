@@ -215,7 +215,7 @@ internal fun MiniPlayer(
     }
     val expansionGestureModifier = rememberPlayerSheetVerticalDragModifier(
         enabled = true,
-        hasItem = hasItem,
+        hasItem = true,
         onDragStart = { onPlayerDragStart(pressScale()) },
         onDrag = { onPlayerDrag(it, pressScale()) },
         onDragEnd = { onPlayerDragEnd(it, pressScale()) },

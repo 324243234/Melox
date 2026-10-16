@@ -179,6 +179,7 @@
     <string name="folder_block_title">Hide folder</string>
     <string name="folder_block_message">Hide all songs in folder %1$s?</string>
     <string name="hidden_folder_save_error">Could not save hidden folders</string>
+    <string name="playlist_save_error">Could not save playlist changes. Retrying.</string>
     <plurals name="folder_song_count">
         <item quantity="one">%1$d song</item>
         <item quantity="other">%1$d songs</item>
@@ -200,6 +201,8 @@
     <string name="notification_close">Close</string>
     <string name="playback_mode_one_badge" translatable="false">1</string>
     <string name="track_actions">Song actions</string>
+    <string name="music_hide_song">Hide song</string>
+    <string name="music_delete_song">Delete song</string>
     <string name="open_queue">Open queue</string>
     <string name="playback_queue">Playback queue</string>
     <string name="clear_queue">Clear</string>
@@ -215,7 +218,13 @@
     <string name="back">Back</string>
     <string name="close">Close</string>
 
-    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_section_appearance">Main screen</string>
+    <string name="settings_interface_style_title">Interface style</string>
+    <string name="settings_immersive_mode_title">Immersive mode</string>
+    <string name="settings_immersive_mode_summary">Hide the status bar and simplify the player. Long-press Play/Pause in the player to toggle this mode</string>
+    <string name="settings_hide_status_bar_title">Hide status bar</string>
+    <string name="player_immersive_mode_enable">Enable immersive mode</string>
+    <string name="player_immersive_mode_disable">Disable immersive mode</string>
     <string name="settings_section_personalization">Personalization</string>
     <string name="settings_section_other">Other</string>
     <string name="settings_section_navigation">Navigation and animation</string>
@@ -232,8 +241,18 @@
     <string name="theme_mode_light">Light mode</string>
     <string name="theme_mode_dark">Dark mode</string>
     <string name="settings_playback_background_title">Playback background</string>
+    <string name="settings_section_playback_interface">Playback interface</string>
+    <string name="settings_circular_artwork_title">Circular artwork</string>
+    <string name="settings_artwork_flip_animation_title">Artwork flip animation</string>
+    <string name="settings_section_song_list">Song list</string>
+    <string name="settings_song_list_artwork_title">Show song artwork in lists</string>
+    <string name="settings_song_list_file_name_title">Show song filenames in lists</string>
+    <string name="settings_song_list_duration_title">Show song duration in lists</string>
     <string name="settings_playback_background_blurred_artwork">Blurred artwork</string>
     <string name="settings_playback_background_dynamic_flow">Dynamic flow</string>
+    <string name="settings_dynamic_flow_style_title">Flow style</string>
+    <string name="settings_dynamic_flow_light">Light flow</string>
+    <string name="settings_dynamic_flow_dark">Dark flow</string>
     <string name="settings_dynamic_color_title">Dynamic colors</string>
     <string name="settings_dynamic_color_summary">Adjust app colors based on the selected source</string>
     <string name="settings_dynamic_color_unsupported">Dynamic colors require Android 12 or later</string>
@@ -249,7 +268,8 @@
     <string name="settings_liquid_glass_title">Liquid glass</string>
     <string name="settings_liquid_glass_summary">Use refractive glass for the floating bottom bar</string>
     <string name="settings_small_player_bar_title">Small player bar</string>
-    <string name="settings_hide_bottom_bar_title">Hide bottom bar</string>
+    <string name="settings_hide_bottom_bar_title">Always hide bottom bar</string>
+    <string name="settings_hide_bottom_bar_summary">When the bottom bar is hidden, swipe to switch pages on the main screen</string>
     <string name="settings_predictive_back_title">Predictive back gesture</string>
     <string name="settings_navigation_transition_style_title">Transition style</string>
     <string name="settings_navigation_transition_style_miuix">Miuix</string>
@@ -378,4 +398,19 @@
     <string name="sponsor_code_description">Sponsorship code</string>
     <string name="playlist_move_earlier">Move earlier</string>
     <string name="playlist_move_later">Move later</string>
+    <string name="scan_hidden_songs_title">Hidden songs</string>
+    <string name="hidden_songs_empty">No hidden songs</string>
+    <string name="music_restore_song">Restore visibility</string>
+    <string name="hidden_songs_restore_all">Restore all</string>
+    <plurals name="hidden_songs_restore_all_confirm">
+        <item quantity="one">Restore visibility for the %1$d hidden song?</item>
+        <item quantity="other">Restore visibility for all %1$d hidden songs?</item>
+    </plurals>
+    <string name="hidden_song_save_error">Could not save hidden songs</string>
+    <string name="music_hide_confirm">Hide %1$s? It will be removed from the song list and playback queue. The file will be kept.</string>
+    <string name="music_delete_confirm">Permanently delete %1$s? The source file will be deleted and cannot be recovered.</string>
+    <string name="music_delete_failed">Could not delete the song file</string>
+    <string name="music_cache_save_error">Unable to update the music cache. Melox will retry.</string>
+    <string name="music_delete_write_access">Select the folder containing this song to allow file deletion</string>
+    <string name="folder_internal_storage">Internal storage</string>
 </resources>

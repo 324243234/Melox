@@ -213,8 +213,7 @@ internal fun PlayerDetails(
                     tint = emphasisControlColor,
                     iconSize = PLAYER_SIDE_CONTROL_ICON_SIZE,
                     touchSize = PLAYER_SIDE_CONTROL_TOUCH_SIZE,
-                    enabled = playback.currentItem != null,
-                    onClick = onPrevious,
+                    onClick = { playback.currentItem != null && onPrevious() },
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .offset(x = layout.previousTouchOffset),
@@ -222,7 +221,9 @@ internal fun PlayerDetails(
                 AnimatedPlayPauseButton(
                     playWhenReady = playback.playWhenReady,
                     tint = emphasisControlColor,
-                    onClick = onTogglePlayPause,
+                    onClick = {
+                        if (playback.currentItem != null) onTogglePlayPause()
+                    },
                     onLongClick = onToggleImmersiveMode,
                     onLongClickLabel = stringResource(
                         if (immersiveMode) R.string.player_immersive_mode_disable
@@ -237,8 +238,7 @@ internal fun PlayerDetails(
                     tint = emphasisControlColor,
                     iconSize = PLAYER_SIDE_CONTROL_ICON_SIZE,
                     touchSize = PLAYER_SIDE_CONTROL_TOUCH_SIZE,
-                    enabled = playback.currentItem != null,
-                    onClick = onNext,
+                    onClick = { playback.currentItem != null && onNext() },
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .offset(x = layout.nextTouchOffset),

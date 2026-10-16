@@ -47,6 +47,9 @@ class MeloxInstrumentedTest {
         try {
             repository.setThemeMode(ThemeMode.DARK)
             repository.setDynamicColorEnabled(true)
+            repository.setShowSongListArtwork(false)
+            repository.setCircularArtwork(true)
+            repository.setShowSongListFileName(true)
             repository.setBlurEnabled(false)
             repository.setProgressiveTopBarBlurEnabled(true)
             repository.setHideBottomBar(true)
@@ -58,6 +61,9 @@ class MeloxInstrumentedTest {
             val restored = repository.loadSettings()
             assertEquals(ThemeMode.DARK, restored.themeMode)
             assertEquals(true, restored.dynamicColorEnabled)
+            assertEquals(false, restored.showSongListArtwork)
+            assertEquals(true, restored.circularArtwork)
+            assertEquals(true, restored.showSongListFileName)
             assertEquals(false, restored.blurEnabled)
             assertEquals(true, restored.progressiveTopBarBlurEnabled)
             assertEquals(true, restored.hideBottomBar)
@@ -71,6 +77,9 @@ class MeloxInstrumentedTest {
         } finally {
             repository.setThemeMode(original.themeMode)
             repository.setDynamicColorEnabled(original.dynamicColorEnabled)
+            repository.setShowSongListArtwork(original.showSongListArtwork)
+            repository.setCircularArtwork(original.circularArtwork)
+            repository.setShowSongListFileName(original.showSongListFileName)
             repository.setBlurEnabled(original.blurEnabled)
             repository.setProgressiveTopBarBlurEnabled(
                 original.progressiveTopBarBlurEnabled,
@@ -80,6 +89,38 @@ class MeloxInstrumentedTest {
             repository.setLiquidGlass(original.liquidGlass)
             repository.setPredictiveBackEnabled(original.predictiveBackEnabled)
             repository.setNavigationTransitionStyle(original.navigationTransitionStyle)
+        }
+    }
+
+    @Test
+    fun immersiveAndStatusBarPreferencesPersistIndependently() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = SettingsRepository(context)
+        val original = repository.loadSettings()
+        try {
+            repository.setHideControlsOnLyrics(true)
+            repository.setHideStatusBar(true)
+            repository.setImmersiveMode(true)
+            repository.setImmersiveMode(false)
+            val afterImmersion = SettingsRepository(context).loadSettings()
+            assertEquals(false, afterImmersion.immersiveMode)
+            assertEquals(true, afterImmersion.hideStatusBar)
+            assertEquals(true, afterImmersion.statusBarHidden)
+            assertEquals(true, afterImmersion.hideControlsOnLyrics)
+
+            repository.setImmersiveMode(true)
+            repository.setHideStatusBar(false)
+            val afterStatusBar = SettingsRepository(context).loadSettings()
+            assertEquals(true, afterStatusBar.immersiveMode)
+            assertEquals(false, afterStatusBar.hideStatusBar)
+            assertEquals(true, afterStatusBar.statusBarHidden)
+
+            repository.setImmersiveMode(false)
+            assertEquals(false, SettingsRepository(context).loadSettings().statusBarHidden)
+        } finally {
+            repository.setImmersiveMode(original.immersiveMode)
+            repository.setHideStatusBar(original.hideStatusBar)
+            repository.setHideControlsOnLyrics(original.hideControlsOnLyrics)
         }
     }
 

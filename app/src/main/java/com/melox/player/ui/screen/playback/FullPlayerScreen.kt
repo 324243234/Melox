@@ -17,6 +17,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.MarqueeSpacing
+import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -168,6 +169,8 @@ import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.theme.darkColorScheme
+import top.yukonga.miuix.kmp.theme.lightColorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 
 @Composable
@@ -178,6 +181,8 @@ internal fun FullPlayerScreen(
     lyrics: LyricsUiState,
     playbackBackgroundStyle: PlaybackBackgroundStyle,
     dynamicFlowBackgroundState: DynamicFlowBackgroundState,
+    playbackBackgroundDark: Boolean,
+    playbackContentColor: Color,
     lyricFontScale: Float,
     lyricFontWeight: Int,
     lyricAnimationMode: LyricAnimationMode,
@@ -289,7 +294,7 @@ internal fun FullPlayerScreen(
     val onArtworkDisplaySizeChanged: (Int) -> Unit = { sizePx ->
         artworkDisplaySizePx = sizePx
     }
-    val emphasisControlColor = Color.White
+    val emphasisControlColor = playbackContentColor
     val controlColor = emphasisControlColor.copy(alpha = 0.6f)
     val artistControlColor = emphasisControlColor.copy(
         alpha = 0.6f,
@@ -405,7 +410,7 @@ internal fun FullPlayerScreen(
         }
     }
     val pagerState = rememberPagerState(
-        initialPage = if (initialArtworkPageSelected) 0 else 1,
+        initialPage = if (initialArtworkPageSelected || item == null) 0 else 1,
         pageCount = { 2 },
     )
     LaunchedEffect(lyricFontScale) {
@@ -437,7 +442,7 @@ internal fun FullPlayerScreen(
     }
     val dismissGestureModifier = rememberPlayerSheetVerticalDragModifier(
         enabled = interactionEnabled,
-        hasItem = item != null,
+        hasItem = true,
         onDragStart = onPlayerDragStart,
         onDrag = onPlayerDrag,
         onDragEnd = onPlayerDragEnd,
@@ -484,7 +489,20 @@ internal fun FullPlayerScreen(
                         onRecorded = onBackgroundLayerRecorded,
                     ),
             ) {
-                when (playbackBackgroundStyle) {
+                if (item == null) {
+                    val emptyBackground = if (playbackBackgroundStyle == PlaybackBackgroundStyle.BLURRED_ARTWORK) {
+                        if (playbackBackgroundDark) MiuixTheme.colorScheme.surface
+                        else MiuixTheme.colorScheme.background
+                    } else {
+                        remember(playbackBackgroundDark) {
+                            if (playbackBackgroundDark) darkColorScheme().surface
+                            else lightColorScheme().background
+                        }
+                    }
+                    Box(
+                        Modifier.fillMaxSize().background(emptyBackground),
+                    )
+                } else when (playbackBackgroundStyle) {
                     PlaybackBackgroundStyle.BLURRED_ARTWORK -> BlurredArtworkBackground(
                         resource = artworkResource,
                         animate = drawInPlace && playback.isPlaying,
@@ -494,6 +512,7 @@ internal fun FullPlayerScreen(
 
                     PlaybackBackgroundStyle.DYNAMIC_FLOW -> DynamicFlowBackground(
                         state = dynamicFlowBackgroundState,
+                        dark = playbackBackgroundDark,
                         artwork = artworkResource.artwork,
                         artworkLoading = artworkResource.isLoading,
                         backgroundColor = artworkResource.backgroundColor,
@@ -641,6 +660,7 @@ internal fun FullPlayerScreen(
                                     ) {
                                         PlayerArtwork(
                                             circularArtwork = circularArtwork,
+                                            showArtwork = item != null,
                                             size = fitPlayerArtworkSize(
                                                 preferredSize = artworkSize,
                                                 availableHeight = maxHeight,
@@ -721,6 +741,7 @@ internal fun FullPlayerScreen(
                                 artworkContent = { artworkSize ->
                                     PlayerArtwork(
                                         circularArtwork = circularArtwork,
+                                        showArtwork = item != null,
                                         size = artworkSize,
                                         artworkPadding = artworkPadding,
                                         artworkBlend = artworkBlend,
@@ -877,6 +898,7 @@ internal fun FullPlayerScreen(
                                             artworkContent = { artworkHeight ->
                                                 PlayerArtwork(
                                                     circularArtwork = circularArtwork,
+                                                    showArtwork = item != null,
                                                     size = fitPlayerArtworkSize(
                                                         artworkSize,
                                                         artworkHeight,
@@ -966,6 +988,7 @@ internal fun FullPlayerScreen(
                                                 ) {
                                                     PlayerArtwork(
                                                         circularArtwork = circularArtwork,
+                                                        showArtwork = item != null,
                                                         size = fitPlayerArtworkSize(
                                                             artworkSize,
                                                             artworkHeight,
@@ -1370,9 +1393,9 @@ private fun PlayerHeader(
     val header = PlayerHeaderContent(
         trackKey = item?.contentUri,
         direction = trackChangeDirection,
-        title = item?.title ?: stringResource(R.string.no_track_selected),
+        title = item?.title ?: stringResource(R.string.mini_player_title),
         artist = displayArtistName(item?.artist)
-            ?: stringResource(R.string.music_unknown_artist),
+            ?: stringResource(if (item == null) R.string.mini_player_empty else R.string.music_unknown_artist),
     )
     val headerTransition = updateTransition(header, label = "playerHeaderTrack")
     val alignmentProgress = animateFloatAsState(

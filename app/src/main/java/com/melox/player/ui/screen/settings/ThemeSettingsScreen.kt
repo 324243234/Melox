@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.melox.player.R
 import com.melox.player.model.AppSettings
 import com.melox.player.model.DynamicColorSource
+import com.melox.player.model.DynamicFlowStyle
 import com.melox.player.model.NavigationTransitionStyle
 import com.melox.player.model.PlaybackBackgroundStyle
 import com.melox.player.model.ThemeMode
@@ -57,44 +58,33 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 fun ThemeSettingsScreen(
     settings: AppSettings,
     bottomContentPadding: Dp,
-    liquidGlassSupported: Boolean,
     listState: LazyListState,
     scrollBehavior: ScrollBehavior,
     onBack: () -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
+    onImmersiveModeChange: (Boolean) -> Unit,
+    onHideStatusBarChange: (Boolean) -> Unit,
     onDynamicColorChange: (Boolean) -> Unit,
     onDynamicColorSourceChange: (DynamicColorSource) -> Unit,
     onPlaybackBackgroundStyleChange: (PlaybackBackgroundStyle) -> Unit,
-    onBlurChange: (Boolean) -> Unit,
-    onProgressiveTopBarBlurChange: (Boolean) -> Unit,
-    onSmallPlayerBarChange: (Boolean) -> Unit,
-    onHideBottomBarChange: (Boolean) -> Unit,
-    onFloatingBottomBarChange: (Boolean) -> Unit,
-    onLiquidGlassChange: (Boolean) -> Unit,
+    onDynamicFlowStyleChange: (DynamicFlowStyle) -> Unit,
+    onCircularArtworkChange: (Boolean) -> Unit,
+    onArtworkFlipAnimationChange: (Boolean) -> Unit,
+    onShowSongListArtworkChange: (Boolean) -> Unit,
+    onShowSongListFileNameChange: (Boolean) -> Unit,
+    onShowSongListDurationChange: (Boolean) -> Unit,
     onPredictiveBackChange: (Boolean) -> Unit,
     onNavigationTransitionStyleChange: (NavigationTransitionStyle) -> Unit,
     onOpenMainBackground: () -> Unit,
+    onOpenInterfaceStyle: () -> Unit,
 ) {
     val layoutDirection = LocalLayoutDirection.current
     val dynamicColorSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val blurSupported = liquidGlassSupported
-    var blurChecked by remember(settings.blurEnabled) {
-        mutableStateOf(settings.blurEnabled)
+    var immersiveModeChecked by remember(settings.immersiveMode) {
+        mutableStateOf(settings.immersiveMode)
     }
-    var progressiveTopBarBlurChecked by remember(settings.progressiveTopBarBlurEnabled) {
-        mutableStateOf(settings.progressiveTopBarBlurEnabled)
-    }
-    var smallPlayerBarChecked by remember(settings.smallPlayerBar) {
-        mutableStateOf(settings.smallPlayerBar)
-    }
-    var hideBottomBarChecked by remember(settings.hideBottomBar) {
-        mutableStateOf(settings.hideBottomBar)
-    }
-    var floatingBottomBarChecked by remember(settings.floatingBottomBar) {
-        mutableStateOf(settings.floatingBottomBar)
-    }
-    var liquidGlassChecked by remember(settings.liquidGlass) {
-        mutableStateOf(settings.liquidGlass)
+    var hideStatusBarChecked by remember(settings.hideStatusBar) {
+        mutableStateOf(settings.hideStatusBar)
     }
     var dynamicColorChecked by remember(settings.dynamicColorEnabled) {
         mutableStateOf(settings.dynamicColorEnabled)
@@ -104,6 +94,24 @@ fun ThemeSettingsScreen(
     }
     var playbackBackgroundStyle by remember(settings.playbackBackgroundStyle) {
         mutableStateOf(settings.playbackBackgroundStyle)
+    }
+    var dynamicFlowStyle by remember(settings.dynamicFlowStyle) {
+        mutableStateOf(settings.dynamicFlowStyle)
+    }
+    var songListArtworkChecked by remember(settings.showSongListArtwork) {
+        mutableStateOf(settings.showSongListArtwork)
+    }
+    var circularArtworkChecked by remember(settings.circularArtwork) {
+        mutableStateOf(settings.circularArtwork)
+    }
+    var artworkFlipAnimationChecked by remember(settings.artworkFlipAnimation) {
+        mutableStateOf(settings.artworkFlipAnimation)
+    }
+    var songListFileNameChecked by remember(settings.showSongListFileName) {
+        mutableStateOf(settings.showSongListFileName)
+    }
+    var songListDurationChecked by remember(settings.showSongListDuration) {
+        mutableStateOf(settings.showSongListDuration)
     }
     var predictiveBackChecked by remember(settings.predictiveBackEnabled) {
         mutableStateOf(settings.predictiveBackEnabled)
@@ -120,6 +128,11 @@ fun ThemeSettingsScreen(
             stringResource(R.string.settings_playback_background_blurred_artwork),
         PlaybackBackgroundStyle.DYNAMIC_FLOW to
             stringResource(R.string.settings_playback_background_dynamic_flow),
+    )
+    val dynamicFlowStyles = listOf(
+        DynamicFlowStyle.SYSTEM to stringResource(R.string.theme_mode_system),
+        DynamicFlowStyle.LIGHT to stringResource(R.string.settings_dynamic_flow_light),
+        DynamicFlowStyle.DARK to stringResource(R.string.settings_dynamic_flow_dark),
     )
     val topBarBackdrop = rememberBlurBackdrop()
     PageScaffold(
@@ -205,90 +218,26 @@ fun ThemeSettingsScreen(
                             title = stringResource(R.string.settings_custom_background_title),
                             onClick = onOpenMainBackground,
                         )
-                        SwitchPreference(
-                            checked = blurChecked && blurSupported,
-                            onCheckedChange = { checked ->
-                                blurChecked = checked
-                                onBlurChange(checked)
-                            },
-                            title = stringResource(R.string.settings_blur_title),
-                            summary = stringResource(
-                                if (blurSupported) {
-                                    R.string.settings_blur_summary
-                                } else {
-                                    R.string.settings_blur_unsupported
-                                },
-                            ),
-                            enabled = blurSupported,
-                        )
-                        AnimatedVisibility(
-                            visible = blurChecked && blurSupported,
-                            enter = fadeIn(animationSpec = tween(200)) +
-                                expandVertically(animationSpec = tween(250)),
-                            exit = fadeOut(animationSpec = tween(150)) +
-                                shrinkVertically(animationSpec = tween(200)),
-                            label = "progressiveTopBarBlurPreferenceVisibility",
-                        ) {
-                            SwitchPreference(
-                                checked = progressiveTopBarBlurChecked,
-                                onCheckedChange = { checked ->
-                                    progressiveTopBarBlurChecked = checked
-                                    onProgressiveTopBarBlurChange(checked)
-                                },
-                                title = stringResource(
-                                    R.string.settings_progressive_top_bar_blur_title,
-                                ),
-                            )
-                        }
-                        SwitchPreference(
-                            checked = floatingBottomBarChecked,
-                            onCheckedChange = { checked ->
-                                floatingBottomBarChecked = checked
-                                onFloatingBottomBarChange(checked)
-                            },
-                            title = stringResource(R.string.settings_floating_bottom_bar_title),
-                            summary = stringResource(R.string.settings_floating_bottom_bar_summary),
-                        )
-                        AnimatedVisibility(
-                            visible = floatingBottomBarChecked,
-                            enter = fadeIn(animationSpec = tween(200)) +
-                                expandVertically(animationSpec = tween(250)),
-                            exit = fadeOut(animationSpec = tween(150)) +
-                                shrinkVertically(animationSpec = tween(200)),
-                            label = "liquidGlassPreferenceVisibility",
-                        ) {
-                            SwitchPreference(
-                                checked = liquidGlassChecked && liquidGlassSupported,
-                                onCheckedChange = { checked ->
-                                    liquidGlassChecked = checked
-                                    onLiquidGlassChange(checked)
-                                },
-                                title = stringResource(R.string.settings_liquid_glass_title),
-                                summary = stringResource(
-                                    if (liquidGlassSupported) {
-                                        R.string.settings_liquid_glass_summary
-                                    } else {
-                                        R.string.settings_liquid_glass_unsupported
-                                    },
-                                ),
-                                enabled = liquidGlassSupported,
-                            )
-                        }
-                        SwitchPreference(
-                            checked = smallPlayerBarChecked,
-                            onCheckedChange = { checked ->
-                                smallPlayerBarChecked = checked
-                                onSmallPlayerBarChange(checked)
-                            },
-                            title = stringResource(R.string.settings_small_player_bar_title),
+                        ArrowPreference(
+                            title = stringResource(R.string.settings_interface_style_title),
+                            onClick = onOpenInterfaceStyle,
                         )
                         SwitchPreference(
-                            checked = hideBottomBarChecked,
+                            title = stringResource(R.string.settings_immersive_mode_title),
+                            summary = stringResource(R.string.settings_immersive_mode_summary),
+                            checked = immersiveModeChecked,
                             onCheckedChange = { checked ->
-                                hideBottomBarChecked = checked
-                                onHideBottomBarChange(checked)
+                                immersiveModeChecked = checked
+                                onImmersiveModeChange(checked)
                             },
-                            title = stringResource(R.string.settings_hide_bottom_bar_title),
+                        )
+                        SwitchPreference(
+                            title = stringResource(R.string.settings_hide_status_bar_title),
+                            checked = hideStatusBarChecked,
+                            onCheckedChange = { checked ->
+                                hideStatusBarChecked = checked
+                                onHideStatusBarChange(checked)
+                            },
                         )
                         SwitchPreference(
                             checked = dynamicColorChecked && dynamicColorSupported,
@@ -337,6 +286,9 @@ fun ThemeSettingsScreen(
                     }
                 }
                 item {
+                    SmallTitle(text = stringResource(R.string.settings_section_playback_interface))
+                }
+                item {
                     ThemeCard {
                         OverlayDropdownPreference(
                             items = playbackBackgroundStyles.map { it.second },
@@ -351,6 +303,77 @@ fun ThemeSettingsScreen(
                                         onPlaybackBackgroundStyleChange(style)
                                     }
                                 }
+                            },
+                        )
+                        AnimatedVisibility(
+                            visible = playbackBackgroundStyle == PlaybackBackgroundStyle.DYNAMIC_FLOW,
+                            enter = fadeIn(animationSpec = tween(200)) +
+                                expandVertically(animationSpec = tween(250)),
+                            exit = fadeOut(animationSpec = tween(150)) +
+                                shrinkVertically(animationSpec = tween(200)),
+                            label = "dynamicFlowStyleVisibility",
+                        ) {
+                            OverlayDropdownPreference(
+                                items = dynamicFlowStyles.map { it.second },
+                                selectedIndex = dynamicFlowStyles.indexOfFirst {
+                                    it.first == dynamicFlowStyle
+                                }.coerceAtLeast(0),
+                                title = stringResource(R.string.settings_dynamic_flow_style_title),
+                                onSelectedIndexChange = { index ->
+                                    dynamicFlowStyles.getOrNull(index)?.first?.let { style ->
+                                        if (style != dynamicFlowStyle) {
+                                            dynamicFlowStyle = style
+                                            onDynamicFlowStyleChange(style)
+                                        }
+                                    }
+                                },
+                            )
+                        }
+                        SwitchPreference(
+                            title = stringResource(R.string.settings_circular_artwork_title),
+                            checked = circularArtworkChecked,
+                            onCheckedChange = { checked ->
+                                circularArtworkChecked = checked
+                                onCircularArtworkChange(checked)
+                            },
+                        )
+                        SwitchPreference(
+                            title = stringResource(R.string.settings_artwork_flip_animation_title),
+                            checked = artworkFlipAnimationChecked,
+                            onCheckedChange = { checked ->
+                                artworkFlipAnimationChecked = checked
+                                onArtworkFlipAnimationChange(checked)
+                            },
+                        )
+                    }
+                }
+                item {
+                    SmallTitle(text = stringResource(R.string.settings_section_song_list))
+                }
+                item {
+                    ThemeCard {
+                        SwitchPreference(
+                            title = stringResource(R.string.settings_song_list_artwork_title),
+                            checked = songListArtworkChecked,
+                            onCheckedChange = { checked ->
+                                songListArtworkChecked = checked
+                                onShowSongListArtworkChange(checked)
+                            },
+                        )
+                        SwitchPreference(
+                            title = stringResource(R.string.settings_song_list_file_name_title),
+                            checked = songListFileNameChecked,
+                            onCheckedChange = { checked ->
+                                songListFileNameChecked = checked
+                                onShowSongListFileNameChange(checked)
+                            },
+                        )
+                        SwitchPreference(
+                            title = stringResource(R.string.settings_song_list_duration_title),
+                            checked = songListDurationChecked,
+                            onCheckedChange = { checked ->
+                                songListDurationChecked = checked
+                                onShowSongListDurationChange(checked)
                             },
                         )
                     }

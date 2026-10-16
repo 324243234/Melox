@@ -395,6 +395,7 @@ class UiLogicTest {
 
         assertEquals(ThemeMode.SYSTEM, settings.themeMode)
         assertFalse(settings.dynamicColorEnabled)
+        assertTrue(settings.showSongListDuration)
         assertEquals(DynamicColorSource.PLAYBACK_ARTWORK, settings.dynamicColorSource)
         assertEquals(
             PlaybackBackgroundStyle.BLURRED_ARTWORK,

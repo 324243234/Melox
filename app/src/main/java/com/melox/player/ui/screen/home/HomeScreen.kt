@@ -449,7 +449,7 @@ private fun HomeEmptyCardContent(
             imageVector = imageVector,
             contentDescription = null,
             modifier = Modifier.size(32.dp),
-            tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+            tint = MiuixTheme.colorScheme.disabledOnSecondaryVariant,
         )
         Spacer(modifier = Modifier.weight(1f))
         Column {

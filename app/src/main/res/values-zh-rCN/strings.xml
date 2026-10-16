@@ -172,6 +172,7 @@
     <string name="folder_block_title">隐藏文件夹</string>
     <string name="folder_block_message">是否要隐藏文件夹 %1$s 的所有歌曲</string>
     <string name="hidden_folder_save_error">无法保存隐藏文件夹设置</string>
+    <string name="playlist_save_error">播放列表修改保存失败，正在重试</string>
     <plurals name="folder_song_count">
         <item quantity="other">%1$d首</item>
     </plurals>
@@ -191,6 +192,8 @@
     <string name="notification_playback_mode_shuffle">随机循环</string>
     <string name="notification_close">关闭</string>
     <string name="track_actions">歌曲操作</string>
+    <string name="music_hide_song">隐藏歌曲</string>
+    <string name="music_delete_song">删除歌曲</string>
     <string name="open_queue">打开队列</string>
     <string name="playback_queue">播放队列</string>
     <string name="clear_queue">清空</string>
@@ -206,7 +209,13 @@
     <string name="back">返回</string>
     <string name="close">关闭</string>
 
-    <string name="settings_section_appearance">外观</string>
+    <string name="settings_section_appearance">主界面</string>
+    <string name="settings_interface_style_title">界面样式</string>
+    <string name="settings_immersive_mode_title">沉浸模式</string>
+    <string name="settings_immersive_mode_summary">隐藏状态栏与精简播放界面，可通过播放页长按播放/暂停按钮切换</string>
+    <string name="settings_hide_status_bar_title">隐藏状态栏</string>
+    <string name="player_immersive_mode_enable">开启沉浸模式</string>
+    <string name="player_immersive_mode_disable">关闭沉浸模式</string>
     <string name="settings_section_personalization">个性化</string>
     <string name="settings_section_other">其他</string>
     <string name="settings_section_navigation">导航与动画</string>
@@ -223,8 +232,18 @@
     <string name="theme_mode_light">浅色模式</string>
     <string name="theme_mode_dark">深色模式</string>
     <string name="settings_playback_background_title">播放页背景</string>
+    <string name="settings_section_playback_interface">播放界面</string>
+    <string name="settings_circular_artwork_title">圆形封面</string>
+    <string name="settings_artwork_flip_animation_title">封面翻转动画</string>
+    <string name="settings_section_song_list">歌曲列表</string>
+    <string name="settings_song_list_artwork_title">列表显示歌曲封面</string>
+    <string name="settings_song_list_file_name_title">在列表中显示歌曲文件名</string>
+    <string name="settings_song_list_duration_title">在列表中显示歌曲时长</string>
     <string name="settings_playback_background_blurred_artwork">模糊封面</string>
     <string name="settings_playback_background_dynamic_flow">动态流光</string>
+    <string name="settings_dynamic_flow_style_title">流光样式</string>
+    <string name="settings_dynamic_flow_light">浅色流光</string>
+    <string name="settings_dynamic_flow_dark">深色流光</string>
     <string name="settings_dynamic_color_title">动态取色</string>
     <string name="settings_dynamic_color_summary">根据来源调整应用配色</string>
     <string name="settings_dynamic_color_unsupported">动态取色需要 Android 12 或更高版本</string>
@@ -240,7 +259,8 @@
     <string name="settings_liquid_glass_title">液态玻璃</string>
     <string name="settings_liquid_glass_summary">为悬浮底栏启用折射玻璃效果</string>
     <string name="settings_small_player_bar_title">小播放栏</string>
-    <string name="settings_hide_bottom_bar_title">隐藏底栏</string>
+    <string name="settings_hide_bottom_bar_title">始终隐藏底栏</string>
+    <string name="settings_hide_bottom_bar_summary">隐藏底栏后，主界面只能滑动切换页面</string>
     <string name="settings_predictive_back_title">预测性返回手势</string>
     <string name="settings_navigation_transition_style_title">过渡风格</string>
     <string name="settings_navigation_transition_style_miuix">Miuix</string>
@@ -365,4 +385,18 @@
     <string name="sponsor_code_description">赞助码</string>
     <string name="playlist_move_earlier">向前移动</string>
     <string name="playlist_move_later">向后移动</string>
+    <string name="scan_hidden_songs_title">被隐藏的歌曲</string>
+    <string name="hidden_songs_empty">暂无被隐藏的歌曲</string>
+    <string name="music_restore_song">恢复显示</string>
+    <string name="hidden_songs_restore_all">全部恢复</string>
+    <plurals name="hidden_songs_restore_all_confirm">
+        <item quantity="other">恢复显示全部%1$d首被隐藏的歌曲？</item>
+    </plurals>
+    <string name="hidden_song_save_error">无法保存隐藏歌曲设置</string>
+    <string name="music_hide_confirm">确认隐藏%1$s？将从歌曲列表和播放队列移除，文件会保留</string>
+    <string name="music_delete_confirm">确认永久删除%1$s？歌曲源文件将被删除，无法恢复</string>
+    <string name="music_delete_failed">无法删除歌曲源文件</string>
+    <string name="music_cache_save_error">无法更新音乐缓存，将自动重试</string>
+    <string name="music_delete_write_access">请选择歌曲所在文件夹，以授权删除源文件</string>
+    <string name="folder_internal_storage">内部存储</string>
 </resources>

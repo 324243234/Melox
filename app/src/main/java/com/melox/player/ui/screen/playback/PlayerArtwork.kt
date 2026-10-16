@@ -212,6 +212,7 @@ internal fun PlayerArtwork(
     onArtworkBoundsChanged: (Rect) -> Unit,
     onArtworkDisplaySizeChanged: (Int) -> Unit = {},
     circularArtwork: Boolean = false,
+    showArtwork: Boolean = true,
 ) {
     val artworkContainerSize = size + PLAYER_ARTWORK_CONTAINER_EXPANSION
     val artworkContentSize =
@@ -263,7 +264,9 @@ internal fun PlayerArtwork(
             },
         contentAlignment = Alignment.Center,
     ) {
-        if (artworkBlend.flipState != null) {
+        if (!showArtwork) {
+            // Keep the measured slot for the player layout, but omit the cover and shadow.
+        } else if (artworkBlend.flipState != null) {
             ArtworkFlipLayer(artworkBlend.flipState,
                 contentScale = if (circularArtwork) ContentScale.Crop else ContentScale.Fit) { face, blur ->
                 PlaybackArtworkFrame(

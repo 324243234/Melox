@@ -1,0 +1,19 @@
+package com.melox.player.ui.component
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+
+// Include the reserved region in the bar background and its parent's blur bounds.
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+internal fun Modifier.stableTopAppBarInsets(color: Color): Modifier =
+    background(color)
+        .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top))

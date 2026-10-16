@@ -3,7 +3,15 @@ package com.melox.player.ui.component
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
@@ -151,6 +159,7 @@ internal fun customPageContainerColor(): Color =
     if (LocalCustomPageBackground.current == null) MiuixTheme.colorScheme.surface else Color.Transparent
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 internal fun PageScaffold(
     modifier: Modifier = Modifier,
     topBar: @Composable () -> Unit = {},
@@ -161,12 +170,16 @@ internal fun PageScaffold(
     val image = LocalCustomPageBackground.current
     val dimAlpha = LocalCustomBackgroundDimAlpha.current
     val surfaceColor = MiuixTheme.colorScheme.surface
+    val statusBarSpace = WindowInsets.statusBarsIgnoringVisibility.only(WindowInsetsSides.Top)
     BoxWithConstraints(modifier = modifier) {
         val viewportSize = Size(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
         CompositionLocalProvider(LocalPageSurfaceBackdrop provides surfaceBackdrop) {
             Scaffold(
                 modifier = if (fixedBackground == null) Modifier.customPageBackground() else Modifier,
                 containerColor = customPageContainerColor(),
+                contentWindowInsets = WindowInsets.systemBars
+                    .union(WindowInsets.displayCutout)
+                    .union(statusBarSpace),
                 topBar = {
                     CompositionLocalProvider(LocalTopBarWallpaperVisible provides (image != null)) {
                         Box(

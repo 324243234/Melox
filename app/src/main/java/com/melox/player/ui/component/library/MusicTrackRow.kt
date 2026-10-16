@@ -65,6 +65,7 @@ enum class MusicTrackDescriptionMode {
 
 internal val LocalSongListArtworkVisible = compositionLocalOf { true }
 internal val LocalSongListFileNameVisible = compositionLocalOf { false }
+internal val LocalSongListDurationVisible = compositionLocalOf { true }
 
 internal fun MusicTrack.songListTitle(showFileName: Boolean): String? =
     if (showFileName) fileName?.takeIf { it.isNotBlank() } ?: title else title
@@ -146,15 +147,17 @@ fun MusicTrackRow(
             horizontalArrangement = Arrangement.spacedBy(0.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = formatDuration(track.durationMs),
-                modifier = Modifier.width(IconButtonDefaults.MinWidth),
-                style = MiuixTheme.textStyles.footnote2,
-                color = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                textAlign = TextAlign.End,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (LocalSongListDurationVisible.current) {
+                Text(
+                    text = formatDuration(track.durationMs),
+                    modifier = Modifier.width(IconButtonDefaults.MinWidth),
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
 
             if (selectionMode) {
                 Box(

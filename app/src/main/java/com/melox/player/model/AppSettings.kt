@@ -22,6 +22,31 @@ enum class PlaybackBackgroundStyle {
     DYNAMIC_FLOW,
 }
 
+/** Selects the dynamic-flow appearance independently of the app theme. */
+enum class DynamicFlowStyle {
+    SYSTEM,
+    LIGHT,
+    DARK,
+    ;
+
+    fun isDark(systemDark: Boolean): Boolean = when (this) {
+        SYSTEM -> systemDark
+        LIGHT -> false
+        DARK -> true
+    }
+}
+
+fun usesDarkPlaybackBackground(
+    backgroundStyle: PlaybackBackgroundStyle,
+    dynamicFlowDark: Boolean,
+    appDark: Boolean,
+    hasItem: Boolean,
+): Boolean = when {
+    backgroundStyle == PlaybackBackgroundStyle.DYNAMIC_FLOW -> dynamicFlowDark
+    hasItem -> true
+    else -> appDark
+}
+
 /**
  * Selects the navigation bar presentation.
  *
@@ -127,6 +152,12 @@ data class AppSettings(
     val customBackgroundCardOpacityPercent: Int = DEFAULT_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT,
     val playbackBackgroundStyle: PlaybackBackgroundStyle =
         PlaybackBackgroundStyle.BLURRED_ARTWORK,
+    val dynamicFlowStyle: DynamicFlowStyle = DynamicFlowStyle.SYSTEM,
+    val showSongListArtwork: Boolean = true,
+    val circularArtwork: Boolean = false,
+    val artworkFlipAnimation: Boolean = false,
+    val showSongListFileName: Boolean = false,
+    val showSongListDuration: Boolean = true,
     val playbackSpeed: Float = 1f,
     val highPrecisionOutput: Boolean = false,
     val sleepTimerSeconds: Int = 600,
@@ -150,6 +181,8 @@ data class AppSettings(
     val progressiveTopBarBlurEnabled: Boolean = false,
     val smallPlayerBar: Boolean = false,
     val hideBottomBar: Boolean = false,
+    val immersiveMode: Boolean = false,
+    val hideStatusBar: Boolean = false,
     val floatingBottomBar: Boolean = false,
     val navigationRailExpanded: Boolean = true,
     val liquidGlass: Boolean = false,
@@ -160,6 +193,7 @@ data class AppSettings(
     val skipShortAudio: Boolean = false,
     val customFolderUris: List<String> = emptyList(),
     val blockedFolderPaths: List<String> = emptyList(),
+    val hiddenTrackUris: Set<String> = emptySet(),
     val libraryTabIndex: Int = 0,
     val musicSortFieldOrdinal: Int = 0,
     val musicSortDescending: Boolean = false,
@@ -174,6 +208,9 @@ data class AppSettings(
     val playlistSortConfigs: Map<String, PlaylistSortConfig> = emptyMap(),
     val defaultHomePage: DefaultHomePage = DefaultHomePage.HOME,
 ) {
+    val statusBarHidden: Boolean
+        get() = immersiveMode || hideStatusBar
+
     val bottomBarStyle: BottomBarStyle
         get() = when {
             !floatingBottomBar -> BottomBarStyle.NORMAL

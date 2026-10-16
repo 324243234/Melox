@@ -288,7 +288,7 @@ internal fun PlaylistEmptyMessage(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            tint = MiuixTheme.colorScheme.disabledOnSecondaryVariant,
             modifier = Modifier.size(48.dp),
         )
         Spacer(Modifier.height(12.dp))

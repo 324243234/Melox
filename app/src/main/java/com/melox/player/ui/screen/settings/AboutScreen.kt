@@ -45,6 +45,7 @@ import com.melox.player.R
 import com.melox.player.ui.component.BlurredBar
 import com.melox.player.ui.component.effect.AboutEffectBackground
 import com.melox.player.ui.component.rememberBlurBackdrop
+import com.melox.player.ui.component.stableTopAppBarInsets
 import com.melox.player.ui.component.PageCard as Card
 import com.melox.player.ui.component.LocalTopBarWallpaperVisible
 import com.melox.player.ui.component.LocalCustomPageBackground
@@ -114,10 +115,12 @@ fun AboutScreen(
                 blurEnabled = barBackdrop != null,
                 scrollBehavior = scrollBehavior,
             ) {
+                val topBarColor = if (LocalTopBarWallpaperVisible.current) Color.Transparent else barColor
                 SmallTopAppBar(
                     title = stringResource(R.string.settings_about_title),
+                    modifier = Modifier.stableTopAppBarInsets(topBarColor),
                     scrollBehavior = scrollBehavior,
-                    color = if (LocalTopBarWallpaperVisible.current) Color.Transparent else barColor,
+                    color = topBarColor,
                     titleColor = MiuixTheme.colorScheme.onSurface.copy(
                         alpha = ((scrollProgress - 0.35f) / 0.65f).coerceIn(0f, 1f),
                     ),

@@ -58,6 +58,7 @@ import com.melox.player.ui.component.topBarContainerColor
 import com.melox.player.ui.component.tabSelectedContainerColor
 import com.melox.player.ui.component.miuixBarColor
 import com.melox.player.ui.component.rememberBlurBackdrop
+import com.melox.player.ui.component.stableTopAppBarInsets
 import com.melox.player.ui.component.library.ArtistArtwork
 import com.melox.player.ui.component.library.ArtistListItem
 import com.melox.player.ui.component.library.MusicTrackDescriptionMode
@@ -176,6 +177,7 @@ fun AlbumDetailScreen(
                     } else {
                         ""
                     },
+                    modifier = Modifier.stableTopAppBarInsets(backdrop.miuixBarColor()),
                     color = backdrop.miuixBarColor(),
                     scrollBehavior = scrollBehavior,
                     navigationIcon = {
@@ -233,7 +235,7 @@ fun AlbumDetailScreen(
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                                    .padding(start = 16.dp, end = 16.dp, bottom = 1.dp),
                                 insideMargin = PaddingValues(0.dp),
                                 colors = CardDefaults.defaultColors(
                                     color = tabRowBackgroundColor,
@@ -282,7 +284,7 @@ fun AlbumDetailScreen(
                             .nestedScroll(scrollBehavior.nestedScrollConnection),
                         contentPadding = PaddingValues(
                             start = padding.calculateStartPadding(layoutDirection),
-                            top = padding.calculateTopPadding() + 4.dp,
+                            top = padding.calculateTopPadding() + 12.dp,
                             end = padding.calculateEndPadding(layoutDirection),
                             bottom = maxOf(
                                 padding.calculateBottomPadding(),
@@ -510,6 +512,7 @@ fun ArtistDetailScreen(
                     } else {
                         ""
                     },
+                    modifier = Modifier.stableTopAppBarInsets(backdrop.miuixBarColor()),
                     color = backdrop.miuixBarColor(),
                     scrollBehavior = scrollBehavior,
                     navigationIcon = {
@@ -567,7 +570,7 @@ fun ArtistDetailScreen(
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                                    .padding(start = 16.dp, end = 16.dp, bottom = 1.dp),
                                 insideMargin = PaddingValues(0.dp),
                                 colors = CardDefaults.defaultColors(
                                     color = tabRowBackgroundColor,
@@ -615,7 +618,7 @@ fun ArtistDetailScreen(
                             .nestedScroll(scrollBehavior.nestedScrollConnection),
                         contentPadding = PaddingValues(
                             start = padding.calculateStartPadding(layoutDirection),
-                            top = padding.calculateTopPadding(),
+                            top = padding.calculateTopPadding() + 12.dp,
                             end = padding.calculateEndPadding(layoutDirection),
                             bottom = maxOf(
                                 padding.calculateBottomPadding(),
@@ -663,7 +666,7 @@ fun ArtistDetailScreen(
                             .nestedScroll(scrollBehavior.nestedScrollConnection),
                         contentPadding = PaddingValues(
                             start = padding.calculateStartPadding(layoutDirection) + 16.dp,
-                            top = padding.calculateTopPadding() + 8.dp,
+                            top = padding.calculateTopPadding() + 12.dp,
                             end = padding.calculateEndPadding(layoutDirection) + 16.dp,
                             bottom = maxOf(
                                 padding.calculateBottomPadding(),

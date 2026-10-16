@@ -67,6 +67,7 @@ import com.melox.player.model.NavigationTransitionStyle
 import com.melox.player.model.LyricsUiState
 import com.melox.player.model.PlaybackUiState
 import com.melox.player.model.PlaybackBackgroundStyle
+import com.melox.player.model.DynamicFlowStyle
 import com.melox.player.model.ScanStatus
 import com.melox.player.model.ThemeMode
 import com.melox.player.model.withTrackMetadata
@@ -666,6 +667,17 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setDynamicFlowStyle(style: DynamicFlowStyle) {
+        viewModelScope.launch {
+            settingsRepository.setDynamicFlowStyle(style)
+        }
+    }
+
+    fun setShowSongListDuration(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.setShowSongListDuration(enabled)
+        }
+    }
     fun setLyricFontScale(scale: Float) {
         viewModelScope.launch {
             settingsRepository.setLyricFontScale(scale)

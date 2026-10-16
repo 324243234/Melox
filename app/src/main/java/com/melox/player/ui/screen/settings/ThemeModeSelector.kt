@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.melox.player.R
 import com.melox.player.model.ThemeMode
+import com.melox.player.ui.theme.effectiveThemeMode
 import com.melox.player.ui.usesMiuixSmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -145,13 +146,6 @@ private fun ThemeModeIllustration(
         }
     }
 }
-
-internal fun effectiveThemeMode(themeMode: ThemeMode, systemDark: Boolean): ThemeMode =
-    if (themeMode == ThemeMode.SYSTEM) {
-        if (systemDark) ThemeMode.DARK else ThemeMode.LIGHT
-    } else {
-        themeMode
-    }
 
 internal fun themeModeFollowingSystem(followSystem: Boolean, systemDark: Boolean): ThemeMode =
     if (followSystem) ThemeMode.SYSTEM else effectiveThemeMode(ThemeMode.SYSTEM, systemDark)
