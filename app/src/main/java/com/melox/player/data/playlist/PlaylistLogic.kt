@@ -2,11 +2,14 @@ package com.melox.player.data.playlist
 
 import com.melox.player.data.library.MusicSortConfig
 import com.melox.player.data.library.MusicSortField
+import com.melox.player.data.library.albumGroupKey
 import com.melox.player.data.library.musicTrackComparator
 import com.melox.player.model.LocalPlaylist
 import com.melox.player.model.MusicTrack
 import com.melox.player.model.PlaylistTrackEntry
 import com.melox.player.model.ResolvedPlaylistTrack
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 enum class PlaylistSortField {
     CUSTOM,
@@ -21,6 +24,31 @@ data class PlaylistSortConfig(
     val field: PlaylistSortField = PlaylistSortField.CUSTOM,
     val descending: Boolean = false,
 )
+
+internal suspend fun <Artwork : Any> loadPlaylistArtwork(
+    playlist: LocalPlaylist,
+    loadArtwork: suspend (MusicTrack) -> Artwork?,
+    sameArtwork: (Artwork, Artwork) -> Boolean,
+): List<Artwork> {
+    val tracks = playlist.entries.map(PlaylistTrackEntry::trackSnapshot)
+    val selected = ArrayList<Artwork>(3)
+    val representedAlbums = HashSet<String>()
+    for (track in tracks) {
+        currentCoroutineContext().ensureActive()
+        val albumKey = track.album?.takeIf(String::isNotBlank)?.let {
+            albumGroupKey(it, track.albumArtist)
+        }
+        if (albumKey != null && albumKey in representedAlbums) continue
+        val artwork = loadArtwork(track) ?: continue
+        currentCoroutineContext().ensureActive()
+        if (selected.any { sameArtwork(it, artwork) }) continue
+        selected += artwork
+        if (albumKey != null) representedAlbums += albumKey
+        if (selected.size == 3) break
+    }
+    currentCoroutineContext().ensureActive()
+    return selected
+}
 
 internal fun resolvePlaylistTracks(
     playlist: LocalPlaylist,

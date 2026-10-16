@@ -1,5 +1,6 @@
 package com.melox.player.ui.component.playlist
 
+import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -22,6 +23,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -29,9 +33,15 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.melox.player.R
+import com.melox.player.data.playlist.loadPlaylistArtwork
 import com.melox.player.model.LocalPlaylist
-import com.melox.player.model.MusicTrack
-import com.melox.player.ui.component.library.rememberArtworkBitmap
+import com.melox.player.ui.component.library.currentPlaceholderArtworkResId
+import com.melox.player.ui.component.library.loadArtworkBitmap
+import com.melox.player.ui.component.library.normalizeArtworkTargetSize
+import com.melox.player.ui.component.library.rememberArtworkLoad
+import com.melox.player.ui.component.library.rememberRetainedArtworkValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import com.melox.player.ui.component.PageCard as Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -77,7 +87,7 @@ fun PlaylistGridItem(
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 PlaylistArtwork(
-                    tracks = playlist.entries.map { entry -> entry.trackSnapshot },
+                    playlist = playlist,
                     showEmptyArtworkIcon = showEmptyArtworkIcon,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -109,7 +119,7 @@ fun PlaylistGridItem(
 
 @Composable
 private fun PlaylistArtwork(
-    tracks: List<MusicTrack>,
+    playlist: LocalPlaylist,
     showEmptyArtworkIcon: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -119,21 +129,24 @@ private fun PlaylistArtwork(
             .squircleClip(12.dp),
     ) {
         val coverHeight = maxHeight
-        when (playlistArtworkLayout(tracks.size)) {
+        val requestSizePx = normalizeArtworkTargetSize(with(LocalDensity.current) { coverHeight.roundToPx() })
+        val bitmaps = rememberPlaylistArtwork(playlist, requestSizePx)
+        when (playlistArtworkLayout(bitmaps.size)) {
             PlaylistArtworkLayout.EMPTY -> PlaylistArtworkTile(
-                track = null,
+                bitmap = null,
                 requestSize = coverHeight,
                 showPlaceholderIcon = showEmptyArtworkIcon,
+                showDefaultArtwork = playlist.entries.isNotEmpty(),
             )
 
             PlaylistArtworkLayout.SINGLE -> PlaylistArtworkTile(
-                track = tracks.first(),
+                bitmap = bitmaps.first(),
                 requestSize = coverHeight,
             )
 
             PlaylistArtworkLayout.DOUBLE -> Row(modifier = Modifier.fillMaxSize()) {
                 PlaylistArtworkTile(
-                    track = tracks[0],
+                    bitmap = bitmaps[0],
                     requestSize = coverHeight,
                     modifier = Modifier
                         .weight(1f)
@@ -146,7 +159,7 @@ private fun PlaylistArtwork(
                         .background(Color.Black),
                 )
                 PlaylistArtworkTile(
-                    track = tracks[1],
+                    bitmap = bitmaps[1],
                     requestSize = coverHeight,
                     modifier = Modifier
                         .weight(1f)
@@ -156,7 +169,7 @@ private fun PlaylistArtwork(
 
             PlaylistArtworkLayout.COLLAGE -> Row(modifier = Modifier.fillMaxSize()) {
                 PlaylistArtworkTile(
-                    track = tracks[0],
+                    bitmap = bitmaps[0],
                     requestSize = coverHeight,
                     modifier = Modifier
                         .fillMaxHeight()
@@ -174,7 +187,7 @@ private fun PlaylistArtwork(
                         .fillMaxHeight(),
                 ) {
                     PlaylistArtworkTile(
-                        track = tracks[1],
+                        bitmap = bitmaps[1],
                         requestSize = coverHeight / 2f,
                         modifier = Modifier
                             .weight(1f)
@@ -187,7 +200,7 @@ private fun PlaylistArtwork(
                             .background(Color.Black),
                     )
                     PlaylistArtworkTile(
-                        track = tracks[2],
+                        bitmap = bitmaps[2],
                         requestSize = coverHeight / 2f,
                         modifier = Modifier
                             .weight(1f)
@@ -200,18 +213,36 @@ private fun PlaylistArtwork(
 }
 
 @Composable
+private fun rememberPlaylistArtwork(playlist: LocalPlaylist, requestSizePx: Int): List<Bitmap> {
+    val context = LocalContext.current.applicationContext
+    val result = rememberArtworkLoad<List<Bitmap>?>(Triple(playlist.id, playlist.entries, requestSizePx)) {
+        withContext(Dispatchers.IO) {
+            loadPlaylistArtwork(
+                playlist = playlist,
+                loadArtwork = { track ->
+                    loadArtworkBitmap(
+                        context = context,
+                        contentUri = track.contentUri,
+                        dateModifiedEpochSeconds = track.dateModifiedEpochSeconds,
+                        fileSizeBytes = track.fileSizeBytes,
+                        targetSizePx = requestSizePx,
+                    )
+                },
+                sameArtwork = Bitmap::sameAs,
+            )
+        }
+    }
+    return rememberRetainedArtworkValue(result, contentKey = playlist.id).orEmpty()
+}
+
+@Composable
 private fun PlaylistArtworkTile(
-    track: MusicTrack?,
+    bitmap: Bitmap?,
     requestSize: Dp,
     modifier: Modifier = Modifier,
     showPlaceholderIcon: Boolean = true,
+    showDefaultArtwork: Boolean = false,
 ) {
-    val bitmap = rememberArtworkBitmap(
-        contentUri = track?.contentUri.orEmpty(),
-        dateModifiedEpochSeconds = track?.dateModifiedEpochSeconds ?: 0L,
-        fileSizeBytes = track?.fileSizeBytes ?: 0L,
-        size = requestSize,
-    )
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -225,6 +256,13 @@ private fun PlaylistArtworkTile(
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
                 filterQuality = FilterQuality.High,
+            )
+        } else if (showDefaultArtwork) {
+            Image(
+                painter = painterResource(currentPlaceholderArtworkResId()),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
             )
         } else if (showPlaceholderIcon) {
             Icon(

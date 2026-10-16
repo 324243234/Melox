@@ -7,6 +7,7 @@ import com.melox.player.model.ResolvedPlaylistTrack
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -15,6 +16,71 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaylistLogicTest {
+    @Test
+    fun artworkUsesPersistedCustomOrderInsteadOfAdditionTimes() = runBlocking {
+        val playlist = playlist(
+            entries = (1L..5L).map { index ->
+                entry("entry-$index", track(index, "Song $index", "uri:$index"))
+                    .copy(addedAtEpochMillis = index * 100L)
+            },
+        )
+        val expectedIds = listOf(1L, 2L, 3L)
+        assertEquals(expectedIds, artworkIds(playlist))
+        assertEquals((1L..5L).toList(), playlist.entries.map { it.trackSnapshot.id })
+    }
+
+    @Test
+    fun artworkFollowsCustomReorderingAndSnapshotReload() = runBlocking {
+        val playlist = playlist(
+            entries = listOf(
+                entry("d", track(4L, "D", "uri:4")),
+                entry("b", track(2L, "B", "uri:2")),
+                entry("c", track(3L, "C", "uri:3")),
+                entry("a", track(1L, "A", "uri:1")),
+            ),
+        )
+        val reversed = requireNotNull(
+            reorderPlaylistEntries(playlist, playlist.entries.map { it.id }.reversed(), 300L),
+        )
+        val bytes = ByteArrayOutputStream().also {
+            PlaylistSnapshotCodec.write(it, listOf(reversed))
+        }.toByteArray()
+        val restored = PlaylistSnapshotCodec.read(ByteArrayInputStream(bytes)).single()
+
+        assertEquals(listOf(4L, 2L, 3L), artworkIds(playlist))
+        assertEquals(listOf(1L, 3L, 2L), artworkIds(reversed))
+        assertEquals(artworkIds(reversed), artworkIds(restored))
+    }
+
+    @Test
+    fun artworkUpdatesWhenLeadingCustomEntriesChange() = runBlocking {
+        val original = playlist(
+            entries = (1L..3L).map { entry("entry-$it", track(it, "Song $it", "uri:$it")) },
+        )
+        val updated = addTracksToPlaylist(
+            original,
+            tracks = listOf(track(4L, "New", "uri:4")),
+            nowEpochMillis = 200L,
+            newEntryId = { "new" },
+        )
+        assertEquals(listOf(4L, 1L, 2L), artworkIds(updated))
+        val oldEntryRemoved = removePlaylistEntries(updated, setOf("entry-3"), 300L)
+        assertEquals(artworkIds(updated), artworkIds(oldEntryRemoved))
+        val latestRemoved = removePlaylistEntries(updated, setOf("new"), 400L)
+        assertEquals(artworkIds(original), artworkIds(latestRemoved))
+    }
+
+    @Test
+    fun artworkRetainsAvailableTileCountsForSmallPlaylists() = runBlocking {
+        val entries = (1L..3L).map { entry("entry-$it", track(it, "Song $it", "uri:$it")) }
+        for (count in 0..3) {
+            assertEquals(
+                entries.take(count).map { it.trackSnapshot.id },
+                artworkIds(playlist(entries.take(count))),
+            )
+        }
+    }
+
     @Test
     fun snapshotRoundTripRetainsPlaylistAndUnavailableTrackMetadata() {
         val playlist = playlist(
@@ -337,6 +403,12 @@ class PlaylistLogicTest {
         val ordered = requireNotNull(reorderPlaylists(listOf(renamed, second), listOf(second.id, first.id)))
         assertSame(renamed, ordered[1])
     }
+
+    private suspend fun artworkIds(playlist: LocalPlaylist): List<Long> = loadPlaylistArtwork(
+        playlist = playlist,
+        loadArtwork = { it.id },
+        sameArtwork = { first, second -> first == second },
+    )
 
     private fun sortedIds(
         tracks: List<ResolvedPlaylistTrack>,
