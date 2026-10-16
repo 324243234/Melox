@@ -7,13 +7,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -49,22 +53,28 @@ import com.melox.player.data.library.splitArtistNames
 import com.melox.player.model.MusicTrack
 import java.util.Locale
 import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.AddCircle
 import top.yukonga.miuix.kmp.icon.extended.Album
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.ContactsCircle
+import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Edit
+import top.yukonga.miuix.kmp.icon.extended.Hide
 import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Playlist
+import top.yukonga.miuix.kmp.icon.extended.Reset
 import top.yukonga.miuix.kmp.icon.extended.Share
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
+import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 
@@ -88,6 +98,7 @@ fun TrackActionsOverlay(
     showLunaBeatEditor: Boolean,
 ) {
     val context = LocalContext.current
+    val mutations = LocalTrackMutationActions.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val latestOnExternalEditReturned by rememberUpdatedState(onExternalEditReturned)
     val externalEditorUnavailableMessage =
@@ -98,6 +109,9 @@ fun TrackActionsOverlay(
     val lunaBeatNotFoundMessage = stringResource(R.string.luna_beat_not_found)
     val shareTitle = stringResource(R.string.music_share)
     var retainedTrack by remember { mutableStateOf(track) }
+    var mutationTrack by remember { mutableStateOf<MusicTrack?>(null) }
+    var deleteRequested by remember { mutableStateOf(false) }
+    var showMutationConfirm by remember { mutableStateOf(false) }
     var artworkPreview by remember { mutableStateOf<ArtworkPreviewRequest?>(null) }
     var artworkPreviewPresented by remember { mutableStateOf(false) }
     var songInfoTrack by remember { mutableStateOf<MusicTrack?>(null) }
@@ -154,6 +168,8 @@ fun TrackActionsOverlay(
         artworkPreviewPresented = false
         if (track != null) {
             retainedTrack = track
+            mutationTrack = null
+            showMutationConfirm = false
             songInfoTrack = null
             retainedSongInfoTrack = null
             artistListTrack = null
@@ -176,19 +192,13 @@ fun TrackActionsOverlay(
         modifier = bottomSheetGlassModifier(),
         backgroundColor = bottomSheetMaterialColor(),
         enableWindowDim = true,
-        onDismissRequest = onDismiss,
-        onDismissFinished = {
-            retainedTrack = null
-        },
-    ) {
-        (track ?: retainedTrack)?.let { selectedTrack ->
-            SheetScrollableContent(
-                bottomPadding = navigationBarBottomPadding + 12.dp,
-            ) {
+        startAction = {
+            (track ?: retainedTrack)?.let { selectedTrack ->
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 12.dp),
+                        // Use 6 dp of the native header's 12 dp bottom padding.
+                        .offset(y = 6.dp),
                     colors = CardDefaults.defaultColors(
                         color = bottomSheetCardColor(),
                     ),
@@ -216,9 +226,22 @@ fun TrackActionsOverlay(
                         },
                     )
                 }
+            }
+        },
+        onDismissRequest = onDismiss,
+        onDismissFinished = {
+            retainedTrack = null
+            if (mutationTrack != null) showMutationConfirm = true
+        },
+    ) {
+        (track ?: retainedTrack)?.let { selectedTrack ->
+            SheetScrollableContent(
+                bottomPadding = navigationBarBottomPadding + 12.dp,
+            ) {
                 Card(
                     modifier = Modifier
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
                     colors = CardDefaults.defaultColors(
                         color = bottomSheetCardColor(),
                     ),
@@ -226,6 +249,7 @@ fun TrackActionsOverlay(
                     TrackAction(
                         icon = MiuixIcons.Add,
                         text = stringResource(R.string.music_play_next),
+                        enabled = selectedTrack.contentUri !in mutations?.hiddenContentUris.orEmpty(),
                         onClick = {
                             onPlayNext(selectedTrack)
                             onDismiss()
@@ -234,6 +258,7 @@ fun TrackActionsOverlay(
                     TrackAction(
                         icon = painterResource(R.drawable.ic_add_list),
                         text = stringResource(R.string.music_add_to_queue),
+                        enabled = selectedTrack.contentUri !in mutations?.hiddenContentUris.orEmpty(),
                         iconSize = TrackActionAddToQueueIconSize,
                         iconStartPadding = 1.dp,
                         iconEndPadding = 2.dp,
@@ -345,8 +370,83 @@ fun TrackActionsOverlay(
                             onDismiss()
                         },
                     )
+                    TrackAction(
+                        icon = if (selectedTrack.contentUri in mutations?.hiddenContentUris.orEmpty()) {
+                            MiuixIcons.Reset
+                        } else {
+                            MiuixIcons.Hide
+                        },
+                        text = stringResource(
+                            if (selectedTrack.contentUri in mutations?.hiddenContentUris.orEmpty()) {
+                                R.string.music_restore_song
+                            } else {
+                                R.string.music_hide_song
+                            },
+                        ),
+                        enabled = mutations != null,
+                        onClick = {
+                            if (selectedTrack.contentUri in mutations?.hiddenContentUris.orEmpty()) {
+                                mutations?.onRestore?.invoke(setOf(selectedTrack.contentUri))
+                            } else {
+                                mutationTrack = selectedTrack
+                                deleteRequested = false
+                            }
+                            onDismiss()
+                        },
+                    )
+                    TrackAction(
+                        icon = MiuixIcons.Delete,
+                        text = stringResource(R.string.music_delete_song),
+                        enabled = mutations != null,
+                        onClick = {
+                            mutationTrack = selectedTrack
+                            deleteRequested = true
+                            onDismiss()
+                        },
+                    )
                 }
             }
+        }
+    }
+
+    OverlayDialog(
+        show = showMutationConfirm,
+        title = stringResource(
+            if (deleteRequested) R.string.music_delete_song else R.string.music_hide_song,
+        ),
+        summary = stringResource(
+            if (deleteRequested) R.string.music_delete_confirm else R.string.music_hide_confirm,
+            mutationTrack?.title ?: stringResource(R.string.music_unknown_title),
+        ),
+        onDismissRequest = { showMutationConfirm = false },
+        onDismissFinished = { mutationTrack = null },
+    ) {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            TextButton(
+                text = stringResource(R.string.clear_queue_confirm_cancel),
+                onClick = { showMutationConfirm = false },
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(modifier = Modifier.width(20.dp))
+            TextButton(
+                text = stringResource(R.string.clear_queue_confirm_confirm),
+                onClick = {
+                    mutationTrack?.let { selected ->
+                        if (deleteRequested) mutations?.onDelete?.invoke(selected)
+                        else mutations?.onHide?.invoke(selected)
+                    }
+                    showMutationConfirm = false
+                },
+                modifier = Modifier.weight(1f),
+                colors = if (deleteRequested) {
+                    ButtonDefaults.textButtonColorsPrimary(
+                        color = MiuixTheme.colorScheme.error,
+                        textColor = MiuixTheme.colorScheme.onError,
+                    )
+                } else {
+                    ButtonDefaults.textButtonColorsPrimary()
+                },
+            )
         }
     }
 
@@ -506,7 +606,8 @@ private fun TrackAction(
     iconStartPadding: Dp = 0.dp,
     iconEndPadding: Dp = 0.dp,
     truncateText: Boolean = false,
-    onClick: () -> Unit,
+    enabled: Boolean = true,
+    onClick: (() -> Unit)?,
 ) {
     TrackAction(
         icon = {
@@ -516,11 +617,16 @@ private fun TrackAction(
                 modifier = Modifier
                     .padding(start = iconStartPadding, end = iconEndPadding)
                     .size(iconSize),
-                tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                tint = if (enabled) {
+                    MiuixTheme.colorScheme.onSurfaceVariantActions
+                } else {
+                    MiuixTheme.colorScheme.disabledOnSecondaryVariant
+                },
             )
         },
         text = text,
         truncateText = truncateText,
+        enabled = enabled,
         onClick = onClick,
     )
 }
@@ -533,6 +639,7 @@ private fun TrackAction(
     iconStartPadding: Dp = 0.dp,
     iconEndPadding: Dp = 0.dp,
     truncateText: Boolean = false,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     TrackAction(
@@ -543,11 +650,16 @@ private fun TrackAction(
                 modifier = Modifier
                     .padding(start = iconStartPadding, end = iconEndPadding)
                     .size(iconSize),
-                tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                tint = if (enabled) {
+                    MiuixTheme.colorScheme.onSurfaceVariantActions
+                } else {
+                    MiuixTheme.colorScheme.disabledOnSecondaryVariant
+                },
             )
         },
         text = text,
         truncateText = truncateText,
+        enabled = enabled,
         onClick = onClick,
     )
 }
@@ -557,13 +669,15 @@ private fun TrackAction(
     icon: @Composable () -> Unit,
     text: String,
     truncateText: Boolean = false,
-    onClick: () -> Unit,
+    enabled: Boolean = true,
+    onClick: (() -> Unit)?,
 ) {
     if (!truncateText) {
         BasicComponent(
             title = text,
             startAction = icon,
             onClick = onClick,
+            enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
         )
         return
@@ -571,6 +685,7 @@ private fun TrackAction(
     BasicComponent(
         startAction = icon,
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Text(
