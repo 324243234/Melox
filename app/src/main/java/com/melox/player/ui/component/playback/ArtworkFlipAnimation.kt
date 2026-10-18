@@ -59,36 +59,52 @@ internal fun <T> rememberArtworkFlipState(
     return state
 }
 
-internal class ArtworkFlipState<T>(initialValue: T?, initialKey: Any?) {
+internal class ArtworkFlipState<T>(initialValue: T?, initialKey: Any?, initialPlaceholder: Boolean = false) {
     var front by mutableStateOf(initialValue)
         private set
     var back by mutableStateOf<T?>(null)
         private set
+    private var frontIsPlaceholder by mutableStateOf(initialPlaceholder)
+    private var backIsPlaceholder by mutableStateOf(false)
     private var frontKey: Any? = initialKey
     private var backKey: Any? = null
     private var direction by mutableStateOf(1)
     val progress = Animatable(1f)
-    val isRunning: Boolean get() = back != null && progress.value < 1f
+    // Keep the incoming face active until it is promoted to the front.
+    val isRunning: Boolean get() = back != null
     val frame: ArtworkFlipFrame get() = artworkFlipFrame(if (isRunning) progress.value else 0f, direction)
     val visibleValue: T? get() = if (isRunning && frame.showBack) back else front
+    val visibleContentKey: Any? get() = if (isRunning && frame.showBack) backKey else frontKey
+    val visibleIsPlaceholder: Boolean
+        get() = if (isRunning && frame.showBack) backIsPlaceholder else frontIsPlaceholder
 
-    suspend fun snapTo(value: T?, key: Any?) {
+    suspend fun snapTo(value: T?, key: Any?, isPlaceholder: Boolean = false) {
         front = value
         frontKey = key
+        frontIsPlaceholder = isPlaceholder
         back = null
         backKey = null
+        backIsPlaceholder = false
         progress.snapTo(1f)
     }
 
-    suspend fun transitionTo(value: T, key: Any?, requestedDirection: Int, durationMillis: Int) {
+    suspend fun transitionTo(
+        value: T,
+        key: Any?,
+        requestedDirection: Int,
+        durationMillis: Int,
+        isPlaceholder: Boolean = false,
+        canStartNextTurn: () -> Boolean = { true },
+    ) {
         if (front == null) {
-            snapTo(value, key)
+            snapTo(value, key, isPlaceholder)
             return
         }
         if (isRunning) {
             if (key == backKey || value === back) {
                 back = value
                 backKey = key
+                backIsPlaceholder = isPlaceholder
                 finish(durationMillis)
                 return
             }
@@ -97,28 +113,35 @@ internal class ArtworkFlipState<T>(initialValue: T?, initialKey: Any?) {
                     frontKey = key
                     settleToFront(durationMillis)
                     front = value
+                    frontIsPlaceholder = isPlaceholder
                     return
                 }
                 back = value
                 backKey = key
+                backIsPlaceholder = isPlaceholder
                 finish(durationMillis)
                 return
             }
             finish(durationMillis)
+            if (!canStartNextTurn()) return
         }
         if (key == frontKey) {
             front = value
+            frontIsPlaceholder = isPlaceholder
             return
         }
         // Confirmed identical artwork can belong to consecutive songs.
         if (value === front) {
             frontKey = key
+            frontIsPlaceholder = isPlaceholder
             return
         }
+        // Reset before installing the next back so it cannot inherit the endpoint.
+        progress.snapTo(0f)
         back = value
         backKey = key
+        backIsPlaceholder = isPlaceholder
         direction = if (requestedDirection < 0) -1 else 1
-        progress.snapTo(0f)
         finish(durationMillis)
     }
 
@@ -134,6 +157,7 @@ internal class ArtworkFlipState<T>(initialValue: T?, initialKey: Any?) {
         )
         back = null
         backKey = null
+        backIsPlaceholder = false
     }
 
     private suspend fun finish(durationMillis: Int) {
@@ -143,7 +167,9 @@ internal class ArtworkFlipState<T>(initialValue: T?, initialKey: Any?) {
         )
         front = back
         frontKey = backKey
+        frontIsPlaceholder = backIsPlaceholder
         back = null
         backKey = null
+        backIsPlaceholder = false
     }
 }

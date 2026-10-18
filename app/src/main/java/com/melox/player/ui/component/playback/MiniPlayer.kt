@@ -1,5 +1,6 @@
 package com.melox.player.ui.component.playback
 
+import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
@@ -69,7 +70,8 @@ import com.melox.player.model.PlaybackUiState
 import com.melox.player.ui.MiniPlayerChrome
 import com.melox.player.ui.NORMAL_BAR_STROKE_ALPHA
 import com.melox.player.ui.component.animation.InteractiveHighlight
-import com.melox.player.ui.component.library.PlaybackArtwork
+import com.melox.player.ui.component.library.PlaybackArtworkBlend
+import com.melox.player.ui.screen.playback.toArtworkBlend
 import com.melox.player.ui.component.liquid.miuixFloatingBarShadow
 import com.melox.player.ui.component.liquid.miniPlayerSurface
 import kotlin.math.abs
@@ -90,6 +92,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @Composable
 internal fun MiniPlayer(
     playback: PlaybackUiState,
+    artworkState: ArtworkTransitionState<Bitmap>,
     chrome: MiniPlayerChrome,
     interactiveHighlight: InteractiveHighlight,
     onOpen: (Float) -> Unit,
@@ -108,6 +111,7 @@ internal fun MiniPlayer(
     drawInPlace: Boolean,
     surfaceVisible: Boolean,
     sharedArtworkVisible: Boolean,
+    playerSheetProgress: () -> Float,
     capturedPressScale: Float?,
     onLayerRecorded: (generation: Int, size: IntSize) -> Unit,
     onPlayerBoundsChanged: (Rect) -> Unit,
@@ -116,7 +120,6 @@ internal fun MiniPlayer(
     onArtworkBoundsChanged: (Rect) -> Unit,
     modifier: Modifier = Modifier,
     circularArtwork: Boolean = false,
-    artworkFlipAnimation: Boolean = false,
 ) {
     val item = playback.currentItem
     val hasItem = item != null
@@ -363,24 +366,13 @@ internal fun MiniPlayer(
                             alpha = if (sharedArtworkVisible) 1f else 0f
                         },
                 ) {
-                    PlaybackArtwork(
-                        contentUri = item?.contentUri.orEmpty(),
-                        dateModifiedEpochSeconds = item?.dateModifiedEpochSeconds ?: 0L,
-                        fileSizeBytes = item?.fileSizeBytes ?: 0L,
+                    MiniPlayerArtwork(
+                        state = artworkState,
+                        playerSheetProgress = playerSheetProgress,
                         size = artworkSize,
                         cornerRadius = artworkCornerRadius,
                         modifier = Modifier.fillMaxSize(),
-                        requestSize = artworkSize,
-                        contentScale = ContentScale.Fit,
-                        bitmapCrossfadeDurationMillis =
-                            PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS,
-                        bitmapCrossfadeEasing = PLAYER_TRACK_ARTWORK_CROSSFADE_EASING,
-                        rectangularCornerRadiusReduction =
-                            MINI_PLAYER_RECTANGULAR_ARTWORK_CORNER_REDUCTION,
                         circular = circularArtwork,
-                        flipAnimationEnabled = artworkFlipAnimation,
-                        transitionDirection = playback.trackChangeDirection,
-                        foreground = true,
                     )
                 }
                 Spacer(modifier = Modifier.width(metadataSpacing))
@@ -462,6 +454,27 @@ internal fun MiniPlayer(
             }
         }
     }
+}
+
+@Composable
+private fun MiniPlayerArtwork(
+    state: ArtworkTransitionState<Bitmap>,
+    playerSheetProgress: () -> Float,
+    size: Dp,
+    cornerRadius: Dp,
+    modifier: Modifier = Modifier,
+    circular: Boolean = false,
+) {
+    PlaybackArtworkBlend(
+        blend = state.toArtworkBlend(),
+        size = size,
+        cornerRadius = cornerRadius,
+        modifier = modifier,
+        contentScale = ContentScale.Fit,
+        rectangularCornerRadiusReduction = MINI_PLAYER_RECTANGULAR_ARTWORK_CORNER_REDUCTION,
+        circular = circular,
+        placeholderAlpha = playerSheetPlaceholderArtworkAlpha(playerSheetProgress()),
+    )
 }
 
 @Composable

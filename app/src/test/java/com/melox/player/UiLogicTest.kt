@@ -117,6 +117,7 @@ import com.melox.player.ui.component.playback.PLAYER_MINI_CONTENT_FADE_END_PROGR
 import com.melox.player.ui.component.playback.PLAYER_CONTENT_APPEAR_START_PROGRESS
 import com.melox.player.ui.component.playback.PLAYER_CONTENT_APPEAR_END_PROGRESS
 import com.melox.player.ui.component.playback.playerSheetBarAlpha
+import com.melox.player.ui.component.playback.playerSheetPlaceholderArtworkAlpha
 import com.melox.player.ui.component.playback.playerSheetMiniContentAlpha
 import com.melox.player.ui.component.playback.playerSheetBackgroundAlpha
 import com.melox.player.ui.component.playback.playerSheetDragProgress
@@ -1967,6 +1968,14 @@ class UiLogicTest {
         assertEquals(1f, playerSheetBackgroundAlpha(PLAYER_LAYER_HANDOFF_END_PROGRESS), 0f)
         assertEquals(0f, playerSheetBarAlpha(1f), 0f)
         assertEquals(1f, playerSheetBackgroundAlpha(1f), 0f)
+    }
+
+    @Test
+    fun placeholderArtworkStartsAtThirtyPercentAndReachesNinetyAtHandoff() {
+        assertEquals(0.3f, playerSheetPlaceholderArtworkAlpha(0f), 0f)
+        assertTrue(playerSheetPlaceholderArtworkAlpha(0.1f) in 0.3f..0.9f)
+        assertEquals(0.9f, playerSheetPlaceholderArtworkAlpha(PLAYER_LAYER_HANDOFF_END_PROGRESS), 0f)
+        assertEquals(0.9f, playerSheetPlaceholderArtworkAlpha(1f), 0f)
     }
 
     @Test

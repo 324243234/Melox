@@ -90,10 +90,7 @@ internal fun usesWidePlayerLayout(windowWidth: Dp, windowHeight: Dp): Boolean =
 internal fun compactLandscapeArtworkSize(
     paneWidth: Dp,
     availableHeight: Dp,
-): Dp = fitPlayerArtworkSize(
-    preferredSize = paneWidth.coerceAtLeast(0.dp),
-    availableHeight = availableHeight,
-)
+): Dp = minOf(paneWidth, availableHeight).coerceAtLeast(0.dp)
 
 internal fun compactLandscapePaneContentWidth(paneWidth: Dp): Dp =
     playerContentWidth(paneWidth, PLAYER_PORTRAIT_CONTENT_MAX_WIDTH)

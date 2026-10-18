@@ -655,6 +655,79 @@ class PlayerResizeTransitionTest {
     }
 
     @Test
+    fun expandedRoundTripPreparesBothCurrentFullFramesWhileStayingVisible() {
+        val state = PlayerSheetTransitionState(initialProgress = 1f)
+        var previousGeneration = state.currentFrameRecordingGeneration
+        for (window in listOf(portrait, landscape, portrait)) {
+            state.updateWindowSize(window)
+            reportContainerBounds(state, window)
+            val generation = state.currentFrameRecordingGeneration
+
+            assertTrue(state.fullPlayerFramesNeedRecording)
+            assertTrue(state.fullPlayerDrawsInPlace)
+            assertTrue(state.fullPlayerAcceptsInput)
+            assertEquals(1f, state.progress, 0f)
+            state.markFullFrameRecorded(window, previousGeneration, window)
+            assertTrue(state.fullPlayerFramesNeedRecording)
+            state.markMiniFrameRecorded(window, generation, IntSize(300, 64))
+            state.markFullBackgroundFrameRecorded(window, generation, window)
+            assertTrue(state.fullPlayerFramesNeedRecording)
+            assertFalse(state.sharedLayersReady)
+
+            state.markFullContentFrameRecorded(window, generation, window)
+
+            assertFalse(state.fullPlayerFramesNeedRecording)
+            assertTrue(state.sharedLayersReady)
+            assertTrue(state.fullPlayerDrawsInPlace)
+            assertFalse(state.hasArtworkBounds)
+            previousGeneration = generation
+        }
+    }
+
+    @Test
+    fun preparedResizedFramesServeBothCollapsePathsWithoutArtworkBounds() {
+        for (dragged in listOf(false, true)) {
+            val state = PlayerSheetTransitionState(initialProgress = 1f)
+            state.updateFullPlayerArtworkPageSelected(false)
+            state.updateWindowSize(landscape)
+            reportContainerBounds(state, landscape)
+            reportFrames(state, landscape)
+            state.updateWindowSize(portrait)
+            reportContainerBounds(state, portrait)
+            reportFrames(state, portrait)
+
+            if (dragged) {
+                state.beginFullPlayerDrag()
+                state.dragBy(120f)
+                state.endDrag(velocityY = 1f)
+            } else {
+                state.close()
+            }
+
+            assertFalse(state.targetOpen)
+            assertTrue(state.isTransitionActive)
+            assertTrue(state.canSettle)
+            assertTrue(state.sharedLayersReady)
+            assertFalse(state.fullPlayerFramesNeedRecording)
+            assertFalse(state.fullPlayerDrawsInPlace)
+            assertFalse(state.separateArtworkOverlayReady)
+        }
+    }
+
+    @Test
+    fun missingMiniFrameDoesNotKeepReRecordingPreparedFullFrames() {
+        val state = PlayerSheetTransitionState(initialProgress = 1f)
+        state.updateWindowSize(portrait)
+        reportContainerBounds(state, portrait)
+        state.markFullFrameRecorded(portrait, state.currentFrameRecordingGeneration, portrait)
+
+        assertFalse(state.sharedLayersReady)
+        assertFalse(state.fullPlayerFramesNeedRecording)
+        assertTrue(state.fullPlayerDrawsInPlace)
+        assertTrue(state.canSettle)
+    }
+
+    @Test
     fun hiddenPreparationHostStaysBehindTheRootUntilFramesAreReady() {
         val state = PlayerSheetTransitionState()
         state.updateWindowSize(portrait)

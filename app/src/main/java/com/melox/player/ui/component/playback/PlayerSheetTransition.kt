@@ -295,6 +295,10 @@ internal class PlayerSheetTransitionState(initialProgress: Float = 0f) {
             (layoutWindowSize == IntSize.Zero ||
                 (miniFrameReady && fullBackgroundFrameReady && fullContentFrameReady))
 
+    val fullPlayerFramesNeedRecording: Boolean
+        get() = layoutWindowSize != IntSize.Zero &&
+            (!fullBackgroundFrameReady || !fullContentFrameReady)
+
     val separateArtworkOverlayReady: Boolean
         get() = sharedLayersReady && sharedArtworkEnabled && hasArtworkBounds
 

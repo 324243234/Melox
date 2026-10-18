@@ -2,6 +2,7 @@ package com.melox.player.ui.component.library
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,4 +28,21 @@ internal fun <T> rememberArtworkLoad(
         if (currentRequest === request) result = ArtworkLoadResult(loaded)
     }
     return result
+}
+
+@Composable
+internal fun <T> rememberRetainedArtworkValue(
+    result: ArtworkLoadResult<T?>?,
+    contentKey: Any? = Unit,
+    enabled: Boolean = true,
+): T? {
+    var retained by remember(contentKey) { mutableStateOf<T?>(null) }
+    // An absent result is pending; a completed null must clear the old image.
+    val value = when {
+        !enabled -> null
+        result == null -> retained
+        else -> result.value
+    }
+    SideEffect { retained = value }
+    return value
 }

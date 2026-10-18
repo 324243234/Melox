@@ -100,17 +100,6 @@ internal fun rememberPlaybackArtworkResource(
     }
 
     LaunchedEffect(request) {
-        if (contentUri.isBlank()) {
-            resource = PlaybackArtworkResource(
-                cacheKey = cacheKey,
-                blurredCacheKey = blurredCacheKey,
-                artwork = null,
-                blurredArtwork = null,
-                backgroundColor = PlaybackArtworkFallbackColor,
-                isLoading = false,
-            )
-            return@LaunchedEffect
-        }
         resource = resource.copy(isLoading = true)
         if (prioritizeBlurredBackground &&
             resource.cacheKey == cacheKey && resource.blurredArtwork == null

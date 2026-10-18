@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,6 +52,7 @@ import androidx.core.net.toUri
 import com.melox.player.data.library.readEmbeddedArtworkData
 import com.melox.player.ui.component.playback.ArtworkFlipLayer
 import com.melox.player.ui.screen.playback.rememberArtworkBlend
+import com.melox.player.ui.screen.playback.ArtworkBlend
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
@@ -205,6 +205,21 @@ private fun PlaybackArtworkStackedFade(
         targetReady = targetReady,
         easing = easing,
     )
+    PlaybackArtworkBlend(blend, size, cornerRadius, modifier, contentScale,
+        rectangularCornerRadiusReduction, circular)
+}
+
+@Composable
+internal fun PlaybackArtworkBlend(
+    blend: ArtworkBlend,
+    size: Dp,
+    cornerRadius: Dp,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Crop,
+    rectangularCornerRadiusReduction: Dp = 0.dp,
+    circular: Boolean = false,
+    placeholderAlpha: Float = 1f,
+) {
     Box(modifier.size(size), contentAlignment = Alignment.Center) {
         val flip = blend.flipState
         if (flip != null) {
@@ -218,6 +233,7 @@ private fun PlaybackArtworkStackedFade(
                     contentScale = contentScale,
                     rectangularCornerRadiusReduction = rectangularCornerRadiusReduction,
                     circular = circular,
+                    artworkAlpha = if (flip.visibleIsPlaceholder) placeholderAlpha else 1f,
                     artworkEffect = blur,
                 )
             }
@@ -230,6 +246,7 @@ private fun PlaybackArtworkStackedFade(
                 contentScale = contentScale,
                 rectangularCornerRadiusReduction = rectangularCornerRadiusReduction,
                 circular = circular,
+                artworkAlpha = if (blend.isPlaceholder) placeholderAlpha else 1f,
             )
         } else {
             blend.frames.forEach { frame ->
@@ -237,7 +254,13 @@ private fun PlaybackArtworkStackedFade(
                     bitmap = frame.value,
                     size = size,
                     cornerRadius = cornerRadius,
-                    modifier = Modifier.fillMaxSize().graphicsLayer { alpha = frame.alpha },
+                    modifier = Modifier.fillMaxSize().graphicsLayer {
+                        alpha = frame.alpha * if (frame.isPlaceholder) {
+                            placeholderAlpha.coerceIn(0f, 1f)
+                        } else {
+                            1f
+                        }
+                    },
                     contentScale = contentScale,
                     rectangularCornerRadiusReduction = rectangularCornerRadiusReduction,
                     circular = circular,
@@ -300,7 +323,9 @@ internal fun PlaybackArtworkFrame(
                         .playbackArtworkClip(resolvedCornerRadius, circular)
                         .then(artworkEffect)
                 } else {
-                    baseModifier.playbackArtworkClip(resolvedCornerRadius, circular)
+                    baseModifier
+                        .graphicsLayer { alpha = artworkAlpha.coerceIn(0f, 1f) }
+                        .playbackArtworkClip(resolvedCornerRadius, circular)
                         .then(artworkEffect)
                 }
             }
@@ -447,10 +472,9 @@ internal data class ArtworkBitmapLoadState(val bitmap: Bitmap?, val isLoading: B
 
 @Composable
 private fun rememberRetainedArtworkBitmap(artwork: ArtworkBitmapLoadState): Bitmap? {
-    var retained by remember { mutableStateOf<Bitmap?>(null) }
-    val bitmap = if (artwork.isLoading) retained else artwork.bitmap
-    SideEffect { retained = bitmap }
-    return bitmap
+    return rememberRetainedArtworkValue(
+        result = if (artwork.isLoading) null else ArtworkLoadResult(artwork.bitmap),
+    )
 }
 
 /** Loads a cached artwork bitmap for surfaces that need their own rendering treatment. */
@@ -530,7 +554,6 @@ internal fun rememberFullPlayerArtworkBitmapPixels(
             targetSizePx = normalizedTargetSizePx,
         )
     }
-    var retainedBitmap by remember(contentUri) { mutableStateOf<Bitmap?>(null) }
     val result = rememberArtworkLoad(cacheKey to enabled) {
         if (enabled) {
             loadFullPlayerArtworkBitmap(
@@ -544,11 +567,7 @@ internal fun rememberFullPlayerArtworkBitmapPixels(
             null
         }
     }
-    val bitmap = result?.value
-    LaunchedEffect(bitmap, enabled) {
-        retainedBitmap = if (enabled) bitmap ?: retainedBitmap else null
-    }
-    return if (enabled) bitmap ?: retainedBitmap else null
+    return rememberRetainedArtworkValue(result, contentKey = contentUri, enabled = enabled)
 }
 
 @Composable

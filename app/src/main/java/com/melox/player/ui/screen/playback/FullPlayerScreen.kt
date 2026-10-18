@@ -131,15 +131,12 @@ import com.melox.player.ui.component.bottomSheetCardColor
 import com.melox.player.ui.component.bottomSheetGlassModifier
 import com.melox.player.ui.component.bottomSheetMaterialColor
 import com.melox.player.ui.component.library.formatDuration
-import com.melox.player.ui.component.library.fullPlayerArtworkTargetSizePx
-import com.melox.player.ui.component.library.normalizeArtworkTargetSize
-import com.melox.player.ui.component.library.rememberFullPlayerArtworkBitmapPixels
+import com.melox.player.ui.component.playback.ArtworkTransitionState
 import com.melox.player.ui.component.playback.BlurredArtworkBackground
 import com.melox.player.ui.component.playback.DynamicFlowBackground
 import com.melox.player.ui.component.playback.DynamicFlowBackgroundState
 import com.melox.player.ui.component.playback.PLAYER_FULL_ARTWORK_CORNER_RADIUS
 import com.melox.player.ui.component.playback.PLAYER_FULL_ARTWORK_REQUEST_SIZE
-import com.melox.player.ui.component.playback.PLAYER_ARTWORK_RESOLUTION_CROSSFADE_DURATION_MILLIS
 import com.melox.player.ui.component.playback.PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS
 import com.melox.player.ui.component.playback.PLAYER_TRACK_ARTWORK_CROSSFADE_EASING
 import com.melox.player.ui.component.playback.rememberPlaybackArtworkResource
@@ -177,6 +174,7 @@ import top.yukonga.miuix.kmp.utils.overScrollVertical
 @OptIn(ExperimentalLayoutApi::class)
 internal fun FullPlayerScreen(
     playback: PlaybackUiState,
+    artworkState: ArtworkTransitionState<Bitmap>,
     currentTrack: MusicTrack?,
     lyrics: LyricsUiState,
     playbackBackgroundStyle: PlaybackBackgroundStyle,
@@ -239,6 +237,7 @@ internal fun FullPlayerScreen(
     blockUnderlyingInput: Boolean,
     lyricsPagingEnabled: Boolean,
     drawInPlace: Boolean,
+    recordInPlace: Boolean,
     sharedArtworkVisible: Boolean,
     initialArtworkPageSelected: Boolean,
     onPlayerDragStart: () -> Unit,
@@ -249,24 +248,16 @@ internal fun FullPlayerScreen(
     onContentLayerRecorded: (generation: Int, size: IntSize) -> Unit,
     onPlayerBoundsChanged: (Rect) -> Unit,
     onArtworkBoundsChanged: (Rect) -> Unit,
+    onArtworkDisplaySizeChanged: (Int) -> Unit,
     onArtworkPageSelectedChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     circularArtwork: Boolean = false,
-    artworkFlipAnimation: Boolean = false,
 ) {
     val item = playback.currentItem?.let { queueItem ->
         currentTrack?.let(queueItem::withTrackMetadata) ?: queueItem
     }
     val context = LocalContext.current
     val density = LocalDensity.current
-    val backgroundArtworkTargetSizePx = normalizeArtworkTargetSize(
-        with(density) { PLAYER_FULL_ARTWORK_REQUEST_SIZE.roundToPx() },
-    )
-    var artworkDisplaySizePx by remember(density) {
-        mutableIntStateOf(backgroundArtworkTargetSizePx)
-    }
-    val resolvedFullPlayerArtworkTargetSizePx =
-        fullPlayerArtworkTargetSizePx(artworkDisplaySizePx)
     val artworkResource = rememberPlaybackArtworkResource(
         contentUri = item?.contentUri.orEmpty(),
         dateModifiedEpochSeconds = item?.dateModifiedEpochSeconds ?: 0L,
@@ -275,25 +266,7 @@ internal fun FullPlayerScreen(
         prioritizeBlurredBackground =
             playbackBackgroundStyle == PlaybackBackgroundStyle.BLURRED_ARTWORK,
     )
-    val fullPlayerArtwork = rememberFullPlayerArtworkBitmapPixels(
-        contentUri = item?.contentUri.orEmpty(),
-        dateModifiedEpochSeconds = item?.dateModifiedEpochSeconds ?: 0L,
-        fileSizeBytes = item?.fileSizeBytes ?: 0L,
-        targetSizePx = resolvedFullPlayerArtworkTargetSizePx,
-        enabled = item != null && artworkDisplaySizePx > 0,
-    )
-    val artworkBlend = rememberArtworkBlend(
-        targetBitmap = fullPlayerArtwork ?: artworkResource.artwork,
-        animate = true,
-        contentKey = item?.contentUri,
-        sameContentDurationMillis = PLAYER_ARTWORK_RESOLUTION_CROSSFADE_DURATION_MILLIS,
-        transitionDirection = playback.trackChangeDirection,
-        flipAnimationEnabled = artworkFlipAnimation,
-        targetReady = fullPlayerArtwork != null || artworkResource.isArtworkReady,
-    )
-    val onArtworkDisplaySizeChanged: (Int) -> Unit = { sizePx ->
-        artworkDisplaySizePx = sizePx
-    }
+    val artworkBlend = artworkState.toArtworkBlend()
     val emphasisControlColor = playbackContentColor
     val controlColor = emphasisControlColor.copy(alpha = 0.6f)
     val artistControlColor = emphasisControlColor.copy(
@@ -486,6 +459,7 @@ internal fun FullPlayerScreen(
                         layer = backgroundLayer,
                         drawInPlace = drawInPlace,
                         recordingGeneration = frameRecordingGeneration,
+                        recordInPlace = recordInPlace,
                         onRecorded = onBackgroundLayerRecorded,
                     ),
             ) {
@@ -528,6 +502,7 @@ internal fun FullPlayerScreen(
                         layer = contentLayer,
                         drawInPlace = drawInPlace,
                         recordingGeneration = frameRecordingGeneration,
+                        recordInPlace = recordInPlace,
                         onRecorded = onContentLayerRecorded,
                     ),
             ) {
@@ -846,7 +821,8 @@ internal fun FullPlayerScreen(
                                             ownSafeInset = playerSafeEnd,
                                             oppositeSafeInset = playerSafeStart,
                                         ),
-                                        bottom = playerSafeBottom,
+                                        // Mirror the top safe space independently of navigation bars.
+                                        bottom = playerSafeTop,
                                     ),
                             )
                         } else {

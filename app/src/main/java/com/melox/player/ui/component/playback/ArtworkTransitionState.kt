@@ -2,6 +2,7 @@ package com.melox.player.ui.component.playback
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -10,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlin.math.roundToInt
 
 internal data class ArtworkTarget<T>(val value: T?, val contentKey: Any?)
 
@@ -66,21 +68,30 @@ internal class ArtworkCrossfadeState<T>(
     initialValue: T?,
     initialKey: Any?,
     private val sameValue: (T, T) -> Boolean,
+    initialPlaceholder: Boolean = false,
 ) {
     private var startingFrames by mutableStateOf<List<WeightedCrossfadeFrame<T>>>(emptyList())
     private var heldFrames by mutableStateOf<List<WeightedCrossfadeFrame<T>>?>(null)
     var currentValue by mutableStateOf(initialValue)
         private set
+    var isPlaceholderArtwork by mutableStateOf(initialPlaceholder)
+        private set
     var contentKey: Any? = initialKey
         private set
     val progress = Animatable(1f)
+    private var animationDurationMillis = 0
+    private var animationEasing: Easing = LinearEasing
+    val isRunning: Boolean get() = heldFrames != null || progress.value < 1f
     val frames: List<WeightedCrossfadeFrame<T>>
-        get() = heldFrames ?: weightedCrossfadeFrames(startingFrames, currentValue, progress.value, sameValue)
+        get() = heldFrames ?: weightedCrossfadeFrames(
+            startingFrames, currentValue, progress.value, sameValue, isPlaceholderArtwork,
+        )
 
-    suspend fun snapTo(value: T?, key: Any?) {
-        heldFrames = listOfNotNull(value?.let { WeightedCrossfadeFrame(it, 1f) })
+    suspend fun snapTo(value: T?, key: Any?, isPlaceholder: Boolean = false) {
+        heldFrames = listOfNotNull(value?.let { WeightedCrossfadeFrame(it, 1f, isPlaceholder) })
         startingFrames = emptyList()
         currentValue = value
+        isPlaceholderArtwork = isPlaceholder
         contentKey = key
         progress.snapTo(1f)
         heldFrames = null
@@ -92,9 +103,10 @@ internal class ArtworkCrossfadeState<T>(
         durationMillis: Int,
         sameContentDurationMillis: Int?,
         easing: Easing,
+        isPlaceholder: Boolean = false,
     ) {
         val current = currentValue
-        if (heldFrames == null && progress.value >= 1f &&
+        if (heldFrames == null && progress.value >= 1f && isPlaceholderArtwork == isPlaceholder &&
             (current == null && value == null || current != null && value != null && sameValue(current, value))
         ) {
             currentValue = value
@@ -107,12 +119,142 @@ internal class ArtworkCrossfadeState<T>(
         val resolvedDuration = artworkCrossfadeDurationMillis(
             contentKey, key, durationMillis, sameContentDurationMillis,
         )
+        animationDurationMillis = resolvedDuration
+        animationEasing = easing
         progress.snapTo(0f)
         startingFrames = visible
         currentValue = value
+        isPlaceholderArtwork = isPlaceholder
         contentKey = key
         heldFrames = null
-        progress.animateTo(1f, tween(resolvedDuration, easing = easing))
+        finishCurrent()
+    }
+
+    fun updateCurrentValue(value: T?, isPlaceholder: Boolean = isPlaceholderArtwork) {
+        currentValue = value
+        isPlaceholderArtwork = isPlaceholder
+    }
+
+    suspend fun finishCurrent() {
+        if (!isRunning) return
+        progress.animateTo(
+            1f,
+            tween((animationDurationMillis * (1f - progress.value)).roundToInt(), easing = animationEasing),
+        )
         startingFrames = emptyList()
+    }
+}
+
+@Composable
+internal fun <T> rememberArtworkTransitionState(
+    target: ArtworkTarget<T>,
+    requestedContentKey: Any?,
+    targetReady: Boolean,
+    targetIsPlaceholder: Boolean = false,
+    animate: Boolean,
+    flipAnimationEnabled: Boolean,
+    direction: Int,
+    durationMillis: Int,
+    sameContentDurationMillis: Int?,
+    easing: Easing,
+    sameValue: (T, T) -> Boolean,
+): ArtworkTransitionState<T> {
+    val state = remember {
+        ArtworkTransitionState(target, flipAnimationEnabled, sameValue, targetIsPlaceholder)
+    }
+    val activeFlip = state.flipAnimationEnabled
+    SideEffect { state.requestMode(flipAnimationEnabled) }
+    LaunchedEffect(
+        target, targetIsPlaceholder, activeFlip, animate, durationMillis, sameContentDurationMillis, easing,
+        if (activeFlip) requestedContentKey else null,
+        if (activeFlip) targetReady else true,
+        if (activeFlip) direction else 0,
+    ) {
+        state.transitionTo(target, targetReady, targetIsPlaceholder, animate, direction, durationMillis,
+            sameContentDurationMillis, easing)
+    }
+    return state
+}
+
+internal class ArtworkTransitionState<T>(
+    initialTarget: ArtworkTarget<T>,
+    initialFlipAnimationEnabled: Boolean,
+    private val sameValue: (T, T) -> Boolean,
+    initialPlaceholder: Boolean = false,
+) {
+    private var flip = ArtworkFlipState(initialTarget.value, initialTarget.contentKey, initialPlaceholder)
+    private var fade = ArtworkCrossfadeState(initialTarget.value, initialTarget.contentKey, sameValue, initialPlaceholder)
+    private var requestedFlipAnimationEnabled = initialFlipAnimationEnabled
+    var flipAnimationEnabled by mutableStateOf(initialFlipAnimationEnabled)
+        private set
+    val isRunning: Boolean get() = if (flipAnimationEnabled) flip.isRunning else fade.isRunning
+    val currentValue: T? get() = if (flipAnimationEnabled) flip.visibleValue else fade.currentValue
+    val currentContentKey: Any? get() = if (flipAnimationEnabled) flip.visibleContentKey else fade.contentKey
+    val isPlaceholderArtwork: Boolean
+        get() = if (flipAnimationEnabled) flip.visibleIsPlaceholder else fade.isPlaceholderArtwork
+    val progress: Float get() = if (flipAnimationEnabled) flip.progress.value else fade.progress.value
+    val flipState: ArtworkFlipState<T>?
+        get() = if (flipAnimationEnabled) flip.takeIf { it.isRunning } else null
+    val frames: List<WeightedCrossfadeFrame<T>>
+        get() = if (!flipAnimationEnabled) fade.frames else if (flip.isRunning) emptyList()
+        else listOfNotNull(flip.visibleValue?.let { WeightedCrossfadeFrame(it, 1f, flip.visibleIsPlaceholder) })
+
+    fun requestMode(enabled: Boolean) {
+        requestedFlipAnimationEnabled = enabled
+        applyModeIfSettled()
+    }
+
+    suspend fun transitionTo(
+        target: ArtworkTarget<T>,
+        targetReady: Boolean,
+        targetIsPlaceholder: Boolean,
+        animate: Boolean,
+        direction: Int,
+        durationMillis: Int,
+        sameContentDurationMillis: Int?,
+        easing: Easing,
+    ) {
+        val installingInitialPlaceholder = targetReady && targetIsPlaceholder && currentValue == null && !isRunning
+        if (!animate || installingInitialPlaceholder) {
+            if (flipAnimationEnabled) flip.snapTo(target.value, target.contentKey, targetIsPlaceholder)
+            else fade.snapTo(target.value, target.contentKey, targetIsPlaceholder)
+        } else if (!targetReady) {
+            if (flipAnimationEnabled) flip.settleVisible(durationMillis) else fade.finishCurrent()
+        } else if (flipAnimationEnabled) {
+            val value = target.value
+            if (value == null) flip.snapTo(null, target.contentKey, targetIsPlaceholder)
+            else flip.transitionTo(value, target.contentKey, direction, durationMillis,
+                isPlaceholder = targetIsPlaceholder,
+                canStartNextTurn = { requestedFlipAnimationEnabled == flipAnimationEnabled })
+        } else {
+            if (fade.isRunning && requestedFlipAnimationEnabled != flipAnimationEnabled &&
+                target.contentKey != fade.contentKey
+            ) {
+                fade.finishCurrent()
+                // The queued song is processed by the new mode's effect after this boundary.
+                if (requestedFlipAnimationEnabled != flipAnimationEnabled || flipAnimationEnabled) {
+                    applyModeIfSettled()
+                    return
+                }
+            }
+            if (fade.isRunning && target.contentKey == fade.contentKey) {
+                fade.updateCurrentValue(target.value, targetIsPlaceholder)
+                fade.finishCurrent()
+            } else {
+                fade.transitionTo(target.value, target.contentKey, durationMillis,
+                    sameContentDurationMillis, easing, targetIsPlaceholder)
+            }
+        }
+        applyModeIfSettled()
+    }
+
+    private fun applyModeIfSettled() {
+        if (requestedFlipAnimationEnabled == flipAnimationEnabled || isRunning) return
+        val value = currentValue
+        val key = currentContentKey
+        val isPlaceholder = isPlaceholderArtwork
+        if (requestedFlipAnimationEnabled) flip = ArtworkFlipState(value, key, isPlaceholder)
+        else fade = ArtworkCrossfadeState(value, key, sameValue, isPlaceholder)
+        flipAnimationEnabled = requestedFlipAnimationEnabled
     }
 }

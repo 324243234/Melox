@@ -119,6 +119,7 @@ import com.melox.player.ui.component.playback.PLAYER_FULL_ARTWORK_REQUEST_SIZE
 import com.melox.player.ui.component.playback.PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS
 import com.melox.player.ui.component.playback.PLAYER_TRACK_ARTWORK_CROSSFADE_EASING
 import com.melox.player.ui.component.playback.ArtworkFlipState
+import com.melox.player.ui.component.playback.ArtworkTransitionState
 import com.melox.player.ui.component.playback.ArtworkFlipLayer
 import com.melox.player.ui.component.playback.rememberPlaybackArtworkResource
 import com.melox.player.ui.component.playback.playerControlIconTransition
@@ -128,6 +129,7 @@ import com.melox.player.ui.component.playback.rememberReadyArtworkTarget
 import com.melox.player.ui.component.playback.rememberArtworkCrossfadeState
 import com.melox.player.ui.component.playback.rememberArtworkFlipState
 import com.melox.player.ui.component.playback.rememberPlayerSheetVerticalDragModifier
+import com.melox.player.ui.component.playback.playerSheetPlaceholderArtworkAlpha
 import com.melox.player.ui.component.playback.artworkInsetRect
 import com.melox.player.ui.component.playback.fittedArtworkRect
 import kotlin.math.abs
@@ -156,6 +158,14 @@ internal data class ArtworkBlend(
     val frames: List<WeightedCrossfadeFrame<Bitmap>>,
     val currentBitmap: Bitmap?,
     val flipState: ArtworkFlipState<Bitmap>? = null,
+    val isPlaceholder: Boolean = false,
+)
+
+internal fun ArtworkTransitionState<Bitmap>.toArtworkBlend(): ArtworkBlend = ArtworkBlend(
+    frames = frames,
+    currentBitmap = currentValue,
+    flipState = flipState,
+    isPlaceholder = isPlaceholderArtwork,
 )
 
 // This stateless comparison must not occupy a Compose remembered-lambda slot.
@@ -215,6 +225,7 @@ internal fun PlayerArtwork(
     showArtwork: Boolean = true,
 ) {
     val artworkContainerSize = size + PLAYER_ARTWORK_CONTAINER_EXPANSION
+    val placeholderArtworkAlpha = playerSheetPlaceholderArtworkAlpha(1f)
     val artworkContentSize =
         (artworkContainerSize - artworkPadding * 2f).coerceAtLeast(0.dp)
     // The playing state expands the artwork content back to the measured size.
@@ -277,6 +288,7 @@ internal fun PlayerArtwork(
                     useSquircleClip = true,
                     circular = circularArtwork,
                     drawArtworkShadow = true,
+                    artworkAlpha = if (artworkBlend.flipState.visibleIsPlaceholder) placeholderArtworkAlpha else 1f,
                     artworkEffect = blur,
                 )
             }
@@ -290,6 +302,7 @@ internal fun PlayerArtwork(
                 useSquircleClip = true,
                 circular = circularArtwork,
                 drawArtworkShadow = true,
+                artworkAlpha = if (artworkBlend.isPlaceholder) placeholderArtworkAlpha else 1f,
             )
         } else {
             artworkBlend.frames.forEach { frame ->
@@ -302,7 +315,7 @@ internal fun PlayerArtwork(
                     useSquircleClip = true,
                     circular = circularArtwork,
                     drawArtworkShadow = true,
-                    artworkAlpha = frame.alpha,
+                    artworkAlpha = frame.alpha * if (frame.isPlaceholder) placeholderArtworkAlpha else 1f,
                 )
             }
         }

@@ -7,10 +7,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.MotionDurationScale
 import com.melox.player.ui.component.playback.ArtworkCrossfadeState
 import com.melox.player.ui.component.playback.ArtworkFlipState
+import com.melox.player.ui.component.playback.ArtworkTransitionState
 import com.melox.player.ui.component.playback.WeightedCrossfadeFrame
 import com.melox.player.ui.component.playback.rememberArtworkCrossfadeState
 import com.melox.player.ui.component.playback.rememberArtworkFlipState
+import com.melox.player.ui.component.playback.rememberArtworkTransitionState
 import com.melox.player.ui.component.playback.rememberReadyArtworkTarget
+import com.melox.player.ui.component.playback.playbackArtworkTarget
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -25,6 +28,7 @@ class ArtworkTransitionStateTest {
         val song: String?,
         val ready: Boolean = true,
         val direction: Int = 1,
+        val placeholder: Boolean = false,
     )
 
     @Composable
@@ -76,6 +80,259 @@ class ArtworkTransitionStateTest {
             assertEquals(0.25f, state.progress.value, 0.02f)
             frame(916)
             assertEquals(listOf(WeightedCrossfadeFrame("c", 1f)), state.frames)
+        }
+    }
+
+    @Test
+    fun unresolvedEmptyPlayerRetainsPlaceholderOwnershipWithoutABitmap() = runBlocking {
+        val input = mutableStateOf(Input(null, null, placeholder = true))
+        lateinit var state: ArtworkTransitionState<String>
+        withArtworkComposition(content = {
+            state = rememberArtworkTransitionStateForTest(input.value)
+        }) {
+            frame(0)
+            assertTrue(state.isPlaceholderArtwork)
+            assertEquals(null, state.currentValue)
+            assertEquals(1f, state.progress, 0f)
+        }
+    }
+
+    @Composable
+    private fun rememberForegroundArtworkForTest(
+        input: Input,
+        flip: Boolean,
+    ): ArtworkTransitionState<String> {
+        val target = playbackArtworkTarget(
+            contentUri = input.song,
+            artwork = input.image.takeUnless { input.placeholder },
+            placeholder = input.image.takeIf { input.placeholder },
+            placeholderArtworkResId = 123,
+        )
+        return rememberArtworkTransitionState(
+            target = rememberReadyArtworkTarget(target.value, target.contentKey, input.ready),
+            requestedContentKey = target.contentKey,
+            targetReady = input.ready,
+            targetIsPlaceholder = input.placeholder,
+            animate = true,
+            flipAnimationEnabled = flip,
+            direction = input.direction,
+            durationMillis = 400,
+            sameContentDurationMillis = 100,
+            easing = LinearEasing,
+            sameValue = sameTestArtwork,
+        )
+    }
+
+    @Test
+    fun firstSongTransitionsFromTheEmptyBarsVisiblePlaceholderInBothModes() = runBlocking {
+        for (flip in listOf(false, true)) {
+            val input = mutableStateOf(Input("empty-placeholder", null, placeholder = true))
+            lateinit var state: ArtworkTransitionState<String>
+            withArtworkComposition(content = { state = rememberForegroundArtworkForTest(input.value, flip) }) {
+                frame(0)
+                assertEquals("empty-placeholder", state.currentValue)
+                input.value = Input("cover", "song")
+                frame(16)
+                frame(116)
+                assertTrue(state.isRunning)
+                if (flip) {
+                    assertEquals("empty-placeholder", state.currentValue)
+                    assertTrue(state.isPlaceholderArtwork)
+                } else {
+                    assertEquals(setOf("empty-placeholder", "cover"), state.frames.map { it.value }.toSet())
+                    assertTrue(state.frames.single { it.value == "empty-placeholder" }.isPlaceholder)
+                    assertFalse(state.frames.single { it.value == "cover" }.isPlaceholder)
+                    assertEquals(0.25f, state.progress, 0.02f)
+                }
+                frame(516)
+                assertEquals(listOf(WeightedCrossfadeFrame("cover", 1f)), state.frames)
+            }
+        }
+    }
+
+    @Test
+    fun firstSongLoadingKeepsTheEmptyPlaceholderAndClearingTransitionsBackToIt() = runBlocking {
+        for (flip in listOf(false, true)) {
+            val input = mutableStateOf(Input("empty-placeholder", null, placeholder = true))
+            lateinit var state: ArtworkTransitionState<String>
+            withArtworkComposition(content = { state = rememberForegroundArtworkForTest(input.value, flip) }) {
+                frame(0)
+                input.value = Input(null, "song", ready = false)
+                frame(16)
+                frame(516)
+                assertEquals(listOf(WeightedCrossfadeFrame("empty-placeholder", 1f, true)), state.frames)
+                input.value = Input("cover", "song")
+                frame(532)
+                frame(1032)
+                input.value = Input("empty-placeholder", null, placeholder = true)
+                frame(1048)
+                frame(1148)
+                assertTrue(state.isRunning)
+                frame(1548)
+                assertEquals(listOf(WeightedCrossfadeFrame("empty-placeholder", 1f, true)), state.frames)
+            }
+        }
+    }
+
+    @Test
+    fun firstDecodedEmptyPlaceholderReplacesItsFallbackWithoutAnEntranceFade() = runBlocking {
+        for (flip in listOf(false, true)) {
+            val input = mutableStateOf(Input(null, null, ready = false, placeholder = true))
+            lateinit var state: ArtworkTransitionState<String>
+            withArtworkComposition(content = { state = rememberForegroundArtworkForTest(input.value, flip) }) {
+                frame(0)
+                input.value = Input("empty-placeholder", null, placeholder = true)
+                frame(16)
+                assertFalse(state.isRunning)
+                assertEquals(listOf(WeightedCrossfadeFrame("empty-placeholder", 1f, true)), state.frames)
+            }
+        }
+    }
+
+    @Composable
+    private fun rememberArtworkTransitionStateForTest(
+        input: Input,
+        flipAnimationEnabled: Boolean = false,
+    ): ArtworkTransitionState<String> =
+        rememberArtworkTransitionState(
+            target = rememberReadyArtworkTarget(input.image, input.song, input.ready),
+            requestedContentKey = input.song,
+            targetReady = input.ready,
+            targetIsPlaceholder = input.placeholder,
+            animate = true,
+            flipAnimationEnabled = flipAnimationEnabled,
+            direction = input.direction,
+            durationMillis = 400,
+            sameContentDurationMillis = 100,
+            easing = LinearEasing,
+            sameValue = sameTestArtwork,
+        )
+
+    @Test
+    fun interruptedFadesKeepPlaceholderIdentityOnEachImageWhileTheNextSongLoads() = runBlocking {
+        val input = mutableStateOf(Input("real-a", "a"))
+        lateinit var state: ArtworkTransitionState<String>
+        withArtworkComposition(content = {
+            state = rememberArtworkTransitionStateForTest(input.value)
+        }) {
+            frame(0)
+            input.value = Input("placeholder", "b", placeholder = true)
+            frame(16)
+            frame(116)
+            assertEquals(false, state.frames.single { it.value == "real-a" }.isPlaceholder)
+            assertEquals(true, state.frames.single { it.value == "placeholder" }.isPlaceholder)
+
+            val mixture = state.frames
+            input.value = Input("real-c", "c")
+            frame(116)
+            assertEquals(mixture, state.frames)
+            frame(216)
+            assertEquals(
+                mapOf("real-a" to false, "placeholder" to true, "real-c" to false),
+                state.frames.associate { it.value to it.isPlaceholder },
+            )
+            input.value = Input(null, "d", ready = false, placeholder = true)
+            frame(232)
+            assertEquals(true, state.frames.single { it.value == "placeholder" }.isPlaceholder)
+            assertFalse(state.frames.single { it.value == "real-c" }.isPlaceholder)
+            frame(700)
+            assertEquals(listOf(WeightedCrossfadeFrame("real-c", 1f)), state.frames)
+        }
+    }
+
+    @Test
+    fun fadingFromPlaceholderToRealCoverKeepsTheOutgoingPlaceholderDimmed() = runBlocking {
+        val input = mutableStateOf(Input("placeholder", "a", placeholder = true))
+        lateinit var state: ArtworkTransitionState<String>
+        withArtworkComposition(content = {
+            state = rememberArtworkTransitionStateForTest(input.value)
+        }) {
+            frame(0)
+            input.value = Input("real-b", "b")
+            frame(16)
+            frame(116)
+            assertTrue(state.frames.single { it.value == "placeholder" }.isPlaceholder)
+            assertFalse(state.frames.single { it.value == "real-b" }.isPlaceholder)
+            frame(416)
+            assertFalse(state.isPlaceholderArtwork)
+        }
+    }
+
+    @Test
+    fun flipPlaceholderIdentityFollowsTheVisibleFaceInBothDirections() = runBlocking {
+        val input = mutableStateOf(Input("real-a", "a"))
+        lateinit var state: ArtworkTransitionState<String>
+        withArtworkComposition(content = {
+            state = rememberArtworkTransitionStateForTest(input.value, flipAnimationEnabled = true)
+        }) {
+            frame(0)
+            input.value = Input("placeholder", "b", placeholder = true)
+            frame(16)
+            frame(116)
+            assertEquals("real-a", state.currentValue)
+            assertFalse(state.isPlaceholderArtwork)
+            frame(316)
+            assertEquals("placeholder", state.currentValue)
+            assertTrue(state.isPlaceholderArtwork)
+            frame(416)
+            assertEquals(listOf(WeightedCrossfadeFrame("placeholder", 1f, true)), state.frames)
+
+            input.value = Input("real-c", "c")
+            frame(432)
+            frame(532)
+            assertEquals("placeholder", state.currentValue)
+            assertTrue(state.isPlaceholderArtwork)
+            frame(732)
+            assertEquals("real-c", state.currentValue)
+            assertFalse(state.isPlaceholderArtwork)
+        }
+    }
+
+    @Test
+    fun pendingLoadBeforeFlipMidpointSettlesToTheOriginalFacesIdentity() = runBlocking {
+        val input = mutableStateOf(Input("real-a", "a"))
+        lateinit var state: ArtworkTransitionState<String>
+        withArtworkComposition(content = {
+            state = rememberArtworkTransitionStateForTest(input.value, flipAnimationEnabled = true)
+        }) {
+            frame(0)
+            input.value = Input("placeholder", "b", placeholder = true)
+            frame(16)
+            frame(116)
+            input.value = Input(null, "c", ready = false)
+            frame(132)
+            frame(600)
+            assertEquals("real-a", state.currentValue)
+            assertFalse(state.isPlaceholderArtwork)
+            assertEquals(listOf(WeightedCrossfadeFrame("real-a", 1f)), state.frames)
+        }
+    }
+
+    @Test
+    fun deferredModeChangesPreserveTheSettledPlaceholdersIdentity() = runBlocking {
+        val input = mutableStateOf(Input("real-a", "a"))
+        val flip = mutableStateOf(false)
+        lateinit var state: ArtworkTransitionState<String>
+        withArtworkComposition(content = {
+            state = rememberArtworkTransitionStateForTest(input.value, flip.value)
+        }) {
+            frame(0)
+            input.value = Input("placeholder", "b", placeholder = true)
+            frame(16)
+            frame(116)
+            flip.value = true
+            frame(132)
+            assertFalse(state.flipAnimationEnabled)
+            frame(600)
+            assertTrue(state.flipAnimationEnabled)
+            assertTrue(state.isPlaceholderArtwork)
+            assertEquals(listOf(WeightedCrossfadeFrame("placeholder", 1f, true)), state.frames)
+
+            flip.value = false
+            frame(616)
+            assertFalse(state.flipAnimationEnabled)
+            assertTrue(state.isPlaceholderArtwork)
+            assertEquals(listOf(WeightedCrossfadeFrame("placeholder", 1f, true)), state.frames)
         }
     }
 

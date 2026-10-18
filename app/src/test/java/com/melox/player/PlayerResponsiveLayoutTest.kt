@@ -187,7 +187,7 @@ class PlayerResponsiveLayoutTest {
             availableHeight = 300.dp,
         ))
         assertEquals(194.dp, compactLandscapePaneContentWidth(250.dp))
-        assertEquals(148.dp, compactLandscapeArtworkSize(
+        assertEquals(180.dp, compactLandscapeArtworkSize(
             paneWidth = 250.dp,
             availableHeight = 180.dp,
         ))

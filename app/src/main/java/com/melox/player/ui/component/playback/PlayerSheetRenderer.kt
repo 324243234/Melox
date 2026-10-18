@@ -3,6 +3,7 @@ package com.melox.player.ui.component.playback
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.graphics.Bitmap
 import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -59,12 +60,9 @@ import com.melox.player.ui.component.library.PlaybackArtworkFrame
 import com.melox.player.ui.component.library.playbackArtworkShadow
 import com.melox.player.ui.component.library.playbackArtworkCornerRadius
 import com.melox.player.ui.component.library.playbackArtworkClip
-import com.melox.player.ui.component.library.rememberFullPlayerArtworkBitmapPixels
-import com.melox.player.ui.component.library.rememberArtworkBitmapLoadState
-import com.melox.player.ui.component.library.rememberPlaceholderArtworkBitmapLoadState
 import com.melox.player.ui.component.liquid.miuixFloatingBarShadow
 import com.melox.player.ui.component.liquid.miniPlayerSurface
-import com.melox.player.ui.screen.playback.rememberArtworkBlend
+import com.melox.player.ui.screen.playback.toArtworkBlend
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import androidx.compose.runtime.saveable.Saver
@@ -78,6 +76,12 @@ internal fun playerSheetBarAlpha(progress: Float): Float {
     val handoff = (progress.coerceIn(0f, 1f) / PLAYER_LAYER_HANDOFF_END_PROGRESS)
         .coerceIn(0f, 1f)
     return 1f - easeOutCubic(handoff)
+}
+
+internal fun playerSheetPlaceholderArtworkAlpha(progress: Float): Float {
+    val handoff = (progress.coerceIn(0f, 1f) / PLAYER_LAYER_HANDOFF_END_PROGRESS)
+        .coerceIn(0f, 1f)
+    return lerp(0.3f, 0.9f, easeOutCubic(handoff))
 }
 internal fun playerSheetMiniContentAlpha(progress: Float): Float {
     val fade = (progress.coerceIn(0f, 1f) / PLAYER_MINI_CONTENT_FADE_END_PROGRESS)
@@ -110,14 +114,20 @@ internal fun Modifier.recordPlayerLayer(
     layer: GraphicsLayer,
     drawInPlace: Boolean,
     recordingGeneration: Int = 0,
+    recordInPlace: Boolean = false,
     onRecorded: (generation: Int, size: IntSize) -> Unit = { _, _ -> },
 ): Modifier = drawWithContent {
-    if (drawInPlace) {
+    if (drawInPlace && !recordInPlace) {
         // Draw descendants into one target per frame across the live handoff.
         this@drawWithContent.drawContent()
     } else {
         layer.record {
             this@drawWithContent.drawContent()
+        }
+        if (drawInPlace) {
+            // Prepare resized frames without drawing descendants into a second target.
+            layer.alpha = 1f
+            drawLayer(layer)
         }
         onRecorded(recordingGeneration, layer.size)
     }
@@ -507,49 +517,23 @@ internal fun PlayerSheetContentOverlay(
 @Composable
 internal fun PlayerSheetArtworkOverlay(
     playback: PlaybackUiState,
+    artworkState: ArtworkTransitionState<Bitmap>,
     transition: PlayerSheetTransitionState,
     collapsedCornerRadius: Dp,
     enabled: Boolean,
     modifier: Modifier = Modifier,
     circularArtwork: Boolean = false,
-    artworkFlipAnimation: Boolean = false,
 ) {
-    val item = playback.currentItem ?: return
+    if (playback.currentItem == null) return
     val progress = transition.progress
     val source = transition.overlayMiniArtworkBounds
     val target = transition.overlayFullArtworkBounds
-    val targetSizePx = maxOf(target.width, target.height).roundToInt()
-    val artwork = rememberArtworkBitmapLoadState(
-        contentUri = item.contentUri,
-        dateModifiedEpochSeconds = item.dateModifiedEpochSeconds,
-        fileSizeBytes = item.fileSizeBytes,
-        size = PLAYER_FULL_ARTWORK_REQUEST_SIZE,
-        foreground = true,
-    )
-    val fullPlayerArtwork = rememberFullPlayerArtworkBitmapPixels(
-        contentUri = item.contentUri,
-        dateModifiedEpochSeconds = item.dateModifiedEpochSeconds,
-        fileSizeBytes = item.fileSizeBytes,
-        targetSizePx = targetSizePx.coerceAtLeast(1),
-        enabled = targetSizePx > 0,
-    )
-    val placeholder = if (artwork.bitmap == null) {
-        rememberPlaceholderArtworkBitmapLoadState(PLAYER_FULL_ARTWORK_REQUEST_SIZE)
-    } else null
-    val fallbackBitmap = artwork.bitmap ?: placeholder?.bitmap
-    val artworkBlend = rememberArtworkBlend(
-        targetBitmap = fullPlayerArtwork ?: fallbackBitmap,
-        animate = true,
-        contentKey = item.contentUri,
-        durationMillis = PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS,
-        sameContentDurationMillis = PLAYER_ARTWORK_RESOLUTION_CROSSFADE_DURATION_MILLIS,
-        transitionDirection = playback.trackChangeDirection,
-        flipAnimationEnabled = artworkFlipAnimation,
-        targetReady = fullPlayerArtwork != null ||
-            (!artwork.isLoading && (artwork.bitmap != null || placeholder?.isLoading == false)),
-    )
+    val artworkBlend = artworkState.toArtworkBlend()
     val bitmap = artworkBlend.currentBitmap
-    val artworkLayerAlphas = sourceOverAlphas(artworkBlend.frames.map { it.alpha })
+    val placeholderArtworkAlpha = playerSheetPlaceholderArtworkAlpha(progress)
+    val artworkLayerAlphas = sourceOverAlphas(artworkBlend.frames.map { frame ->
+        frame.alpha * if (frame.isPlaceholder) placeholderArtworkAlpha else 1f
+    })
     val density = LocalDensity.current
     if (!enabled || !transition.separateArtworkOverlayReady || !transition.isTransitionActive) return
     val sourceArtworkBounds = bitmap?.let {
@@ -616,6 +600,7 @@ internal fun PlayerSheetArtworkOverlay(
                 contentScale = ContentScale.Fit,
                 useSquircleClip = true,
                 drawArtworkShadow = true,
+                artworkAlpha = if (artworkBlend.isPlaceholder) placeholderArtworkAlpha else 1f,
                 artworkShadowAlpha = progress,
                 circular = circularArtwork,
             )
@@ -662,6 +647,13 @@ internal fun PlayerSheetArtworkOverlay(
                         modifier = Modifier.fillMaxSize()
                             .playbackArtworkShadow(localCornerRadius, progress, circular = circularArtwork)
                             .playbackArtworkClip(localCornerRadius, circularArtwork)
+                            .graphicsLayer {
+                                alpha = if (artworkBlend.flipState.visibleIsPlaceholder) {
+                                    placeholderArtworkAlpha
+                                } else {
+                                    1f
+                                }
+                            }
                             .then(blur),
                         contentScale = if (circularArtwork) ContentScale.Crop else ContentScale.Fit,
                         filterQuality = FilterQuality.High,
@@ -675,11 +667,17 @@ internal fun PlayerSheetArtworkOverlay(
                         .fillMaxSize()
                         .playbackArtworkShadow(
                             cornerRadius = localCornerRadius,
-                            alpha = progress,
+                            alpha = if (frame.isPlaceholder) {
+                                progress * placeholderArtworkAlpha
+                            } else {
+                                progress
+                            },
                             circular = circularArtwork,
                         )
                         .playbackArtworkClip(localCornerRadius, circularArtwork)
-                        .graphicsLayer { alpha = artworkLayerAlphas[index] },
+                        .graphicsLayer {
+                            alpha = artworkLayerAlphas[index]
+                        },
                     contentScale = if (circularArtwork) ContentScale.Crop else ContentScale.Fit,
                     filterQuality = FilterQuality.High,
                 )

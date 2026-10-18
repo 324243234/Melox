@@ -395,6 +395,7 @@ private fun PlayerProgress(
         positionMs.coerceIn(0L, safeDuration).toFloat()
     }
     val progress = (displayedPosition / safeDuration.toFloat()).coerceIn(0f, 1f)
+    val unavailableTime = stringResource(R.string.player_time_unavailable)
     val indicatorHeight by animateDpAsState(
         targetValue = if (isSeeking) 12.dp else PLAYER_PROGRESS_IDLE_HEIGHT,
         animationSpec = spring(dampingRatio = 0.85f, stiffness = 550f),
@@ -497,17 +498,23 @@ private fun PlayerProgress(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                text = formatDuration(displayedPosition.roundToLong()),
+                text = if (enabled) formatPlayerProgressTime(displayedPosition.roundToLong()) else unavailableTime,
                 style = MiuixTheme.textStyles.footnote1,
                 color = labelColor,
             )
             Text(
-                text = formatDuration(durationMs),
+                text = if (enabled) formatPlayerProgressTime(durationMs) else unavailableTime,
                 style = MiuixTheme.textStyles.footnote1,
                 color = labelColor,
             )
         }
     }
+}
+
+internal fun formatPlayerProgressTime(durationMs: Long): String {
+    val safeDuration = durationMs.coerceAtLeast(0L)
+    val formatted = formatDuration(safeDuration)
+    return if (safeDuration < 600_000L) "0$formatted" else formatted
 }
 
 @Composable

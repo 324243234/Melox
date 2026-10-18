@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
@@ -132,6 +133,8 @@ import com.melox.player.model.DefaultHomePage
 import com.melox.player.model.DynamicColorSource
 import com.melox.player.model.PlaybackBackgroundStyle
 import com.melox.player.model.usesDarkPlaybackBackground
+import com.melox.player.model.PlaybackQueueItem
+import com.melox.player.model.PlaybackUiState
 import com.melox.player.model.ScanStatus
 import com.melox.player.model.MusicTrack
 import com.melox.player.ui.component.BlurredBar
@@ -168,6 +171,10 @@ import com.melox.player.ui.component.library.rememberSearchTopBarScrollBehavior
 import com.melox.player.ui.component.library.TrackSelectionActions
 import com.melox.player.ui.component.library.extractArtworkColor
 import com.melox.player.ui.component.library.rememberArtworkBitmap
+import com.melox.player.ui.component.library.normalizeArtworkTargetSize
+import com.melox.player.model.withTrackMetadata
+import com.melox.player.ui.component.playback.ArtworkTransitionState
+import com.melox.player.ui.component.playback.rememberPlaybackArtworkTransition
 import com.melox.player.ui.component.library.AlphabetSections
 import com.melox.player.ui.component.library.AlphabetSideBar
 import com.melox.player.ui.component.library.AlbumSortButton
@@ -535,6 +542,23 @@ fun MeloxApp(
     var pendingAlbumGridReset by remember { mutableStateOf<AlbumGridStyle?>(null) }
     var showQueue by rememberSaveable { mutableStateOf(false) }
     val playerTransition = rememberPlayerSheetTransitionState()
+    var artworkDisplaySizePx by remember(density) {
+        mutableIntStateOf(normalizeArtworkTargetSize(
+            with(density) { PLAYER_FULL_ARTWORK_REQUEST_SIZE.roundToPx() },
+        ))
+    }
+    val artworkItem = remember(compactPlayback.currentItem, uiState.tracks) {
+        compactPlayback.currentItem?.let { item ->
+            uiState.tracks.firstOrNull { it.id == item.trackId }?.let(item::withTrackMetadata) ?: item
+        }
+    }
+    val artworkState = rememberPlaybackArtworkTransition(
+        item = artworkItem,
+        direction = compactPlayback.trackChangeDirection,
+        flipAnimationEnabled = settings.artworkFlipAnimation,
+        fullPlayerTargetSizePx = artworkDisplaySizePx,
+        fullPlayerMounted = playerTransition.fullPlayerHostMounted,
+    )
     var playerContentBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
     val sharedPlayerArtworkEnabled = compactPlayback.currentItem != null &&
         playerTransition.fullPlayerArtworkPageSelected
@@ -1806,8 +1830,8 @@ fun MeloxApp(
                             miniPlayer = { chrome ->
                                 MiniPlayerHost(
                                     viewModel = viewModel,
+                                    artworkState = artworkState,
                                     circularArtwork = settings.circularArtwork,
-                                    artworkFlipAnimation = settings.artworkFlipAnimation,
                                     chrome = chrome,
                                     onChromeChanged = { miniPlayerChrome = it },
                                     interactiveHighlight = miniPlayerInteractiveHighlight,
@@ -1844,6 +1868,7 @@ fun MeloxApp(
                                             !playerTransition.isTransitionActive ||
                                             !sharedPlayerArtworkEnabled ||
                                             playerSheetArtworkIsOffscreen(playerTransition),
+                                    playerSheetProgress = { playerTransition.progress },
                                     onLayerRecorded = { generation, size ->
                                         playerTransition.markMiniFrameRecorded(
                                             windowSize,
@@ -2559,8 +2584,9 @@ fun MeloxApp(
                         ).takeUnless { fullPlayerRecordingActive } ?: 0f
                         FullPlayerHost(
                             viewModel = viewModel,
+                            artworkState = artworkState,
+                            onArtworkDisplaySizeChanged = { artworkDisplaySizePx = it },
                             circularArtwork = settings.circularArtwork,
-                            artworkFlipAnimation = settings.artworkFlipAnimation,
                             tracks = uiState.tracks,
                             artistGroups = uiState.artists,
                             playbackBackgroundStyle =
@@ -2601,6 +2627,7 @@ fun MeloxApp(
                             blockUnderlyingInput = playerTransition.blocksUnderlyingInput,
                             lyricsPagingEnabled = playerTransition.isFullyExpanded,
                             drawInPlace = playerTransition.fullPlayerDrawsInPlace,
+                            recordInPlace = playerTransition.fullPlayerFramesNeedRecording,
                             sharedArtworkVisible =
                                 !playerTransition.separateArtworkOverlayReady ||
                                     !playerTransition.isTransitionActive ||
@@ -2691,6 +2718,7 @@ fun MeloxApp(
                     )
                     PlayerSheetArtworkOverlay(
                         playback = compactPlayback,
+                        artworkState = artworkState,
                         transition = playerTransition,
                         collapsedCornerRadius = miniPlayerArtworkCornerRadius(
                             normalChrome = miniPlayerUsesNormalChrome,
@@ -2699,7 +2727,6 @@ fun MeloxApp(
                         ),
                         enabled = sharedPlayerArtworkEnabled,
                         circularArtwork = settings.circularArtwork,
-                        artworkFlipAnimation = settings.artworkFlipAnimation,
                     )
                 QueueSheetHost(
                     viewModel = viewModel,
@@ -2784,8 +2811,9 @@ fun MeloxApp(
 @Composable
 private fun FullPlayerHost(
     viewModel: MeloxViewModel,
+    artworkState: ArtworkTransitionState<Bitmap>,
+    onArtworkDisplaySizeChanged: (Int) -> Unit,
     circularArtwork: Boolean,
-    artworkFlipAnimation: Boolean,
     tracks: List<MusicTrack>,
     artistGroups: List<ArtistGroup>,
     playbackBackgroundStyle: PlaybackBackgroundStyle,
@@ -2817,6 +2845,7 @@ private fun FullPlayerHost(
     blockUnderlyingInput: Boolean,
     lyricsPagingEnabled: Boolean,
     drawInPlace: Boolean,
+    recordInPlace: Boolean,
     sharedArtworkVisible: Boolean,
     initialArtworkPageSelected: Boolean,
     onPlayerDragStart: () -> Unit,
@@ -2843,8 +2872,9 @@ private fun FullPlayerHost(
     }
     FullPlayerScreen(
         playback = playback,
+        artworkState = artworkState,
+        onArtworkDisplaySizeChanged = onArtworkDisplaySizeChanged,
         circularArtwork = circularArtwork,
-        artworkFlipAnimation = artworkFlipAnimation,
         currentTrack = currentTrack,
         lyrics = lyrics,
         playbackBackgroundStyle = playbackBackgroundStyle,
@@ -2907,6 +2937,7 @@ private fun FullPlayerHost(
         blockUnderlyingInput = blockUnderlyingInput,
         lyricsPagingEnabled = lyricsPagingEnabled,
         drawInPlace = drawInPlace,
+        recordInPlace = recordInPlace,
         sharedArtworkVisible = sharedArtworkVisible,
         initialArtworkPageSelected = initialArtworkPageSelected,
         onPlayerDragStart = onPlayerDragStart,
@@ -2925,8 +2956,8 @@ private fun FullPlayerHost(
 @Composable
 private fun MiniPlayerHost(
     viewModel: MeloxViewModel,
+    artworkState: ArtworkTransitionState<Bitmap>,
     circularArtwork: Boolean,
-    artworkFlipAnimation: Boolean,
     chrome: MiniPlayerChrome,
     onChromeChanged: (MiniPlayerChrome) -> Unit,
     interactiveHighlight: InteractiveHighlight,
@@ -2943,6 +2974,7 @@ private fun MiniPlayerHost(
     drawInPlace: Boolean,
     surfaceVisible: Boolean,
     sharedArtworkVisible: Boolean,
+    playerSheetProgress: () -> Float,
     capturedPressScale: Float?,
     onLayerRecorded: (generation: Int, size: IntSize) -> Unit,
     onPlayerBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit,
@@ -2956,8 +2988,8 @@ private fun MiniPlayerHost(
     }
     MiniPlayer(
         playback = playback,
+        artworkState = artworkState,
         circularArtwork = circularArtwork,
-        artworkFlipAnimation = artworkFlipAnimation,
         chrome = chrome,
         interactiveHighlight = interactiveHighlight,
         onOpen = { scale ->
@@ -2978,6 +3010,7 @@ private fun MiniPlayerHost(
         drawInPlace = drawInPlace,
         surfaceVisible = surfaceVisible,
         sharedArtworkVisible = sharedArtworkVisible,
+        playerSheetProgress = playerSheetProgress,
         capturedPressScale = capturedPressScale,
         onLayerRecorded = onLayerRecorded,
         onPlayerBoundsChanged = onPlayerBoundsChanged,
@@ -2995,12 +3028,23 @@ private fun playerSheetArtworkIsOffscreen(
         viewportBounds = transition.fullPlayerBounds,
     )
 
+internal fun playbackArtworkPrefetchItems(playback: PlaybackUiState): List<PlaybackQueueItem> {
+    val queue = playback.queue
+    val currentIndex = playback.currentIndex
+    if (currentIndex !in queue.indices) return emptyList()
+    return listOf(
+        currentIndex,
+        (currentIndex + 1) % queue.size,
+        (currentIndex - 1 + queue.size) % queue.size,
+    ).distinct().map(queue::get)
+}
+
 @Composable
 private fun PlaybackArtworkPrefetchEffect(
     viewModel: MeloxViewModel,
     playbackBackgroundStyle: PlaybackBackgroundStyle,
 ) {
-    val playback by viewModel.compactPlaybackState.collectAsStateWithLifecycle()
+    val playback = viewModel.compactPlaybackState.collectAsStateWithLifecycle().value
     val applicationContext = LocalContext.current.applicationContext
     val artworkPrefetchSizePx = with(LocalDensity.current) {
         PLAYER_FULL_ARTWORK_REQUEST_SIZE.roundToPx()
@@ -3017,16 +3061,8 @@ private fun PlaybackArtworkPrefetchEffect(
         placeholderArtworkResId,
         playbackBackgroundStyle,
     ) {
-        if (playback.queue.isEmpty() || playback.currentIndex !in playback.queue.indices) {
-            return@LaunchedEffect
-        }
-        listOf(
-            playback.currentIndex,
-            (playback.currentIndex + 1) % playback.queue.size,
-            (playback.currentIndex - 1 + playback.queue.size) % playback.queue.size,
-        ).distinct().forEach { index ->
-            val item = playback.queue[index]
-            if (index == playback.currentIndex &&
+        playbackArtworkPrefetchItems(playback).forEachIndexed { index, item ->
+            if (index == 0 &&
                 playbackBackgroundStyle == PlaybackBackgroundStyle.BLURRED_ARTWORK
             ) {
                 prefetchPlaybackBackground(

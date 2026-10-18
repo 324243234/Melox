@@ -178,6 +178,7 @@
     </plurals>
 
     <string name="no_track_selected">未选择歌曲</string>
+    <string name="player_time_unavailable">--:--</string>
     <string name="mini_player_title">Melox</string>
     <string name="mini_player_empty">暂无播放音乐</string>
     <string name="play">播放</string>

@@ -1,6 +1,7 @@
 package com.melox.player
 
 import androidx.compose.runtime.BroadcastFrameClock
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.MotionDurationScale
 import com.melox.player.model.AppSettings
 import com.melox.player.ui.component.playback.ArtworkFlipState
@@ -91,6 +92,81 @@ class ArtworkFlipAnimationTest {
         assertFalse(state.isRunning)
         assertEquals(0f, state.frame.rotationY, 0f)
         assertTrue(time in 400_000_000L..450_000_000L)
+    }
+
+    @Test
+    fun completingEitherDirectionNeverExposesTheOldFaceAfterTheNewFaceIsVisible() = runBlocking(clock) {
+        for (direction in listOf(-1, 1)) {
+            val state = ArtworkFlipState("old", "old-key")
+            val job = launch { state.transitionTo("new", "new-key", direction, 400) }
+            repeat(14) { frame() }
+            assertEquals("new", state.visibleValue)
+            val observed = mutableListOf<String?>()
+            Snapshot.sendApplyNotifications()
+            val observer = Snapshot.registerGlobalWriteObserver { observed += state.visibleValue }
+            try {
+                repeat(30) {
+                    if (job.isActive) {
+                        Snapshot.sendApplyNotifications()
+                        frame()
+                    }
+                }
+                assertTrue(job.isCompleted)
+                assertTrue(observed.isNotEmpty())
+                assertTrue("Previous face was exposed during completion: $observed",
+                    observed.all { it == "new" })
+                assertFalse(state.isRunning)
+                assertEquals("new", state.visibleValue)
+            } finally {
+                observer.dispose()
+                job.cancelAndJoin()
+            }
+        }
+    }
+
+    @Test
+    fun interruptionAtTheEndpointKeepsTheIncomingFaceForTheFollowingFlip() = runBlocking(clock) {
+        val state = ArtworkFlipState("a", "a")
+        val first = launch { state.transitionTo("b", "b", 1, 400) }
+        repeat(14) { frame() }
+        // Simulate cancellation after the final animation value, before front promotion.
+        state.progress.snapTo(1f)
+        first.join()
+        assertEquals("a", state.front)
+        assertEquals("b", state.back)
+        assertEquals("b", state.visibleValue)
+        assertEquals(0f, state.frame.rotationY, 0f)
+        assertEquals(0f, state.frame.blurFraction, 0f)
+        val next = launch { state.transitionTo("c", "c", -1, 400) }
+        repeat(4) { frame() }
+        assertEquals("b", state.front)
+        assertEquals("b", state.visibleValue)
+        assertEquals("c", state.back)
+        finish(next)
+        assertEquals("c", state.visibleValue)
+        assertFalse(state.isRunning)
+    }
+
+    @Test
+    fun preparingEitherDirectionKeepsTheCurrentFaceUntilTheFirstAnimationFrame() = runBlocking(clock) {
+        for (direction in listOf(-1, 1)) {
+            val state = ArtworkFlipState("old", "old-key")
+            val observed = mutableListOf<String?>()
+            Snapshot.sendApplyNotifications()
+            val observer = Snapshot.registerGlobalWriteObserver { observed += state.visibleValue }
+            val job = launch { state.transitionTo("new", "new-key", direction, 400) }
+            try {
+                repeat(4) { yield() }
+                assertTrue(observed.isNotEmpty())
+                assertTrue("Incoming face appeared before the flip started: $observed",
+                    observed.all { it == "old" })
+                assertEquals(0f, state.progress.value, 0f)
+                assertEquals("old", state.visibleValue)
+            } finally {
+                observer.dispose()
+                job.cancelAndJoin()
+            }
+        }
     }
 
     @Test

@@ -8,6 +8,26 @@ import org.junit.Test
 
 class InterruptibleCrossfadeTest {
     @Test
+    fun interruptedPlaceholderWeightsKeepRealAndPlaceholderRolesSeparate() {
+        val frames = weightedCrossfadeFrames(
+            startingFrames = listOf(
+                WeightedCrossfadeFrame("real-a", 0.6f),
+                WeightedCrossfadeFrame("placeholder", 0.4f, isPlaceholder = true),
+            ),
+            currentValue = "real-c",
+            progress = 0.5f,
+        )
+        val weights = frames.map { it.alpha * if (it.isPlaceholder) 0.5f else 1f }
+        val alphas = sourceOverAlphas(weights)
+        val contributions = alphas.indices.map { index ->
+            alphas[index] * alphas.drop(index + 1).fold(1f) { total, alpha -> total * (1f - alpha) }
+        }
+        assertEquals(0.3f, contributions[0], 0.0001f)
+        assertEquals(0.1f, contributions[1], 0.0001f)
+        assertEquals(0.5f, contributions[2], 0.0001f)
+    }
+
+    @Test
     fun sourceOverAlphasKeepAnOpaqueTwoFrameBlend() {
         val alphas = sourceOverAlphas(listOf(0.6f, 0.4f))
 

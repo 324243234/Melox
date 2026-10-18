@@ -186,6 +186,7 @@
     </plurals>
 
     <string name="no_track_selected">No track selected</string>
+    <string name="player_time_unavailable">--:--</string>
     <string name="mini_player_title">Melox</string>
     <string name="mini_player_empty">No music playing</string>
     <string name="play">Play</string>
