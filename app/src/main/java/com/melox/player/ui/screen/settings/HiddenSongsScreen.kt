@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -78,7 +80,8 @@ internal fun HiddenSongsScreen(
     onGoToArtist: (ArtistGroup) -> Unit,
     onExternalEditReturned: (Long) -> Unit,
 ) {
-    val backdrop = rememberBlurBackdrop()
+    var backdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val backdrop = rememberBlurBackdrop(captureCoordinates = { backdropCaptureCoordinates })
     val scrollBehavior = MiuixScrollBehavior()
     val layoutDirection = LocalLayoutDirection.current
     val trackUris = remember(tracks) { tracks.map(MusicTrack::contentUri).toSet() }
@@ -135,8 +138,11 @@ internal fun HiddenSongsScreen(
                                             else R.string.selection_select_all,
                                         ),
                                         modifier = Modifier.size(24.dp),
-                                        tint = if (allSelected) MiuixTheme.colorScheme.primary
-                                        else LocalContentColor.current,
+                                        tint = when {
+                                            trackUris.isEmpty() -> MiuixTheme.colorScheme.disabledOnSurface
+                                            allSelected -> MiuixTheme.colorScheme.primary
+                                            else -> LocalContentColor.current
+                                        },
                                     )
                                 }
                                 IconButton(
@@ -146,7 +152,12 @@ internal fun HiddenSongsScreen(
                                     },
                                     enabled = selectedUris.isNotEmpty(),
                                 ) {
-                                    Icon(MiuixIcons.Reset, stringResource(R.string.music_restore_song))
+                                    Icon(
+                                        MiuixIcons.Reset,
+                                        stringResource(R.string.music_restore_song),
+                                        tint = if (selectedUris.isNotEmpty()) LocalContentColor.current
+                                        else MiuixTheme.colorScheme.disabledOnSurface,
+                                    )
                                 }
                             },
                             defaultActions = {
@@ -154,7 +165,12 @@ internal fun HiddenSongsScreen(
                                     onClick = { restoreAll = true },
                                     enabled = tracks.isNotEmpty(),
                                 ) {
-                                    Icon(MiuixIcons.Reset, stringResource(R.string.hidden_songs_restore_all))
+                                    Icon(
+                                        MiuixIcons.Reset,
+                                        stringResource(R.string.hidden_songs_restore_all),
+                                        tint = if (tracks.isNotEmpty()) LocalContentColor.current
+                                        else MiuixTheme.colorScheme.disabledOnSurface,
+                                    )
                                 }
                             },
                         )
@@ -165,7 +181,7 @@ internal fun HiddenSongsScreen(
     ) { padding ->
         Box(
             modifier = Modifier.fillMaxSize()
-                .then(backdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
+                .then(backdrop?.let { Modifier.onGloballyPositioned { coordinates -> backdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier),
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize()

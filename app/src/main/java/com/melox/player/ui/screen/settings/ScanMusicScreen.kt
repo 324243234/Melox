@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,6 +67,7 @@ import top.yukonga.miuix.kmp.menu.OverlayIconDropdownMenu
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.theme.LocalContentColor
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
@@ -95,7 +98,8 @@ fun ScanMusicScreen(
     val layoutDirection = LocalLayoutDirection.current
     val isScanning = scanStatus is ScanStatus.Scanning
     val scrollBehavior = MiuixScrollBehavior()
-    val topBarBackdrop = rememberBlurBackdrop()
+    var topBarBackdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val topBarBackdrop = rememberBlurBackdrop(captureCoordinates = { topBarBackdropCaptureCoordinates })
     var songListPullToRefreshChecked by remember(settings.songListPullToRefresh) {
         mutableStateOf(settings.songListPullToRefresh)
     }
@@ -165,6 +169,8 @@ fun ScanMusicScreen(
                                 imageVector = MiuixIcons.More,
                                 contentDescription = stringResource(R.string.scan_clear_library),
                                 modifier = Modifier.size(24.dp),
+                                tint = if (isScanning) MiuixTheme.colorScheme.disabledOnSurface
+                                else LocalContentColor.current,
                             )
                         }
                     },
@@ -175,7 +181,7 @@ fun ScanMusicScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(topBarBackdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
+                .then(topBarBackdrop?.let { Modifier.onGloballyPositioned { coordinates -> topBarBackdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier),
         ) {
             LazyColumn(
                 modifier = Modifier

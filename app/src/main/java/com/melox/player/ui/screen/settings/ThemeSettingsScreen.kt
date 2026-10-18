@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -134,7 +136,8 @@ fun ThemeSettingsScreen(
         DynamicFlowStyle.LIGHT to stringResource(R.string.settings_dynamic_flow_light),
         DynamicFlowStyle.DARK to stringResource(R.string.settings_dynamic_flow_dark),
     )
-    val topBarBackdrop = rememberBlurBackdrop()
+    var topBarBackdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val topBarBackdrop = rememberBlurBackdrop(captureCoordinates = { topBarBackdropCaptureCoordinates })
     PageScaffold(
             topBar = {
             BlurredBar(
@@ -162,7 +165,7 @@ fun ThemeSettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .then(
-                    topBarBackdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier,
+                    topBarBackdrop?.let { Modifier.onGloballyPositioned { coordinates -> topBarBackdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier,
                 ),
         ) {
             LazyColumn(

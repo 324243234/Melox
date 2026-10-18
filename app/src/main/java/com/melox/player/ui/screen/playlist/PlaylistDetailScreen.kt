@@ -21,6 +21,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -137,7 +139,8 @@ fun PlaylistDetailScreen(
     var searchVisible by rememberSaveable(playlist.id) { mutableStateOf(false) }
     var searchFocused by remember(playlist.id) { mutableStateOf(false) }
     val scrollBehavior = rememberSearchTopBarScrollBehavior(searchVisible)
-    val backdrop = rememberBlurBackdrop()
+    var backdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val backdrop = rememberBlurBackdrop(captureCoordinates = { backdropCaptureCoordinates })
     val listState = rememberLazyListState()
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
@@ -430,7 +433,7 @@ fun PlaylistDetailScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(backdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
+                .then(backdrop?.let { Modifier.onGloballyPositioned { coordinates -> backdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier),
         ) {
             LazyColumn(
                 modifier = Modifier

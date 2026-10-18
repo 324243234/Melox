@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -99,7 +101,8 @@ fun AboutScreen(
     val collapsed by remember {
         derivedStateOf { scrollProgress == 1f }
     }
-    val topBarBackdrop = rememberBlurBackdrop()
+    var topBarBackdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val topBarBackdrop = rememberBlurBackdrop(captureCoordinates = { topBarBackdropCaptureCoordinates })
     val hasCustomBackground = customBackgroundSelected || LocalCustomPageBackground.current != null
     val barBackdrop = if (collapsed || hasCustomBackground) topBarBackdrop else null
     val barColor = if (collapsed && barBackdrop == null) {
@@ -139,7 +142,7 @@ fun AboutScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(topBarBackdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
+                .then(topBarBackdrop?.let { Modifier.onGloballyPositioned { coordinates -> topBarBackdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier),
         ) {
             AboutContent(
                 padding = padding,
@@ -169,7 +172,8 @@ private fun AboutContent(
     val layoutDirection = LocalLayoutDirection.current
     val versionName = BuildConfig.VERSION_NAME.ifBlank { "1.0.0" }
     var headerHeight by remember { mutableStateOf(190.dp) }
-    val contentBackdrop = rememberBlurBackdrop()
+    var contentBackdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val contentBackdrop = rememberBlurBackdrop(captureCoordinates = { contentBackdropCaptureCoordinates })
     val customBackgroundVisible = LocalCustomPageBackground.current != null
     val isDark = MiuixTheme.colorScheme.surface.luminance() < 0.5f
     val logoBlend = remember(isDark) {
@@ -205,7 +209,7 @@ private fun AboutContent(
         modifier = Modifier.fillMaxSize(),
         useCustomBackground = customBackgroundSelected,
         backgroundModifier =
-            contentBackdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier,
+            contentBackdrop?.let { Modifier.onGloballyPositioned { coordinates -> contentBackdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier,
         alpha = { 1f - scrollProgress() },
     ) {
         AboutHeader(

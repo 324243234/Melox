@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -134,7 +135,8 @@ fun MusicStatisticsScreen(
     var group by remember { mutableStateOf(StatisticsGroup.QUALITY) }
     var metric by remember { mutableStateOf(StatisticsMetric.COUNT) }
     val scrollBehavior = MiuixScrollBehavior()
-    val topBarBackdrop = rememberBlurBackdrop()
+    var topBarBackdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val topBarBackdrop = rememberBlurBackdrop(captureCoordinates = { topBarBackdropCaptureCoordinates })
 
     PageScaffold(
             topBar = {
@@ -170,7 +172,7 @@ fun MusicStatisticsScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(topBarBackdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
+                .then(topBarBackdrop?.let { Modifier.onGloballyPositioned { coordinates -> topBarBackdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier),
         ) {
             StatisticsPage(
                 statistics = statistics,

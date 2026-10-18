@@ -57,10 +57,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.melox.player.R
 import com.melox.player.model.BottomBarStyle
+import com.melox.player.ui.component.FixedPageBackgroundHost
 import com.melox.player.ui.component.GaussianBlurredBar
 import com.melox.player.ui.component.miuixBarColor
+import com.melox.player.ui.component.pageTextureBlur
 import com.melox.player.ui.component.playback.miniPlayerHeight
 import com.melox.player.ui.component.rememberBlurBackdrop
+import com.melox.player.ui.component.rememberPageSurfaceBackdrop
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.nav.transition.NavSettleSpec
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
@@ -80,6 +83,7 @@ import top.yukonga.miuix.kmp.icon.extended.Home
 import top.yukonga.miuix.kmp.icon.extended.Music
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.basic.rememberNavigationRailState
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 internal data class MiniPlayerChrome(
     val style: BottomBarStyle,
@@ -208,7 +212,16 @@ internal fun PlayerScaffold(
                     miniPlayerVerticalOffset).roundToPx()
             },
         )
-        Box(modifier = Modifier.fillMaxSize()) {
+        FixedPageBackgroundHost(Modifier.fillMaxSize(), refreshSignal = backdropRefreshSignal) {
+            val navigationRailBackdrop = rememberPageSurfaceBackdrop()
+            val navigationRailModifier = navigationRailBackdrop?.let {
+                Modifier.pageTextureBlur(it)
+            } ?: Modifier
+            val navigationRailColor = if (navigationRailBackdrop != null) {
+                Color.Transparent
+            } else {
+                MiuixTheme.colorScheme.surface
+            }
             Row(
                 modifier = Modifier
                     .fillMaxSize()
@@ -232,6 +245,8 @@ internal fun PlayerScaffold(
                         state = navigationRailState,
                         statusBarInsets = WindowInsets.statusBarsIgnoringVisibility,
                         contentBottomInsets = railBottomInsets,
+                        modifier = navigationRailModifier,
+                        color = navigationRailColor,
                         expandContentDescription = stringResource(R.string.navigation_expand),
                         collapseContentDescription = stringResource(R.string.navigation_collapse),
                     ) {
@@ -310,57 +325,71 @@ internal fun PlayerScaffold(
 
     if (useNavigationRail) {
         val navigationRailVisible = showNavigation || showNavigationRailOnSecondary
-        Row(modifier = Modifier.fillMaxSize()) {
-            AnimatedVisibility(
-                visible = navigationRailVisible,
-                enter = fadeIn(tween(NAVIGATION_FADE_IN_DURATION_MILLIS)) +
-                    expandHorizontally(tween(NAVIGATION_ENTER_DURATION_MILLIS)),
-                exit = fadeOut(tween(NAVIGATION_FADE_OUT_DURATION_MILLIS)) +
-                    shrinkHorizontally(tween(NAVIGATION_EXIT_DURATION_MILLIS)),
-            ) {
-                NavigationRail {
-                    navigationItems.forEachIndexed { index, item ->
-                        NavigationRailItem(
-                            selected = selectedTab == index,
-                            onClick = { onTabSelected(index) },
-                            icon = item.icon,
-                            label = item.label,
-                        )
-                    }
-                }
+        FixedPageBackgroundHost(Modifier.fillMaxSize(), refreshSignal = backdropRefreshSignal) {
+            val navigationRailBackdrop = rememberPageSurfaceBackdrop()
+            val navigationRailModifier = navigationRailBackdrop?.let {
+                Modifier.pageTextureBlur(it)
+            } ?: Modifier
+            val navigationRailColor = if (navigationRailBackdrop != null) {
+                Color.Transparent
+            } else {
+                MiuixTheme.colorScheme.surface
             }
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clipToBounds()
-                    .consumeNavigationRailStartInsets(navigationRailVisible),
-            ) {
-                Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    containerColor = Color.Transparent,
-                    bottomBar = {
-                        Column {
-                            miniPlayer(
-                                MiniPlayerChrome(
-                                    style = BottomBarStyle.NORMAL,
-                                    smallPlayerBar = smallPlayerBar,
-                                    backdrop = null,
-                                    blurActive = false,
-                                    liquidGlassActive = false,
-                                    isDark = isDark,
-                                ),
-                            )
-                            Spacer(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .navigationBarsPadding(),
+            Row(modifier = Modifier.fillMaxSize()) {
+                AnimatedVisibility(
+                    visible = navigationRailVisible,
+                    enter = fadeIn(tween(NAVIGATION_FADE_IN_DURATION_MILLIS)) +
+                        expandHorizontally(tween(NAVIGATION_ENTER_DURATION_MILLIS)),
+                    exit = fadeOut(tween(NAVIGATION_FADE_OUT_DURATION_MILLIS)) +
+                        shrinkHorizontally(tween(NAVIGATION_EXIT_DURATION_MILLIS)),
+                ) {
+                    NavigationRail(
+                        modifier = navigationRailModifier,
+                        color = navigationRailColor,
+                    ) {
+                        navigationItems.forEachIndexed { index, item ->
+                            NavigationRailItem(
+                                selected = selectedTab == index,
+                                onClick = { onTabSelected(index) },
+                                icon = item.icon,
+                                label = item.label,
                             )
                         }
-                    },
-                ) { innerPadding ->
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        content(innerPadding, false)
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clipToBounds()
+                        .consumeNavigationRailStartInsets(navigationRailVisible),
+                ) {
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        containerColor = Color.Transparent,
+                        bottomBar = {
+                            Column {
+                                miniPlayer(
+                                    MiniPlayerChrome(
+                                        style = BottomBarStyle.NORMAL,
+                                        smallPlayerBar = smallPlayerBar,
+                                        backdrop = null,
+                                        blurActive = false,
+                                        liquidGlassActive = false,
+                                        isDark = isDark,
+                                    ),
+                                )
+                                Spacer(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .navigationBarsPadding(),
+                                )
+                            }
+                        },
+                    ) { innerPadding ->
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            content(innerPadding, false)
+                        }
                     }
                 }
             }

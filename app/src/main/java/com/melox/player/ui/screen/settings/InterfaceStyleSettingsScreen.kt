@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -79,7 +81,8 @@ internal fun InterfaceStyleSettingsScreen(
     var liquidGlassChecked by remember(settings.liquidGlass) {
         mutableStateOf(settings.liquidGlass)
     }
-    val topBarBackdrop = rememberBlurBackdrop()
+    var topBarBackdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val topBarBackdrop = rememberBlurBackdrop(captureCoordinates = { topBarBackdropCaptureCoordinates })
     PageScaffold(
         topBar = {
             BlurredBar(
@@ -107,7 +110,7 @@ internal fun InterfaceStyleSettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .then(
-                    topBarBackdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier,
+                    topBarBackdrop?.let { Modifier.onGloballyPositioned { coordinates -> topBarBackdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier,
                 ),
         ) {
             LazyColumn(

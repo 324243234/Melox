@@ -15,6 +15,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -124,7 +126,8 @@ fun FolderDetailScreen(
     val scrollBehavior = rememberSearchTopBarScrollBehavior(searchVisible)
     val directoryStateHolder = rememberSaveableStateHolder()
     val showSongActions = breadcrumbItems.isEmpty() || folder.tracks.isNotEmpty()
-    val backdrop = rememberBlurBackdrop()
+    var backdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val backdrop = rememberBlurBackdrop(captureCoordinates = { backdropCaptureCoordinates })
     val layoutDirection = LocalLayoutDirection.current
     val displayedTracks = remember(folder.tracks, query, sortConfig) {
         sortMusicTracks(filterMusicTracks(folder.tracks, query), sortConfig)
@@ -310,7 +313,7 @@ fun FolderDetailScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(backdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
+                .then(backdrop?.let { Modifier.onGloballyPositioned { coordinates -> backdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier),
         ) {
             directoryStateHolder.SaveableStateProvider(folder.key) {
                 val listState = if (breadcrumbItems.isNotEmpty()) {

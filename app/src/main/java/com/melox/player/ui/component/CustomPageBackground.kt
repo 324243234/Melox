@@ -2,6 +2,7 @@ package com.melox.player.ui.component
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
@@ -74,20 +75,25 @@ internal fun Modifier.trackFixedWallpaperMotion(): Modifier {
 internal fun FixedPageBackgroundHost(
     modifier: Modifier = Modifier,
     refreshSignal: () -> Float,
-    content: @Composable () -> Unit,
+    content: @Composable BoxScope.() -> Unit,
 ) {
+    val parentBackground = LocalFixedPageBackground.current
     val image = LocalCustomPageBackground.current
     val surfaceColor = MiuixTheme.colorScheme.surface
     val dimAlpha = LocalCustomBackgroundDimAlpha.current
     val currentRefreshSignal by rememberUpdatedState(refreshSignal)
-    val backdrop = rememberLayerBackdrop {
+    val backdrop = parentBackground?.backdrop ?: rememberLayerBackdrop {
         drawRect(surfaceColor)
         image?.let { drawCustomPageBackground(it, dimAlpha) }
     }
-    val fixedBackground = remember(backdrop) { FixedPageBackground(backdrop) { currentRefreshSignal() } }
+    val fixedBackground = remember(backdrop, parentBackground) {
+        FixedPageBackground(backdrop) {
+            currentRefreshSignal() + (parentBackground?.refreshSignal?.invoke() ?: 0f)
+        }
+    }
     // Keep the pager mounted when an image is selected, removed or still decoding.
-    Box(modifier.customPageBackground()) {
-        if (image != null) {
+    Box(if (parentBackground == null) modifier.customPageBackground() else modifier) {
+        if (image != null && parentBackground == null) {
             Box(Modifier.matchParentSize().layerBackdrop(backdrop))
         }
         CompositionLocalProvider(LocalFixedPageBackground provides fixedBackground.takeIf { image != null }) {
@@ -99,10 +105,15 @@ internal fun FixedPageBackgroundHost(
 @Composable
 private fun Modifier.fixedWallpaperRegion(background: FixedPageBackground): Modifier {
     var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
-    return onGloballyPositioned { coordinates = it }.drawWithCache {
+    var positionInRoot by remember { mutableStateOf(IntOffset.Zero) }
+    return onGloballyPositioned { coordinates = it }.onLayoutRectChanged(throttleMillis = 0, debounceMillis = 0) {
+        positionInRoot = it.positionInRoot
+    }.drawWithCache {
         onDrawBehind {
             // Read inside this drawing layer so pager motion invalidates the sample.
             background.refreshSignal()
+            @Suppress("UNUSED_VARIABLE")
+            val regionPosition = positionInRoot
             val currentCoordinates = coordinates?.takeIf { it.isAttached }
             if (currentCoordinates != null) {
                 clipRect {
@@ -144,6 +155,7 @@ internal fun rememberCustomPageBackground(
 @Composable
 internal fun Modifier.customPageBackground(): Modifier {
     val image = LocalCustomPageBackground.current ?: return this
+    LocalFixedPageBackground.current?.let { return fixedWallpaperRegion(it) }
     val surfaceColor = MiuixTheme.colorScheme.surface
     val dimAlpha = LocalCustomBackgroundDimAlpha.current
     return drawWithCache {
@@ -175,7 +187,12 @@ internal fun PageScaffold(
         val viewportSize = Size(constraints.maxWidth.toFloat(), constraints.maxHeight.toFloat())
         CompositionLocalProvider(LocalPageSurfaceBackdrop provides surfaceBackdrop) {
             Scaffold(
-                modifier = if (fixedBackground == null) Modifier.customPageBackground() else Modifier,
+                // Each route must cover retained pages with its matching wallpaper region.
+                modifier = if (fixedBackground == null) {
+                    Modifier.customPageBackground()
+                } else {
+                    Modifier.fixedWallpaperRegion(fixedBackground)
+                },
                 containerColor = customPageContainerColor(),
                 contentWindowInsets = WindowInsets.systemBars
                     .union(WindowInsets.displayCutout)

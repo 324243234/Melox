@@ -10,6 +10,8 @@ import android.os.Looper
 import android.view.PixelCopy
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -39,6 +41,7 @@ import com.melox.player.model.LocalPlaylist
 import com.melox.player.ui.LibrarySearchBar
 import com.melox.player.ui.component.BlurredBar
 import com.melox.player.ui.component.FixedPageBackgroundHost
+import com.melox.player.ui.component.LocalFixedPageBackground
 import com.melox.player.ui.component.trackFixedWallpaperMotion
 import com.melox.player.ui.component.LocalCustomPageBackground
 import com.melox.player.ui.component.LocalPageCardBlurRadius
@@ -61,12 +64,117 @@ import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class FixedWallpaperRenderingTest {
+    @Test
+    fun nestedPanesCoverRetainedPagesAndKeepWindowWallpaperAcrossResizesAndReloads() {
+        val split = mutableStateOf(false)
+        val railWidth = mutableStateOf(48.dp)
+        val viewportHeight = mutableStateOf(180.dp)
+        val loaded = mutableStateOf(true)
+        var bounds = ComposeRect.Zero
+        var rootBackdrop: Any? = null
+        var paneBackdrop: Any? = null
+        val source = Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888)
+        Canvas(source).apply {
+            drawColor(AndroidColor.RED)
+            for ((index, color) in listOf(AndroidColor.GREEN, AndroidColor.BLUE, AndroidColor.YELLOW).withIndex()) {
+                drawRect((index + 1) * 100f, 0f, (index + 2) * 100f, 400f, Paint().apply { this.color = color })
+            }
+        }
+        val image = source.asImageBitmap()
+        lateinit var view: ComposeView
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { activity ->
+                    view = ComposeView(activity).apply {
+                        setContent {
+                            MeloxTheme(AppSettings(blurEnabled = false)) {
+                                CompositionLocalProvider(
+                                    LocalCustomPageBackground provides image.takeIf { loaded.value },
+                                    LocalTopBarBlurSettings provides TopBarBlurSettings(false, false),
+                                ) {
+                                    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
+                                        FixedPageBackgroundHost(
+                                            modifier = Modifier.fillMaxWidth().height(viewportHeight.value)
+                                                .onGloballyPositioned { bounds = it.boundsInRoot() },
+                                            refreshSignal = { 0f },
+                                        ) {
+                                            rootBackdrop = LocalFixedPageBackground.current?.backdrop
+                                            if (split.value) {
+                                                Row(Modifier.fillMaxSize()) {
+                                                    Box(Modifier.width(railWidth.value).fillMaxHeight())
+                                                    FixedPageBackgroundHost(
+                                                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                                                        refreshSignal = { 0f },
+                                                    ) {
+                                                        paneBackdrop = LocalFixedPageBackground.current?.backdrop
+                                                        // A retained route must never show through the current page.
+                                                        Box(Modifier.fillMaxSize().background(Color.Magenta))
+                                                        PageScaffold {
+                                                            Box(Modifier.fillMaxSize())
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    activity.setContentView(view)
+                }
+                for (height in listOf(180.dp, 260.dp)) {
+                    for (width in listOf(48.dp, 124.dp)) {
+                        for (hasImage in listOf(true, false, true)) {
+                            scenario.onActivity {
+                                viewportHeight.value = height
+                                railWidth.value = width
+                                loaded.value = hasImage
+                                split.value = false
+                            }
+                            val reference = copyFrame(scenario, view)
+                            try {
+                                scenario.onActivity { split.value = true }
+                                val actual = copyFrame(scenario, view)
+                                try {
+                                    assertSame("A nested pane must reuse the window backdrop", rootBackdrop, paneBackdrop)
+                                    assertTrue("Wallpaper viewport did not measure", bounds.width > 0 && bounds.height > 0)
+                                    for (xFraction in 1..19) {
+                                        val x = (bounds.left + bounds.width * xFraction / 20).toInt()
+                                        for (yFraction in listOf(0.15f, 0.55f, 0.85f)) {
+                                            val y = (bounds.top + bounds.height * yFraction).toInt()
+                                            for (channel in listOf(AndroidColor::red, AndroidColor::green, AndroidColor::blue)) {
+                                                assertEquals(
+                                                    "Pane crop shifted at x=$x y=$y width=$width height=$height image=$hasImage",
+                                                    channel(reference.getPixel(x, y)).toFloat(),
+                                                    channel(actual.getPixel(x, y)).toFloat(),
+                                                    3f,
+                                                )
+                                            }
+                                        }
+                                    }
+                                } finally {
+                                    actual.recycle()
+                                }
+                            } finally {
+                                reference.recycle()
+                            }
+                        }
+                    }
+                }
+            }
+        } finally {
+            source.recycle()
+        }
+    }
+
     @Test
     @SdkSuppress(minSdkVersion = 33)
     fun wallpaperSearchUsesNativeEightyPercentFillOverTheExistingTopBar() {
