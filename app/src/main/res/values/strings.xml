@@ -299,6 +299,11 @@
         <item quantity="other">%1$d songs</item>
     </plurals>
     <string name="scan_music_card_title">Scan</string>
+    <string name="scan_song_list_pull_to_refresh">Pull to refresh on Songs</string>
+    <string name="music_pull_to_refresh">Pull down to refresh</string>
+    <string name="music_release_to_refresh">Release to refresh</string>
+    <string name="music_refreshing">Refreshing…</string>
+    <string name="music_refresh_complete">Refresh finished</string>
     <string name="scan_refresh_on_start">Refresh on every launch</string>
     <string name="scan_skip_short_audio">Skip audio shorter than 60s</string>
     <string name="scan_custom_folder_title">Custom folders</string>

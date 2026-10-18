@@ -13,6 +13,8 @@ import com.melox.player.model.LyricsFormat
 import com.melox.player.model.LyricsSidecarFormatPriority
 import com.melox.player.model.LyricsSource
 import com.melox.player.model.LyricsSourcePriority
+import com.melox.player.model.ScanStatus
+import com.melox.player.ui.screen.library.shouldKeepMusicPullRefreshing
 import com.melox.player.ui.viewmodel.shouldEmitScanCompletion
 import com.melox.player.ui.viewmodel.shouldEmitScanNoChanges
 import org.junit.Assert.assertEquals
@@ -20,8 +22,59 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import top.yukonga.miuix.kmp.basic.RefreshState
 
 class MusicScanLogicTest {
+    @Test
+    fun startupScanAndLaterNonGestureScansNeverRequestIndicatorExpansion() {
+        val statuses = listOf(
+            ScanStatus.Scanning,
+            ScanStatus.Scanning,
+            ScanStatus.Success(12),
+            ScanStatus.Scanning,
+            ScanStatus.Success(12),
+        )
+
+        assertEquals(
+            List(statuses.size) { false },
+            statuses.map { shouldKeepMusicPullRefreshing(it, RefreshState.Idle) },
+        )
+    }
+
+    @Test
+    fun aRealPullCanJoinStartupScanningAndRemainActiveUntilCompletion() {
+        val states = listOf(
+            RefreshState.Idle,
+            RefreshState.Pulling,
+            RefreshState.ThresholdReached,
+            RefreshState.Refreshing,
+        )
+
+        assertEquals(
+            listOf(false, true, true, true),
+            states.map { shouldKeepMusicPullRefreshing(ScanStatus.Scanning, it) },
+        )
+        assertFalse(shouldKeepMusicPullRefreshing(ScanStatus.Success(12), RefreshState.Refreshing))
+    }
+
+    @Test
+    fun completedFailedAndFastPullScansCannotLatchOrReplayTheIndicator() {
+        val terminalStatuses = listOf(
+            ScanStatus.Success(12),
+            ScanStatus.Error("Read failed"),
+            ScanStatus.PermissionRequired,
+            ScanStatus.Idle,
+        )
+
+        for (status in terminalStatuses) {
+            assertTrue(shouldKeepMusicPullRefreshing(ScanStatus.Scanning, RefreshState.Refreshing))
+            assertFalse(shouldKeepMusicPullRefreshing(status, RefreshState.Refreshing))
+            assertFalse(shouldKeepMusicPullRefreshing(status, RefreshState.RefreshComplete))
+            assertFalse(shouldKeepMusicPullRefreshing(status, RefreshState.Idle))
+            assertFalse(shouldKeepMusicPullRefreshing(ScanStatus.Scanning, RefreshState.Idle))
+        }
+    }
+
     @Test
     fun primaryDocumentTreeMapsToMediaStoreRelativePrefix() {
         assertEquals(

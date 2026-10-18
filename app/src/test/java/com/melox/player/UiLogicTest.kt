@@ -419,6 +419,7 @@ class UiLogicTest {
         assertFalse(settings.hideBottomBar)
         assertEquals(true, settings.predictiveBackEnabled)
         assertEquals(NavigationTransitionStyle.MIUIX, settings.navigationTransitionStyle)
+        assertTrue(settings.songListPullToRefresh)
         assertFalse(settings.refreshLibraryOnStart)
         assertFalse(settings.skipShortAudio)
         assertEquals(BottomBarStyle.NORMAL, settings.bottomBarStyle)

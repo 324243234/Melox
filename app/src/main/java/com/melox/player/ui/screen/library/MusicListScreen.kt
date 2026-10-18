@@ -50,8 +50,11 @@ import com.melox.player.ui.component.library.offsetSectionIndices
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.PullToRefresh
+import top.yukonga.miuix.kmp.basic.RefreshState
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Music
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -96,6 +99,7 @@ fun MusicListScreen(
     leadingItemCount: Int = 0,
     leadingContent: LazyListScope.() -> Unit = {},
     emptyContent: (@Composable (Modifier) -> Unit)? = null,
+    onRefresh: (() -> Unit)? = null,
 ) {
     val layoutDirection = LocalLayoutDirection.current
     val density = LocalDensity.current
@@ -147,15 +151,19 @@ fun MusicListScreen(
         }
     }
 
-    Box(
-        modifier = modifier.fillMaxSize(),
-    ) {
+    val listContent: @Composable () -> Unit = {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .scrollEndHaptic()
                 .overScrollVertical()
-                .nestedScroll(scrollBehavior.nestedScrollConnection),
+                .then(
+                    if (onRefresh == null) {
+                        Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
+                    } else {
+                        Modifier
+                    },
+                ),
             state = listState,
             contentPadding = listContentPadding,
             overscrollEffect = null,
@@ -211,6 +219,31 @@ fun MusicListScreen(
                     )
                 }
             }
+        }
+    }
+
+    Box(
+        modifier = modifier.fillMaxSize(),
+    ) {
+        if (onRefresh != null) {
+            val pullToRefreshState = rememberPullToRefreshState()
+            PullToRefresh(
+                isRefreshing = shouldKeepMusicPullRefreshing(scanStatus, pullToRefreshState.refreshState),
+                onRefresh = onRefresh,
+                modifier = Modifier.fillMaxSize(),
+                pullToRefreshState = pullToRefreshState,
+                contentPadding = listContentPadding,
+                topAppBarScrollBehavior = scrollBehavior,
+                refreshTexts = listOf(
+                    stringResource(R.string.music_pull_to_refresh),
+                    stringResource(R.string.music_release_to_refresh),
+                    stringResource(R.string.music_refreshing),
+                    stringResource(R.string.music_refresh_complete),
+                ),
+                content = listContent,
+            )
+        } else {
+            listContent()
         }
 
         if (
@@ -281,6 +314,12 @@ fun MusicListScreen(
         showLunaBeatEditor = showLunaBeatEditor,
     )
 }
+
+// Only a real pull may open the native indicator; startup scans stay silent.
+internal fun shouldKeepMusicPullRefreshing(
+    scanStatus: ScanStatus,
+    refreshState: RefreshState,
+): Boolean = scanStatus is ScanStatus.Scanning && refreshState != RefreshState.Idle
 
 internal fun resolveMusicPlaybackSelection(
     displayedTracks: List<MusicTrack>,

@@ -81,6 +81,7 @@ fun ScanMusicScreen(
     scanStatus: ScanStatus,
     bottomContentPadding: Dp,
     onBack: () -> Unit,
+    onSongListPullToRefreshChange: (Boolean) -> Unit,
     onRefreshOnStartChange: (Boolean) -> Unit,
     onSkipShortAudioChange: (Boolean) -> Unit,
     onAddCustomFolder: (Uri) -> Unit,
@@ -95,6 +96,9 @@ fun ScanMusicScreen(
     val isScanning = scanStatus is ScanStatus.Scanning
     val scrollBehavior = MiuixScrollBehavior()
     val topBarBackdrop = rememberBlurBackdrop()
+    var songListPullToRefreshChecked by remember(settings.songListPullToRefresh) {
+        mutableStateOf(settings.songListPullToRefresh)
+    }
     var refreshOnStartChecked by remember(settings.refreshLibraryOnStart) {
         mutableStateOf(settings.refreshLibraryOnStart)
     }
@@ -195,6 +199,14 @@ fun ScanMusicScreen(
                 }
                 item(key = "scan_options") {
                     ScanCard {
+                        SwitchPreference(
+                            checked = songListPullToRefreshChecked,
+                            onCheckedChange = { checked ->
+                                songListPullToRefreshChecked = checked
+                                onSongListPullToRefreshChange(checked)
+                            },
+                            title = stringResource(R.string.scan_song_list_pull_to_refresh),
+                        )
                         SwitchPreference(
                             checked = refreshOnStartChecked,
                             onCheckedChange = { checked ->

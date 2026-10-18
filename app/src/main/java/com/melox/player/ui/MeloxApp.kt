@@ -1211,6 +1211,7 @@ fun MeloxApp(
                             scrollBehavior = scrollBehavior,
                             indexTopPadding = indexTopPadding,
                             listState = songsListState,
+                            onRefresh = if (settings.songListPullToRefresh) scanMusic else null,
                             contentPadding = contentPadding,
                             selectionMode = songsSelectionMode,
                             selectedTrackUris = selectedSongUris,
@@ -2124,6 +2125,8 @@ fun MeloxApp(
                                                             bottomContentPadding =
                                                                 routeBottomPadding,
                                                             onBack = navigateBack,
+                                                            onSongListPullToRefreshChange =
+                                                                viewModel::setSongListPullToRefresh,
                                                             onRefreshOnStartChange =
                                                                 viewModel::setRefreshLibraryOnStart,
                                                             onSkipShortAudioChange =

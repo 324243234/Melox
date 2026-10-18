@@ -189,6 +189,7 @@ data class AppSettings(
     val predictiveBackEnabled: Boolean = true,
     val navigationTransitionStyle: NavigationTransitionStyle =
         NavigationTransitionStyle.MIUIX,
+    val songListPullToRefresh: Boolean = true,
     val refreshLibraryOnStart: Boolean = false,
     val skipShortAudio: Boolean = false,
     val customFolderUris: List<String> = emptyList(),

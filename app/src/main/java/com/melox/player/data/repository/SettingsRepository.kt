@@ -174,6 +174,7 @@ class SettingsRepository(context: Context) {
                         enumValueOrDefault(storedValue, NavigationTransitionStyle.MIUIX)
                     }
                     ?: NavigationTransitionStyle.MIUIX,
+                songListPullToRefresh = preferences[Keys.SongListPullToRefresh] ?: true,
                 refreshLibraryOnStart = preferences[Keys.RefreshLibraryOnStart] ?: false,
                 skipShortAudio = preferences[Keys.SkipShortAudio] ?: false,
                 customFolderUris = preferences[Keys.CustomFolderUris]
@@ -505,6 +506,12 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    suspend fun setSongListPullToRefresh(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.SongListPullToRefresh] = enabled
+        }
+    }
+
     suspend fun setRefreshLibraryOnStart(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[Keys.RefreshLibraryOnStart] = enabled
@@ -657,6 +664,7 @@ class SettingsRepository(context: Context) {
         val LiquidGlass = booleanPreferencesKey("liquid_glass")
         val PredictiveBackEnabled = booleanPreferencesKey("predictive_back_enabled")
         val NavigationTransitionStyle = stringPreferencesKey("navigation_transition_style")
+        val SongListPullToRefresh = booleanPreferencesKey("song_list_pull_to_refresh")
         val RefreshLibraryOnStart = booleanPreferencesKey("refresh_library_on_start")
         val SkipShortAudio = booleanPreferencesKey("skip_short_audio")
         val CustomFolderUris = stringSetPreferencesKey("custom_folder_uris")

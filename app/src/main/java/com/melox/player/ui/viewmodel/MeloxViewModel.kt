@@ -939,6 +939,12 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setSongListPullToRefresh(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.setSongListPullToRefresh(enabled)
+        }
+    }
+
     fun setRefreshLibraryOnStart(enabled: Boolean) {
         viewModelScope.launch {
             settingsRepository.setRefreshLibraryOnStart(enabled)

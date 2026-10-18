@@ -288,6 +288,11 @@
         <item quantity="other">%1$d首</item>
     </plurals>
     <string name="scan_music_card_title">扫描</string>
+    <string name="scan_song_list_pull_to_refresh">歌曲页下拉刷新</string>
+    <string name="music_pull_to_refresh">下拉刷新</string>
+    <string name="music_release_to_refresh">松开刷新</string>
+    <string name="music_refreshing">正在刷新…</string>
+    <string name="music_refresh_complete">刷新结束</string>
     <string name="scan_refresh_on_start">每次启动时刷新</string>
     <string name="scan_skip_short_audio">不扫描60s以下音频</string>
     <string name="scan_custom_folder_title">自定义文件夹</string>
