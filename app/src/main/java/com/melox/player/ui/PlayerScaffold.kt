@@ -17,6 +17,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,8 +35,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.union
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.LaunchedEffect
@@ -77,7 +79,6 @@ import top.yukonga.miuix.kmp.icon.extended.Album
 import top.yukonga.miuix.kmp.icon.extended.Home
 import top.yukonga.miuix.kmp.icon.extended.Music
 import top.yukonga.miuix.kmp.icon.extended.Settings
-import top.yukonga.miuix.kmp.layout.BottomSheetDefaults
 import top.yukonga.miuix.kmp.basic.rememberNavigationRailState
 
 internal data class MiniPlayerChrome(
@@ -98,6 +99,7 @@ private const val NAVIGATION_FADE_OUT_DURATION_MILLIS = 140
 
 /** Holds the persistent bottom navigation while pages render inside the shared Pager. */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 internal fun PlayerScaffold(
     selectedTab: Int,
     onTabSelected: (Int) -> Unit,
@@ -193,6 +195,19 @@ internal fun PlayerScaffold(
         val miniPlayerBottomPadding = normalMiniPlayerBottomPadding(
             windowWidth, windowHeight, navigationBarBottomInset,
         )
+        val miniPlayerVerticalOffset = if (navigationBarBottomInset > 0.dp) {
+            (PLAYER_NORMAL_MINI_PLAYER_INTERNAL_PADDING - navigationBarBottomInset)
+                .coerceAtLeast(0.dp)
+        } else {
+            0.dp
+        }
+        val railBottomInsets = WindowInsets(
+            bottom = with(density) {
+                (miniPlayerHeight(BottomBarStyle.NORMAL, smallPlayerBar) +
+                    miniPlayerBottomPadding + PLAYER_NORMAL_MINI_PLAYER_INTERNAL_PADDING -
+                    miniPlayerVerticalOffset).roundToPx()
+            },
+        )
         Box(modifier = Modifier.fillMaxSize()) {
             Row(
                 modifier = Modifier
@@ -215,6 +230,8 @@ internal fun PlayerScaffold(
                 ) {
                     NavigationRail(
                         state = navigationRailState,
+                        statusBarInsets = WindowInsets.statusBarsIgnoringVisibility,
+                        contentBottomInsets = railBottomInsets,
                         expandContentDescription = stringResource(R.string.navigation_expand),
                         collapseContentDescription = stringResource(R.string.navigation_collapse),
                     ) {
@@ -262,21 +279,17 @@ internal fun PlayerScaffold(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(bottom = miniPlayerBottomPadding),
+                    .padding(bottom = miniPlayerBottomPadding)
+                    .windowInsetsPadding(
+                        WindowInsets.navigationBars.union(WindowInsets.displayCutout)
+                            .only(WindowInsetsSides.Horizontal),
+                    )
+                    .padding(horizontal = 16.dp - PLAYER_NORMAL_MINI_PLAYER_INTERNAL_PADDING),
                 contentAlignment = Alignment.BottomCenter,
             ) {
                 Box(
                     modifier = Modifier
-                        .offset(y = if (navigationBarBottomInset > 0.dp) {
-                            (PLAYER_NORMAL_MINI_PLAYER_INTERNAL_PADDING -
-                                navigationBarBottomInset).coerceAtLeast(0.dp)
-                        } else {
-                            0.dp
-                        })
-                        .widthIn(
-                            max = BottomSheetDefaults.maxWidth +
-                                PLAYER_NORMAL_MINI_PLAYER_INTERNAL_PADDING * 2,
-                        )
+                        .offset(y = miniPlayerVerticalOffset)
                         .fillMaxWidth(),
                 ) {
                     miniPlayer(

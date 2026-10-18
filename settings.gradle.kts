@@ -17,6 +17,12 @@ plugins {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        maven {
+            url = uri("third_party/miuix/maven")
+            content {
+                includeModule("top.yukonga.miuix.kmp", "miuix-ui-android")
+            }
+        }
         google()
         mavenCentral()
         maven {
