@@ -1,0 +1,9 @@
+--- a/compose/ui/ui/src/commonMain/kotlin/androidx/compose/ui/layout/SubcomposeLayout.kt
++++ b/compose/ui/ui/src/commonMain/kotlin/androidx/compose/ui/layout/SubcomposeLayout.kt
+@@ -662,5 +662,5 @@
+ 
+     private val outOfFrameExecutor: OutOfFrameExecutor?
+-        get() = root.requireOwner().outOfFrameExecutor
++        get() = root.owner?.outOfFrameExecutor
+ 
+     private fun subcompose(node: LayoutNode, nodeState: NodeState, pausable: Boolean) {

@@ -174,6 +174,14 @@ tasks.matching { task -> task.name == "assembleRelease" }.configureEach {
     dependsOn(renameReleaseApk)
 }
 
+configurations.configureEach {
+    resolutionStrategy.dependencySubstitution {
+        substitute(module("androidx.compose.ui:ui-android"))
+            .using(module("androidx.compose.ui:ui-android:${libs.versions.composeUiPatch.get()}"))
+            .because("Allow detached lazy layouts to clean up prefetch without requiring an owner")
+    }
+}
+
 dependencies {
     implementation(files("libs/renderscript-toolkit-blur-344be3f-arm64-16k.aar"))
     implementation(files("libs/media3-decoder-ffmpeg-1.11.0-ffmpeg9.0-arm64-v8a.aar"))
