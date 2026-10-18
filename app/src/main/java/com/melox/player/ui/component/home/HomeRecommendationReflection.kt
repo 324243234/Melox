@@ -1,5 +1,6 @@
 package com.melox.player.ui.component.home
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.ColorMatrix
@@ -7,11 +8,14 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import com.google.android.renderscript.Toolkit
+import com.melox.player.ui.component.library.ArtworkLoadResult
 import com.melox.player.ui.component.library.createArtworkCacheKey
+import com.melox.player.ui.component.library.getArtworkLoadResultFromMemoryCache
 import com.melox.player.ui.component.library.loadCachedArtworkDerivative
+import com.melox.player.ui.component.library.rememberArtworkLoad
 
 @Composable
 internal fun rememberHomeRecommendationReflection(
@@ -27,23 +31,44 @@ internal fun rememberHomeRecommendationReflection(
         dateModifiedEpochSeconds = dateModifiedEpochSeconds,
         fileSizeBytes = fileSizeBytes,
     )
-    return produceState<Bitmap?>(
-        initialValue = null,
-        key1 = enabled,
-        key2 = sourceBitmap,
-        key3 = cacheKey,
-    ) {
-        value = if (enabled && sourceBitmap != null) {
-            loadCachedArtworkDerivative(
+    val requestKey = Triple(cacheKey, enabled, sourceBitmap)
+    val initialResult = remember(requestKey) {
+        if (enabled && sourceBitmap != null) {
+            getArtworkLoadResultFromMemoryCache(cacheKey)
+        } else {
+            ArtworkLoadResult<Bitmap?>(null)
+        }
+    }
+    return rememberArtworkLoad(requestKey, initialResult) {
+        if (enabled && sourceBitmap != null) {
+            loadHomeRecommendationReflection(
                 context = context,
-                cacheKey = cacheKey,
-            ) {
-                createHomeRecommendationReflectionBitmap(sourceBitmap)
-            }
+                contentUri = contentUri,
+                dateModifiedEpochSeconds = dateModifiedEpochSeconds,
+                fileSizeBytes = fileSizeBytes,
+                sourceBitmap = sourceBitmap,
+            )
         } else {
             null
         }
-    }.value
+    }?.value
+}
+
+internal suspend fun loadHomeRecommendationReflection(
+    context: Context,
+    contentUri: String,
+    dateModifiedEpochSeconds: Long,
+    fileSizeBytes: Long,
+    sourceBitmap: Bitmap,
+): Bitmap? = loadCachedArtworkDerivative(
+    context = context,
+    cacheKey = createHomeRecommendationReflectionCacheKey(
+        contentUri = contentUri,
+        dateModifiedEpochSeconds = dateModifiedEpochSeconds,
+        fileSizeBytes = fileSizeBytes,
+    ),
+) {
+    createHomeRecommendationReflectionBitmap(sourceBitmap)
 }
 
 internal fun createHomeRecommendationReflectionCacheKey(

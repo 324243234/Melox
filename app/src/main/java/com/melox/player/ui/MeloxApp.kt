@@ -504,6 +504,7 @@ fun MeloxApp(
     val homeRecommendations = rememberHomeRecommendations(
         tracks = uiState.tracks,
         active = playerPagerState.selectedPage == HOME_TAB_INDEX,
+        blurEnabled = settings.blurEnabled,
         initialRecommendationCount = homeInitialRecommendationCount(
             recommendationViewportWidth,
         ),

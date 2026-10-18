@@ -55,6 +55,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -68,10 +69,14 @@ import com.melox.player.model.MusicTrack
 import com.melox.player.model.ScanStatus
 import com.melox.player.ui.component.home.HOME_RECOMMENDATION_ARTWORK_SIZE_PX
 import com.melox.player.ui.component.home.rememberHomeRecommendationReflection
+import com.melox.player.ui.component.home.loadHomeRecommendationReflection
 import com.melox.player.ui.component.library.PlaybackArtwork
 import com.melox.player.ui.component.library.PlaybackArtworkFrame
 import com.melox.player.ui.component.library.extractArtworkColor
+import com.melox.player.ui.component.library.createArtworkCacheKey
+import com.melox.player.ui.component.library.getArtworkLoadResultFromMemoryCache
 import com.melox.player.ui.component.library.loadArtworkBitmap
+import com.melox.player.ui.component.library.loadPlaceholderArtworkBitmap
 import com.melox.player.ui.component.library.rememberArtworkBitmapPixels
 import com.melox.player.ui.component.library.rememberPlaceholderArtworkBitmap
 import com.melox.player.ui.component.library.currentPlaceholderArtworkResId
@@ -83,6 +88,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
@@ -108,11 +115,6 @@ import kotlin.random.Random
 data class HomeRecommendations(
     val tracks: List<MusicTrack>,
     val requestMore: () -> Unit,
-    val artworkTrackIds: Set<Long>,
-)
-
-internal data class HomeRecommendationSelection(
-    val tracks: List<MusicTrack>,
     val artworkTrackIds: Set<Long>,
 )
 
@@ -180,17 +182,7 @@ fun HomeScreen(
                         HomeSectionTitle(R.string.home_recommendation_title)
                     }
                     item(key = "home_recommendation_loading") {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = HomeRecommendationSectionBottomSpacing)
-                                .height(HomeRecommendationArtworkSize + HomeRecommendationInfoHeight),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            InfiniteProgressIndicator(
-                                color = MiuixTheme.colorScheme.onSurface,
-                            )
-                        }
+                        HomeRecommendationLoadingState()
                     }
                 }
 
@@ -363,6 +355,19 @@ private fun HomeEmptyPlaylistCard(
 }
 
 @Composable
+private fun HomeRecommendationLoadingState(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(bottom = HomeRecommendationSectionBottomSpacing)
+            .height(HomeRecommendationArtworkSize + HomeRecommendationInfoHeight),
+        contentAlignment = Alignment.Center,
+    ) {
+        InfiniteProgressIndicator(color = MiuixTheme.colorScheme.onSurface)
+    }
+}
+
+@Composable
 private fun HomeEmptyRecommendationState(
     scanStatus: ScanStatus,
     hasScannedMusic: Boolean,
@@ -370,14 +375,7 @@ private fun HomeEmptyRecommendationState(
     modifier: Modifier = Modifier,
 ) {
     when (scanStatus.toMusicLibraryPlaceholder()) {
-        MusicLibraryPlaceholder.Loading -> Box(
-            modifier = modifier
-                .fillMaxWidth()
-                .height(HomeEmptyCardContentHeight),
-            contentAlignment = Alignment.Center,
-        ) {
-            InfiniteProgressIndicator(color = MiuixTheme.colorScheme.onSurface)
-        }
+        MusicLibraryPlaceholder.Loading -> HomeRecommendationLoadingState(modifier)
 
         MusicLibraryPlaceholder.Error,
         MusicLibraryPlaceholder.Empty,
@@ -501,11 +499,81 @@ internal fun rememberHomeRecommendations(
     tracks: List<MusicTrack>,
     active: Boolean,
     initialRecommendationCount: Int,
+    blurEnabled: Boolean,
+): HomeRecommendations? {
+    val context = LocalContext.current.applicationContext
+    val placeholderArtworkResId = currentPlaceholderArtworkResId()
+    val placeholderSizePx = with(LocalDensity.current) { HomeRecommendationArtworkSize.roundToPx() }
+    return rememberHomeRecommendationSelection(
+        tracks = tracks,
+        active = active,
+        initialRecommendationCount = initialRecommendationCount,
+        preparationKey = Triple(blurEnabled, placeholderArtworkResId, placeholderSizePx),
+        probeArtwork = { track ->
+            val bitmap = loadArtworkBitmap(
+                context = context,
+                contentUri = track.contentUri,
+                dateModifiedEpochSeconds = track.dateModifiedEpochSeconds,
+                fileSizeBytes = track.fileSizeBytes,
+                targetSizePx = HOME_RECOMMENDATION_ARTWORK_SIZE_PX,
+            )
+            if (bitmap != null) true else getArtworkLoadResultFromMemoryCache(
+                createArtworkCacheKey(
+                    contentUri = track.contentUri,
+                    dateModifiedEpochSeconds = track.dateModifiedEpochSeconds,
+                    fileSizeBytes = track.fileSizeBytes,
+                    targetSizePx = HOME_RECOMMENDATION_ARTWORK_SIZE_PX,
+                ),
+            )?.let { it.value != null }
+        },
+        prepareTrack = { track, hasArtwork ->
+            val bitmap = if (hasArtwork) {
+                loadArtworkBitmap(
+                    context = context,
+                    contentUri = track.contentUri,
+                    dateModifiedEpochSeconds = track.dateModifiedEpochSeconds,
+                    fileSizeBytes = track.fileSizeBytes,
+                    targetSizePx = HOME_RECOMMENDATION_ARTWORK_SIZE_PX,
+                )
+            } else {
+                loadPlaceholderArtworkBitmap(
+                    context = context,
+                    drawableResId = placeholderArtworkResId,
+                    targetSizePx = placeholderSizePx,
+                )
+            }
+            if (blurEnabled && bitmap != null) {
+                loadHomeRecommendationReflection(
+                    context = context,
+                    contentUri = if (hasArtwork) {
+                        track.contentUri
+                    } else {
+                        "placeholder-artwork:$placeholderArtworkResId"
+                    },
+                    dateModifiedEpochSeconds = if (hasArtwork) track.dateModifiedEpochSeconds else 0L,
+                    fileSizeBytes = if (hasArtwork) track.fileSizeBytes else 0L,
+                    sourceBitmap = bitmap,
+                )
+            }
+        },
+    )
+}
+
+@Composable
+internal fun rememberHomeRecommendationSelection(
+    tracks: List<MusicTrack>,
+    active: Boolean,
+    initialRecommendationCount: Int,
+    preparationKey: Any,
+    probeArtwork: suspend (MusicTrack) -> Boolean?,
+    prepareTrack: suspend (MusicTrack, Boolean) -> Unit,
 ): HomeRecommendations? {
     val recommendationSeed = rememberSaveable { Random.nextInt() }
-    var loadRequested by rememberSaveable { mutableStateOf(false) }
+    val loader = remember(recommendationSeed) { HomeRecommendationLoader(recommendationSeed) }
+    val currentProbeArtwork by rememberUpdatedState(probeArtwork)
+    val currentPrepareTrack by rememberUpdatedState(prepareTrack)
+    val sources = remember(tracks) { homeRecommendationSources(tracks) }
     var selectionComplete by rememberSaveable { mutableStateOf(false) }
-    var initialRecommendationExpansionStarted by rememberSaveable { mutableStateOf(false) }
     var requestedRecommendationCount by rememberSaveable {
         mutableIntStateOf(HomePriorityRecommendationCount)
     }
@@ -514,54 +582,58 @@ internal fun rememberHomeRecommendations(
     val requestMore = remember {
         { requestedRecommendationCount += 1 }
     }
-    val context = LocalContext.current.applicationContext
     val selectedTracks = remember(tracks, selectedTrackIds) {
         val tracksById = tracks.associateBy(MusicTrack::id)
         selectedTrackIds.map { trackId -> tracksById[trackId] }.filterNotNull()
     }
 
-    LaunchedEffect(active) {
-        if (active) loadRequested = true
-    }
-    LaunchedEffect(selectionComplete, initialRecommendationExpansionStarted, initialRecommendationCount) {
+    LaunchedEffect(selectionComplete, active, initialRecommendationCount) {
         if (selectionComplete) {
-            if (!initialRecommendationExpansionStarted) {
-                initialRecommendationExpansionStarted = true
-            }
             requestedRecommendationCount = maxOf(
                 requestedRecommendationCount,
-                initialRecommendationCount,
+                if (active) initialRecommendationCount else
+                    (initialRecommendationCount - HomeRecommendationPrefetchCount)
+                        .coerceAtLeast(HomePriorityRecommendationCount),
             )
         }
     }
     LaunchedEffect(
-        loadRequested,
-        tracks,
-        recommendationSeed,
+        sources,
         requestedRecommendationCount,
+        preparationKey,
     ) {
-        if (!loadRequested || tracks.isEmpty()) return@LaunchedEffect
+        if (tracks.isEmpty()) {
+            selectedTrackIds = LongArray(0)
+            artworkTrackIds = LongArray(0)
+            selectionComplete = false
+            return@LaunchedEffect
+        }
+        val probe = currentProbeArtwork
+        val prepare = currentPrepareTrack
+        val initialSelection = !selectionComplete
+        val previousSelection = selectedTrackIds.toSet()
         val selected = withContext(Dispatchers.Default) {
-            selectHomeRecommendations(
+            val selection = loader.select(
                 tracks = tracks,
-                seed = recommendationSeed,
                 count = requestedRecommendationCount,
-                knownArtworkTrackIds = artworkTrackIds.toSet(),
-                probeBatchSize = if (!initialRecommendationExpansionStarted) {
+                probeBatchSize = if (initialSelection) {
                     HomePriorityRecommendationProbeBatchSize
                 } else {
                     HomeRecommendationProbeBatchSize
                 },
-            ) { track ->
-                loadArtworkBitmap(
-                    context = context,
-                    contentUri = track.contentUri,
-                    dateModifiedEpochSeconds = track.dateModifiedEpochSeconds,
-                    fileSizeBytes = track.fileSizeBytes,
-                    targetSizePx = HOME_RECOMMENDATION_ARTWORK_SIZE_PX,
-                ) != null
+                probeArtwork = probe,
+            )
+            coroutineScope {
+                // Recheck the first screen and warm new cards, not the entire swipe history.
+                selection.tracks.filterIndexed { index, track ->
+                    index < initialRecommendationCount || track.id !in previousSelection
+                }.map { track ->
+                    async { prepare(track, track.id in selection.artworkTrackIds) }
+                }.awaitAll()
             }
+            selection
         }
+        currentCoroutineContext().ensureActive()
         selectedTrackIds = selected.tracks.map(MusicTrack::id).toLongArray()
         artworkTrackIds = selected.artworkTrackIds.toLongArray()
         selectionComplete = true
@@ -614,47 +686,6 @@ private fun HomeSectionTitle(
             )
         }
     }
-}
-
-internal suspend fun selectHomeRecommendations(
-    tracks: List<MusicTrack>,
-    seed: Int,
-    count: Int,
-    knownArtworkTrackIds: Set<Long> = emptySet(),
-    probeBatchSize: Int = HomeRecommendationProbeBatchSize,
-    hasArtwork: suspend (MusicTrack) -> Boolean,
-): HomeRecommendationSelection {
-    if (count <= 0 || probeBatchSize <= 0) {
-        return HomeRecommendationSelection(emptyList(), emptySet())
-    }
-    val recommendations = ArrayList<MusicTrack>(count.coerceAtMost(tracks.size))
-    val withoutArtwork = ArrayList<MusicTrack>()
-    val artworkTrackIds = HashSet<Long>()
-    val candidates = tracks.shuffled(Random(seed))
-    for (batchStart in candidates.indices step probeBatchSize) {
-        val batch = candidates.subList(
-            batchStart,
-            minOf(batchStart + probeBatchSize, candidates.size),
-        )
-        val artworkMatches = coroutineScope {
-            batch.map { track ->
-                async { track.id in knownArtworkTrackIds || hasArtwork(track) }
-            }.awaitAll()
-        }
-        batch.forEachIndexed { index, track ->
-            if (artworkMatches[index]) {
-                recommendations += track
-                artworkTrackIds += track.id
-                if (recommendations.size == count) {
-                    return HomeRecommendationSelection(recommendations, artworkTrackIds)
-                }
-            } else {
-                if (withoutArtwork.size < count) withoutArtwork += track
-            }
-        }
-    }
-    recommendations += withoutArtwork.take(count - recommendations.size)
-    return HomeRecommendationSelection(recommendations, artworkTrackIds)
 }
 
 @Composable

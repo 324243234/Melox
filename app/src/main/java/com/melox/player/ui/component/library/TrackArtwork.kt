@@ -658,6 +658,13 @@ internal suspend fun loadArtworkBitmap(
 internal fun getArtworkBitmapFromMemoryCache(cacheKey: String): Bitmap? =
     (ArtworkCache.get(cacheKey) as? ArtworkResult.Loaded)?.bitmap
 
+internal fun getArtworkLoadResultFromMemoryCache(cacheKey: String): ArtworkLoadResult<Bitmap?>? =
+    when (val result = ArtworkCache.get(cacheKey)) {
+        is ArtworkResult.Loaded -> ArtworkLoadResult(result.bitmap)
+        ArtworkResult.Missing -> ArtworkLoadResult(null)
+        null -> null
+    }
+
 internal suspend fun loadArtworkBitmapFromCache(
     context: Context,
     cacheKey: String,
