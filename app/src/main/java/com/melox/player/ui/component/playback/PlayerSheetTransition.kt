@@ -167,6 +167,7 @@ internal class PlayerSheetTransitionState(initialProgress: Float = 0f) {
     private var frameRecordingGeneration by mutableIntStateOf(0)
     private var frozenArtworkBounds: Pair<Rect, Rect>? = null
     private var openingMiniPlayerScale by mutableFloatStateOf(1f)
+    private var openingMiniPlayerOffsetX by mutableFloatStateOf(0f)
     private var closingStartProgress = 1f
 
     val capturedMiniPlayerPressScale: Float?
@@ -185,21 +186,37 @@ internal class PlayerSheetTransitionState(initialProgress: Float = 0f) {
             else -> openingMiniPlayerScale
         }
 
+    val overlayMiniPlayerOffsetX: Float
+        get() = when {
+            !isTransitionActive && progress >= 1f -> 0f
+            !targetOpen && !isDragging -> lerp(
+                0f,
+                openingMiniPlayerOffsetX,
+                if (closingStartProgress > 0f) progress / closingStartProgress else 0f,
+            )
+            else -> openingMiniPlayerOffsetX
+        }
+
+    val capturedMiniPlayerOffsetX: Float?
+        get() = overlayMiniPlayerOffsetX.takeIf { isMounted }
+
     val overlayMiniPlayerBounds: Rect
-        get() = scaledMiniPlayerBounds(miniPlayerBounds, miniPlayerBounds, overlayMiniPlayerScale)
+        get() = transformedMiniPlayerBounds(miniPlayerBounds)
     val overlayMiniPlayerContentBounds: Rect
-        get() = scaledMiniPlayerBounds(miniPlayerContentBounds, miniPlayerBounds, overlayMiniPlayerScale)
+        get() = transformedMiniPlayerBounds(miniPlayerContentBounds)
     val overlayMiniPlayerControlsBounds: Rect
-        get() = scaledMiniPlayerBounds(miniPlayerControlsBounds, miniPlayerBounds, overlayMiniPlayerScale)
+        get() = transformedMiniPlayerBounds(miniPlayerControlsBounds)
+
+    private fun transformedMiniPlayerBounds(bounds: Rect): Rect =
+        scaledMiniPlayerBounds(bounds, miniPlayerBounds, overlayMiniPlayerScale)
+            .translate(Offset(overlayMiniPlayerOffsetX, 0f))
 
     val currentFrameRecordingGeneration: Int
         get() = frameRecordingGeneration
 
     val overlayMiniArtworkBounds: Rect
-        get() = scaledMiniPlayerBounds(
+        get() = transformedMiniPlayerBounds(
             frozenArtworkBounds?.first ?: miniArtworkBounds,
-            miniPlayerBounds,
-            overlayMiniPlayerScale,
         )
     val overlayFullArtworkBounds: Rect
         get() = frozenArtworkBounds?.second ?: fullArtworkBounds
@@ -224,6 +241,7 @@ internal class PlayerSheetTransitionState(initialProgress: Float = 0f) {
         frameRecordingGeneration += 1
         frozenArtworkBounds = null
         openingMiniPlayerScale = 1f
+        openingMiniPlayerOffsetX = 0f
         miniPlayerExpansionStarted = false
     }
 
@@ -369,9 +387,16 @@ internal class PlayerSheetTransitionState(initialProgress: Float = 0f) {
             else -> Rect.Zero
         }
 
-    fun open(miniPlayerScale: Float = 1f, requireFreshMiniFrame: Boolean = false) {
+    fun open(
+        miniPlayerScale: Float = 1f,
+        requireFreshMiniFrame: Boolean = false,
+        miniPlayerOffsetX: Float = 0f,
+    ) {
         val needsFreshFrames = !sharedLayersReady || requireFreshMiniFrame && !isMounted
-        if (!isMounted) openingMiniPlayerScale = miniPlayerScale.coerceAtLeast(1f)
+        if (!isMounted) {
+            openingMiniPlayerScale = miniPlayerScale.coerceAtLeast(1f)
+            openingMiniPlayerOffsetX = miniPlayerOffsetX
+        }
         hasBeenShown = true
         releaseDragForProgrammaticSettle()
         if (needsFreshFrames) requestFreshFrameRecording()
@@ -387,11 +412,18 @@ internal class PlayerSheetTransitionState(initialProgress: Float = 0f) {
         }
     }
 
-    fun beginMiniPlayerDrag(miniPlayerScale: Float = 1f, requireFreshMiniFrame: Boolean = false) {
+    fun beginMiniPlayerDrag(
+        miniPlayerScale: Float = 1f,
+        requireFreshMiniFrame: Boolean = false,
+        miniPlayerOffsetX: Float = 0f,
+    ) {
         if (requireFreshMiniFrame && !isMounted && !isDragging) {
             requestFreshFrameRecording()
         }
-        if (!isMounted) openingMiniPlayerScale = miniPlayerScale.coerceAtLeast(1f)
+        if (!isMounted) {
+            openingMiniPlayerScale = miniPlayerScale.coerceAtLeast(1f)
+            openingMiniPlayerOffsetX = miniPlayerOffsetX
+        }
         beginDrag(startedFromMiniPlayer = true)
     }
 
@@ -401,7 +433,10 @@ internal class PlayerSheetTransitionState(initialProgress: Float = 0f) {
 
     private fun beginDrag(startedFromMiniPlayer: Boolean) {
         if (isDragging) return
-        if (isMounted) openingMiniPlayerScale = overlayMiniPlayerScale
+        if (isMounted) {
+            openingMiniPlayerScale = overlayMiniPlayerScale
+            openingMiniPlayerOffsetX = overlayMiniPlayerOffsetX
+        }
         // A first upward drag is also the first presentation of the full player.
         // Keep its host mounted after the pointer is released, just like click-open.
         hasBeenShown = true
@@ -564,8 +599,14 @@ internal class PlayerSheetTransitionState(initialProgress: Float = 0f) {
     }
 
     private fun requestSettle(open: Boolean, initialVelocity: Float = 0f) {
-        if (!isTransitionActive && progress >= 1f) openingMiniPlayerScale = 1f
-        if (isMounted) openingMiniPlayerScale = overlayMiniPlayerScale
+        if (!isTransitionActive && progress >= 1f) {
+            openingMiniPlayerScale = 1f
+            openingMiniPlayerOffsetX = 0f
+        }
+        if (isMounted) {
+            openingMiniPlayerScale = overlayMiniPlayerScale
+            openingMiniPlayerOffsetX = overlayMiniPlayerOffsetX
+        }
         if (!open) closingStartProgress = progress
         if (!isTransitionActive) frozenArtworkBounds = null
         freezeArtworkBounds()

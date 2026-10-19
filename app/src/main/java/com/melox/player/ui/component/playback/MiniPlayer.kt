@@ -3,7 +3,6 @@ package com.melox.player.ui.component.playback
 import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
@@ -76,7 +75,6 @@ import com.melox.player.ui.component.liquid.miuixFloatingBarShadow
 import com.melox.player.ui.component.liquid.miniPlayerSurface
 import kotlin.math.abs
 import kotlin.math.max
-import kotlin.math.sign
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Icon
@@ -95,12 +93,12 @@ internal fun MiniPlayer(
     artworkState: ArtworkTransitionState<Bitmap>,
     chrome: MiniPlayerChrome,
     interactiveHighlight: InteractiveHighlight,
-    onOpen: (Float) -> Unit,
+    onOpen: (Float, Float) -> Unit,
     onTogglePlayPause: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onOpenQueue: () -> Unit,
-    onPlayerDragStart: (Float) -> Unit,
+    onPlayerDragStart: (Float, Float) -> Unit,
     onPlayerDrag: (Float, Float) -> Unit,
     onPlayerDragEnd: (Float, Float) -> Unit,
     onPlayerDragCancel: () -> Unit,
@@ -113,6 +111,7 @@ internal fun MiniPlayer(
     sharedArtworkVisible: Boolean,
     playerSheetProgress: () -> Float,
     capturedPressScale: Float?,
+    capturedSwipeTranslationX: Float?,
     onLayerRecorded: (generation: Int, size: IntSize) -> Unit,
     onPlayerBoundsChanged: (Rect) -> Unit,
     onPlayerContentBoundsChanged: (Rect) -> Unit,
@@ -142,37 +141,19 @@ internal fun MiniPlayer(
     var playerBounds by remember { mutableStateOf(Rect.Zero) }
     var contentCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val pressGrowth = with(LocalDensity.current) { 16.dp.toPx() }
-    val swipeScope = rememberCoroutineScope()
     val recordLayers = !pressEnabled || recordForTransition
-    var swipeOffsetJob by remember { mutableStateOf<Job?>(null) }
-    var swipeDragDistance by remember { mutableFloatStateOf(0f) }
+    val swipeState = rememberMiniPlayerSwipeState(pressEnabled, recordForTransition)
     val swipeOffsetLimit = with(LocalDensity.current) { 4.dp.toPx() }
-    fun releaseSwipeOffset() {
-        swipeOffsetJob?.cancel()
-        if (!pressEnabled || swipeDragDistance == 0f) return
-        swipeOffsetJob = swipeScope.launch {
-            Animatable(swipeDragDistance).animateTo(0f, spring(1f, 300f, 0.5f)) {
-                swipeDragDistance = value
-            }
-        }
-    }
-    LaunchedEffect(pressEnabled) {
-        if (!pressEnabled) {
-            swipeOffsetJob?.cancel()
-            swipeDragDistance = 0f
-        }
-    }
     fun pressScale(): Float = if (pressEnabled) {
         capturedPressScale
             ?: (1f + pressGrowth / playerBounds.width.coerceAtLeast(1f) * pressProgress.value)
     } else {
         1f
     }
-    fun swipeTranslationX(): Float {
-        if (!pressEnabled) return 0f
-        val fraction = (swipeDragDistance / playerBounds.width.coerceAtLeast(1f))
-            .coerceIn(-1f, 1f)
-        return swipeOffsetLimit * fraction.sign * EaseOut.transform(abs(fraction))
+    fun swipeTranslationX(): Float = when {
+        !pressEnabled -> 0f
+        capturedSwipeTranslationX != null -> capturedSwipeTranslationX
+        else -> swipeState.translationX(playerBounds.width, swipeOffsetLimit)
     }
     fun layoutBounds(coordinates: LayoutCoordinates): Rect {
         val content = contentCoordinates
@@ -210,6 +191,7 @@ internal fun MiniPlayer(
                     }
                 } finally {
                     pressed = false
+                    swipeState.release()
                 }
             }
         }
@@ -219,7 +201,7 @@ internal fun MiniPlayer(
     val expansionGestureModifier = rememberPlayerSheetVerticalDragModifier(
         enabled = true,
         hasItem = true,
-        onDragStart = { onPlayerDragStart(pressScale()) },
+        onDragStart = { onPlayerDragStart(pressScale(), swipeTranslationX()) },
         onDrag = { onPlayerDrag(it, pressScale()) },
         onDragEnd = { onPlayerDragEnd(it, pressScale()) },
         onDragCancel = onPlayerDragCancel,
@@ -250,7 +232,7 @@ internal fun MiniPlayer(
                 enabled = hasItem,
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-                onClick = { onOpen(pressScale()) },
+                onClick = { onOpen(pressScale(), swipeTranslationX()) },
             ),
         contentAlignment = Alignment.Center,
     ) {
@@ -380,9 +362,11 @@ internal fun MiniPlayer(
                     playback = playback,
                     onPrevious = onPrevious,
                     onNext = onNext,
-                    onSwipeStart = { swipeOffsetJob?.cancel() },
-                    onSwipeDrag = { if (pressEnabled) swipeDragDistance += it },
-                    onSwipeRelease = ::releaseSwipeOffset,
+                    onSwipeStart = swipeState::begin,
+                    onSwipeDrag = {
+                        if (pressEnabled && !recordForTransition) swipeState.dragBy(it)
+                    },
+                    onSwipeRelease = swipeState::release,
                     titleStyle = if (isSmallFloating) {
                         MiuixTheme.textStyles.subtitle
                     } else {

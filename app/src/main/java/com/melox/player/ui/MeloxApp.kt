@@ -1838,17 +1838,19 @@ fun MeloxApp(
                                     chrome = chrome,
                                     onChromeChanged = { miniPlayerChrome = it },
                                     interactiveHighlight = miniPlayerInteractiveHighlight,
-                                    onOpen = {
+                                    onOpen = { scale, offsetX ->
                                         playerTransition.open(
-                                            it,
+                                            miniPlayerScale = scale,
+                                            miniPlayerOffsetX = offsetX,
                                             requireFreshMiniFrame =
                                                 chrome.liquidGlassActive && chrome.backdrop != null,
                                         )
                                     },
                                     onOpenQueue = { showQueue = true },
-                                    onPlayerDragStart = {
+                                    onPlayerDragStart = { scale, offsetX ->
                                         playerTransition.beginMiniPlayerDrag(
-                                            it,
+                                            miniPlayerScale = scale,
+                                            miniPlayerOffsetX = offsetX,
                                             requireFreshMiniFrame =
                                                 chrome.liquidGlassActive && chrome.backdrop != null,
                                         )
@@ -1857,6 +1859,7 @@ fun MeloxApp(
                                     onPlayerDragEnd = playerTransition::endMiniPlayerDrag,
                                     onPlayerDragCancel = playerTransition::cancelDrag,
                                     capturedPressScale = playerTransition.capturedMiniPlayerPressScale,
+                                    capturedSwipeTranslationX = playerTransition.capturedMiniPlayerOffsetX,
                                     playerLayer = miniPlayerLayer,
                                     playerContentLayer = miniPlayerContentLayer,
                                     frameRecordingGeneration = frameRecordingGeneration,
@@ -2966,9 +2969,9 @@ private fun MiniPlayerHost(
     chrome: MiniPlayerChrome,
     onChromeChanged: (MiniPlayerChrome) -> Unit,
     interactiveHighlight: InteractiveHighlight,
-    onOpen: (Float) -> Unit,
+    onOpen: (Float, Float) -> Unit,
     onOpenQueue: () -> Unit,
-    onPlayerDragStart: (Float) -> Unit,
+    onPlayerDragStart: (Float, Float) -> Unit,
     onPlayerDrag: (Float, Float) -> Unit,
     onPlayerDragEnd: (Float, Float) -> Unit,
     onPlayerDragCancel: () -> Unit,
@@ -2981,6 +2984,7 @@ private fun MiniPlayerHost(
     sharedArtworkVisible: Boolean,
     playerSheetProgress: () -> Float,
     capturedPressScale: Float?,
+    capturedSwipeTranslationX: Float?,
     onLayerRecorded: (generation: Int, size: IntSize) -> Unit,
     onPlayerBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit,
     onPlayerContentBoundsChanged: (androidx.compose.ui.geometry.Rect) -> Unit,
@@ -2997,8 +3001,8 @@ private fun MiniPlayerHost(
         circularArtwork = circularArtwork,
         chrome = chrome,
         interactiveHighlight = interactiveHighlight,
-        onOpen = { scale ->
-            if (playback.currentItem != null) onOpen(scale)
+        onOpen = { scale, offsetX ->
+            if (playback.currentItem != null) onOpen(scale, offsetX)
         },
         onTogglePlayPause = viewModel::togglePlayPause,
         onPrevious = viewModel::previous,
@@ -3017,6 +3021,7 @@ private fun MiniPlayerHost(
         sharedArtworkVisible = sharedArtworkVisible,
         playerSheetProgress = playerSheetProgress,
         capturedPressScale = capturedPressScale,
+        capturedSwipeTranslationX = capturedSwipeTranslationX,
         onLayerRecorded = onLayerRecorded,
         onPlayerBoundsChanged = onPlayerBoundsChanged,
         onPlayerContentBoundsChanged = onPlayerContentBoundsChanged,
