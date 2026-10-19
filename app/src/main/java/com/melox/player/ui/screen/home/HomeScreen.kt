@@ -79,7 +79,7 @@ import com.melox.player.ui.component.library.loadArtworkBitmap
 import com.melox.player.ui.component.library.loadPlaceholderArtworkBitmap
 import com.melox.player.ui.component.library.rememberArtworkBitmapPixels
 import com.melox.player.ui.component.library.rememberPlaceholderArtworkBitmap
-import com.melox.player.ui.component.library.currentPlaceholderArtworkResId
+import com.melox.player.ui.component.library.PLACEHOLDER_ARTWORK_RES_ID
 import com.melox.player.ui.component.library.responsiveGridColumnCount
 import com.melox.player.ui.component.playlist.PlaylistGridItem
 import com.melox.player.ui.screen.library.MusicLibraryPlaceholder
@@ -502,7 +502,7 @@ internal fun rememberHomeRecommendations(
     blurEnabled: Boolean,
 ): HomeRecommendations? {
     val context = LocalContext.current.applicationContext
-    val placeholderArtworkResId = currentPlaceholderArtworkResId()
+    val placeholderArtworkResId = PLACEHOLDER_ARTWORK_RES_ID
     val placeholderSizePx = with(LocalDensity.current) { HomeRecommendationArtworkSize.roundToPx() }
     return rememberHomeRecommendationSelection(
         tracks = tracks,
@@ -548,7 +548,7 @@ internal fun rememberHomeRecommendations(
                     contentUri = if (hasArtwork) {
                         track.contentUri
                     } else {
-                        "placeholder-artwork:$placeholderArtworkResId"
+                        "placeholder-artwork-v5:$placeholderArtworkResId"
                     },
                     dateModifiedEpochSeconds = if (hasArtwork) track.dateModifiedEpochSeconds else 0L,
                     fileSizeBytes = if (hasArtwork) track.fileSizeBytes else 0L,
@@ -703,9 +703,9 @@ private fun HomeRecommendationCard(
         fileSizeBytes = track.fileSizeBytes,
         targetSizePx = HOME_RECOMMENDATION_ARTWORK_SIZE_PX,
     ) else rememberPlaceholderArtworkBitmap(artworkSize)
-    val placeholderArtworkResId = if (hasArtwork) null else currentPlaceholderArtworkResId()
+    val placeholderArtworkResId = if (hasArtwork) null else PLACEHOLDER_ARTWORK_RES_ID
     val reflection = rememberHomeRecommendationReflection(
-        contentUri = placeholderArtworkResId?.let { "placeholder-artwork:$it" } ?: track.contentUri,
+        contentUri = placeholderArtworkResId?.let { "placeholder-artwork-v5:$it" } ?: track.contentUri,
         dateModifiedEpochSeconds = if (hasArtwork) track.dateModifiedEpochSeconds else 0L,
         fileSizeBytes = if (hasArtwork) track.fileSizeBytes else 0L,
         sourceBitmap = artwork,

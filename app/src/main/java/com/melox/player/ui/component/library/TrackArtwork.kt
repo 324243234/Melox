@@ -34,7 +34,6 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativePaint
@@ -71,7 +70,6 @@ import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.squircle.addSquircleRect
 import top.yukonga.miuix.kmp.squircle.isSquircleEnabled
 import top.yukonga.miuix.kmp.squircle.squircleClip
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private val ArtworkSize = 48.dp
 private val ArtworkCornerRadius = 6.dp
@@ -87,7 +85,7 @@ fun TrackArtwork(
     size: Dp = ArtworkSize,
     cornerRadius: Dp = ArtworkCornerRadius,
 ) {
-    val placeholderArtworkResId = currentPlaceholderArtworkResId()
+    val placeholderArtworkResId = PLACEHOLDER_ARTWORK_RES_ID
     val bitmap = rememberArtworkBitmap(
         contentUri = contentUri,
         dateModifiedEpochSeconds = dateModifiedEpochSeconds,
@@ -109,6 +107,7 @@ fun TrackArtwork(
         Image(
             painter = painterResource(placeholderArtworkResId),
             contentDescription = null,
+            alpha = 0.3f,
             modifier = modifier
                 .size(size)
                 .squircleClip(cornerRadius),
@@ -342,7 +341,7 @@ internal fun PlaybackArtworkFrame(
             )
         }
     } else {
-        val placeholderArtworkResId = currentPlaceholderArtworkResId()
+        val placeholderArtworkResId = PLACEHOLDER_ARTWORK_RES_ID
         val placeholderModifier = if (drawArtworkShadow) {
             modifier.size(size)
                 .playbackArtworkShadow(
@@ -369,14 +368,7 @@ internal fun PlaybackArtworkFrame(
     }
 }
 
-@Composable
-internal fun currentPlaceholderArtworkResId(): Int = if (
-    MiuixTheme.colorScheme.surface.luminance() < 0.5f
-) {
-    R.drawable.ic_album_placeholder_dark
-} else {
-    R.drawable.ic_album_placeholder_light
-}
+internal val PLACEHOLDER_ARTWORK_RES_ID = R.drawable.ic_album_placeholder
 
 @Composable
 internal fun Modifier.playbackArtworkClip(cornerRadius: Dp, circular: Boolean): Modifier =
@@ -729,9 +721,11 @@ internal fun rememberPlaceholderArtworkBitmap(size: Dp): Bitmap? =
     rememberRetainedArtworkBitmap(rememberPlaceholderArtworkBitmapLoadState(size))
 
 @Composable
-internal fun rememberPlaceholderArtworkBitmapLoadState(size: Dp): ArtworkBitmapLoadState {
+internal fun rememberPlaceholderArtworkBitmapLoadState(
+    size: Dp,
+    drawableResId: Int = PLACEHOLDER_ARTWORK_RES_ID,
+): ArtworkBitmapLoadState {
     val context = LocalContext.current.applicationContext
-    val drawableResId = currentPlaceholderArtworkResId()
     val targetSizePx = normalizeArtworkTargetSize(
         with(LocalDensity.current) { size.roundToPx() },
     )
@@ -778,7 +772,7 @@ internal suspend fun loadPlaceholderArtworkBitmap(
 private fun placeholderArtworkCacheKey(
     drawableResId: Int,
     targetSizePx: Int,
-): String = "album-placeholder-v2-$drawableResId-$targetSizePx"
+): String = "album-placeholder-v5-$drawableResId-$targetSizePx"
 
 private fun decodePlaceholderArtwork(
     context: Context,

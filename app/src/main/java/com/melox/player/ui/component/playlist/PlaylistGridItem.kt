@@ -35,7 +35,7 @@ import androidx.compose.ui.unit.sp
 import com.melox.player.R
 import com.melox.player.data.playlist.loadPlaylistArtwork
 import com.melox.player.model.LocalPlaylist
-import com.melox.player.ui.component.library.currentPlaceholderArtworkResId
+import com.melox.player.ui.component.library.PLACEHOLDER_ARTWORK_RES_ID
 import com.melox.player.ui.component.library.loadArtworkBitmap
 import com.melox.player.ui.component.library.normalizeArtworkTargetSize
 import com.melox.player.ui.component.library.rememberArtworkLoad
@@ -259,7 +259,7 @@ private fun PlaylistArtworkTile(
             )
         } else if (showDefaultArtwork) {
             Image(
-                painter = painterResource(currentPlaceholderArtworkResId()),
+                painter = painterResource(PLACEHOLDER_ARTWORK_RES_ID),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,

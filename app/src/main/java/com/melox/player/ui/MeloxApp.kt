@@ -110,6 +110,7 @@ import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.melox.player.model.LyricAnimationMode
 import com.melox.player.R
+import com.melox.player.ui.component.library.PLACEHOLDER_ARTWORK_RES_ID
 import com.melox.player.data.library.AlbumGroup
 import com.melox.player.data.library.MusicSortConfig
 import com.melox.player.data.library.MusicSortField
@@ -3053,11 +3054,7 @@ private fun PlaybackArtworkPrefetchEffect(
     val artworkPrefetchSizePx = with(LocalDensity.current) {
         PLAYER_FULL_ARTWORK_REQUEST_SIZE.roundToPx()
     }
-    val placeholderArtworkResId = if (MiuixTheme.colorScheme.surface.luminance() < 0.5f) {
-        R.drawable.ic_album_placeholder_dark
-    } else {
-        R.drawable.ic_album_placeholder_light
-    }
+    val placeholderArtworkResId = PLACEHOLDER_ARTWORK_RES_ID
     LaunchedEffect(
         playback.currentIndex,
         playback.queue,

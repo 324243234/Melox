@@ -1,7 +1,6 @@
 package com.melox.player.playback
 
 import android.content.Context
-import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
@@ -79,15 +78,7 @@ internal fun Context.loadPlaybackArtworkData(contentUri: String): ByteArray? {
 }
 
 private fun Context.decodePlaceholderArtworkData(): ByteArray? {
-    val drawableResId = if (
-        resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
-            Configuration.UI_MODE_NIGHT_YES
-    ) {
-        R.drawable.ic_album_placeholder_dark
-    } else {
-        R.drawable.ic_album_placeholder_light
-    }
-    return BitmapFactory.decodeResource(resources, drawableResId)
+    return BitmapFactory.decodeResource(resources, R.drawable.ic_album_placeholder)
         ?.toArtworkData()
 }
 
