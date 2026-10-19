@@ -44,7 +44,7 @@ import com.melox.player.data.library.AlbumSortField
 import com.melox.player.model.ScanStatus
 import com.melox.player.ui.component.library.AlphabetSections
 import com.melox.player.ui.component.library.AlphabetSideBar
-import com.melox.player.ui.component.library.PlaybackArtwork
+import com.melox.player.ui.component.library.TrackArtwork
 import com.melox.player.ui.component.library.responsiveGridColumnCount
 import com.melox.player.ui.component.PageCard as Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
@@ -245,12 +245,13 @@ internal fun AlbumGridItem(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                PlaybackArtwork(
+                TrackArtwork(
                     contentUri = cover?.contentUri.orEmpty(),
                     dateModifiedEpochSeconds = cover?.dateModifiedEpochSeconds ?: 0L,
                     fileSizeBytes = cover?.fileSizeBytes ?: 0L,
                     size = 54.dp,
                     cornerRadius = 10.dp,
+                    showLoadingBackground = true,
                 )
                 AlbumGridLabels(
                     album = album,
@@ -273,12 +274,13 @@ internal fun AlbumGridItem(
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                    PlaybackArtwork(
+                    TrackArtwork(
                         contentUri = cover?.contentUri.orEmpty(),
                         dateModifiedEpochSeconds = cover?.dateModifiedEpochSeconds ?: 0L,
                         fileSizeBytes = cover?.fileSizeBytes ?: 0L,
                         size = maxWidth,
                         cornerRadius = 14.dp,
+                        showLoadingBackground = true,
                     )
                 }
                 AlbumGridLabels(

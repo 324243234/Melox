@@ -65,7 +65,7 @@ import com.melox.player.ui.component.library.ArtistArtwork
 import com.melox.player.ui.component.library.ArtistListItem
 import com.melox.player.ui.component.library.MusicTrackDescriptionMode
 import com.melox.player.ui.component.library.MusicTrackRow
-import com.melox.player.ui.component.library.PlaybackArtwork
+import com.melox.player.ui.component.library.TrackArtwork
 import com.melox.player.ui.component.library.SelectionActionsAnimatedContent
 import com.melox.player.ui.component.library.SelectionNavigationIconAnimatedContent
 import com.melox.player.ui.component.library.TrackActionsOverlay
@@ -724,12 +724,13 @@ private fun AlbumDetailHeader(album: AlbumGroup) {
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PlaybackArtwork(
+            TrackArtwork(
                 contentUri = cover?.contentUri.orEmpty(),
                 dateModifiedEpochSeconds = cover?.dateModifiedEpochSeconds ?: 0L,
                 fileSizeBytes = cover?.fileSizeBytes ?: 0L,
                 size = coverSize,
                 cornerRadius = 14.dp,
+                showLoadingBackground = true,
             )
             Column(
                 modifier = Modifier.weight(1f),

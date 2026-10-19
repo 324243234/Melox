@@ -70,6 +70,8 @@ import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.squircle.addSquircleRect
 import top.yukonga.miuix.kmp.squircle.isSquircleEnabled
 import top.yukonga.miuix.kmp.squircle.squircleClip
+import top.yukonga.miuix.kmp.squircle.squircleBackground
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private val ArtworkSize = 48.dp
 private val ArtworkCornerRadius = 6.dp
@@ -84,14 +86,16 @@ fun TrackArtwork(
     modifier: Modifier = Modifier,
     size: Dp = ArtworkSize,
     cornerRadius: Dp = ArtworkCornerRadius,
+    showLoadingBackground: Boolean = false,
 ) {
     val placeholderArtworkResId = PLACEHOLDER_ARTWORK_RES_ID
-    val bitmap = rememberArtworkBitmap(
+    val artwork = rememberArtworkBitmapLoadState(
         contentUri = contentUri,
         dateModifiedEpochSeconds = dateModifiedEpochSeconds,
         fileSizeBytes = fileSizeBytes,
         size = size,
     )
+    val bitmap = rememberRetainedArtworkBitmap(artwork)
 
     if (bitmap != null) {
         Image(
@@ -102,6 +106,12 @@ fun TrackArtwork(
                 .squircleClip(cornerRadius),
             contentScale = ContentScale.Crop,
             filterQuality = FilterQuality.High,
+        )
+    } else if (showLoadingBackground && artwork.isLoading) {
+        Box(
+            modifier = modifier
+                .size(size)
+                .squircleBackground(MiuixTheme.colorScheme.secondaryContainer, cornerRadius),
         )
     } else {
         Image(
