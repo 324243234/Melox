@@ -419,10 +419,6 @@ class PlaybackController(context: Context) {
     fun cyclePlaybackMode() {
         if (!playbackModeChangeInFlight.compareAndSet(false, true)) return
         withController { controller ->
-            if (controller.mediaItemCount == 0) {
-                finishPlaybackModeChange()
-                return@withController
-            }
             val queue = controller.currentPlaybackQueue()
             val currentMode = controller.currentPlaybackMode()
             val targetMode = nextPlaybackMode(currentMode)
@@ -433,13 +429,8 @@ class PlaybackController(context: Context) {
             )
             beginPlaybackModeChange(targetMode, reordered.queue)
             mutableState.value = mutableState.value.copy(playbackMode = targetMode)
-            PlaybackModeMemory.set(targetMode)
-            controller.shuffleModeEnabled = false
-            controller.repeatMode = targetMode.toPlayerRepeatMode()
-            controller.applyPlaybackQueue(
-                targetQueue = reordered.queue,
-                targetCurrentIndex = reordered.currentIndex,
-            )
+            controller.applyPlaybackMode(targetMode, reordered)
+            if (queue.isEmpty()) finishPlaybackModeChange()
         }
     }
 
@@ -792,6 +783,13 @@ internal fun Player.applyPlaybackQueue(
         replaceMediaItems(0, currentIndex, beforeCurrent)
         replaceMediaItems(targetCurrentIndex + 1, mediaItemCount, afterCurrent)
     }
+}
+
+internal fun Player.applyPlaybackMode(mode: PlaybackMode, reordered: ReorderedPlaybackQueue) {
+    PlaybackModeMemory.set(mode)
+    shuffleModeEnabled = false
+    repeatMode = mode.toPlayerRepeatMode()
+    applyPlaybackQueue(reordered.queue, reordered.currentIndex)
 }
 
 private fun Player.hasPlaybackQueueOrder(targetQueue: List<PlaybackQueueItem>): Boolean =

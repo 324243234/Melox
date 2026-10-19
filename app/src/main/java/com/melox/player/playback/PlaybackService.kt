@@ -820,7 +820,7 @@ class PlaybackService : MediaSessionService() {
         !snapshotRestorePending || !isAwaitingSnapshotRestore(snapshotRestoreSeed)
 
     private fun cyclePlaybackMode(player: Player) {
-        if (player.mediaItemCount == 0 || isClosing) return
+        if (isClosing) return
         if (snapshotRestorePending) snapshotRestoreModeChanged = true
         val targetMode = nextPlaybackMode(player.currentPlaybackMode())
         val reordered = reorderQueueForPlaybackMode(
@@ -828,13 +828,7 @@ class PlaybackService : MediaSessionService() {
             currentIndex = player.currentMediaItemIndex,
             targetMode = targetMode,
         )
-        PlaybackModeMemory.set(targetMode)
-        player.shuffleModeEnabled = false
-        player.repeatMode = targetMode.toPlayerRepeatMode()
-        player.applyPlaybackQueue(
-            targetQueue = reordered.queue,
-            targetCurrentIndex = reordered.currentIndex,
-        )
+        player.applyPlaybackMode(targetMode, reordered)
         refreshMediaButtonPreferences(targetMode)
     }
 
