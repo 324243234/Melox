@@ -129,19 +129,25 @@ fun MusicTrackRow(
                 end = TopAppBarDefaults.ActionIconPadding,
                 bottom = 8.dp,
             ),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MusicTrackLeadingContent(
-            track = track,
-            isCurrent = isCurrent,
-            descriptionMode = descriptionMode,
-            artworkOverlayText = artworkOverlayText,
-            enabled = enabled,
-            descriptionOverride = descriptionOverride,
-            showArtwork = LocalSongListArtworkVisible.current,
-            titleOverride = title,
-        )
+        Row(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MusicTrackLeadingContent(
+                track = track,
+                isCurrent = isCurrent,
+                descriptionMode = descriptionMode,
+                artworkOverlayText = artworkOverlayText,
+                enabled = enabled,
+                descriptionOverride = descriptionOverride,
+                showArtwork = LocalSongListArtworkVisible.current,
+                titleOverride = title,
+            )
+        }
 
         Row(
             horizontalArrangement = Arrangement.spacedBy(0.dp),

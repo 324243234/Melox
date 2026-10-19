@@ -156,7 +156,7 @@
         <item quantity="other">%1$d 张专辑</item>
     </plurals>
     <plurals name="artist_song_count">
-        <item quantity="other">%1$d 首歌曲</item>
+        <item quantity="other">%1$d 首</item>
     </plurals>
     <string name="artist_counts">%1$s - %2$s</string>
     <string name="artist_songs">歌曲</string>
