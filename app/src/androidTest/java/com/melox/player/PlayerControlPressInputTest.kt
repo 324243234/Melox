@@ -41,6 +41,19 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 @RunWith(AndroidJUnit4::class)
 class PlayerControlPressInputTest {
     @Test
+    fun disabledControlIgnoresPressScaleTapAndLongPress() =
+        withButton(longClickEnabled = true, enabled = false) { button ->
+            val down = button.down()
+            SystemClock.sleep(ViewConfiguration.getLongPressTimeout().toLong() + 100)
+            assertEquals(1f, button.scale.get().value, 0f)
+            assertEquals(0, button.clicks.get())
+            assertEquals(0, button.longClicks.get())
+            button.up(down)
+            assertEquals(0, button.clicks.get())
+            assertEquals(0, button.longClicks.get())
+        }
+
+    @Test
     fun shortAndLongHeldReleaseUseNativeClickActivation() = withButton { button ->
         val down = button.down()
         assertEquals(0, button.clicks.get())
@@ -135,7 +148,11 @@ class PlayerControlPressInputTest {
         }
     }
 
-    private fun withButton(longClickEnabled: Boolean = false, check: (ButtonFixture) -> Unit) {
+    private fun withButton(
+        longClickEnabled: Boolean = false,
+        enabled: Boolean = true,
+        check: (ButtonFixture) -> Unit,
+    ) {
         val ready = CountDownLatch(1)
         val fixture = ButtonFixture()
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
@@ -144,10 +161,11 @@ class PlayerControlPressInputTest {
                     setContent {
                         MiuixTheme {
                             fixture.parentIndication.set(LocalIndication.current)
-                            val press = rememberPlayerControlPressFeedback()
+                            val press = rememberPlayerControlPressFeedback(enabled)
                             SideEffect { fixture.scale.set(press.scale) }
                             Box(Modifier.fillMaxSize().padding(16.dp)) {
                                 PlayerControlIconButton(
+                                    enabled = enabled,
                                     onClick = { fixture.clicks.incrementAndGet() },
                                     onLongClick = if (longClickEnabled) {
                                         { fixture.longClicks.incrementAndGet() }

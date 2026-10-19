@@ -75,6 +75,7 @@ import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import top.yukonga.miuix.kmp.theme.LocalContentColor
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private val QueueArtworkSize = 44.dp
@@ -357,6 +358,8 @@ fun QueueSheet(
             }
         },
         endAction = {
+            val currentTrackAvailable = displayedCurrentIndex in draftQueue.indices
+            val queueNotEmpty = playback.queue.isNotEmpty()
             Row(modifier = Modifier.padding(end = 20.dp)) {
                 IconButton(
                     onClick = {
@@ -366,22 +369,26 @@ fun QueueSheet(
                             }
                         }
                     },
-                    enabled = displayedCurrentIndex in draftQueue.indices,
+                    enabled = currentTrackAvailable,
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_locate_current_track),
                         contentDescription = stringResource(R.string.locate_current_track),
                         modifier = Modifier.size(24.dp),
+                        tint = if (currentTrackAvailable) LocalContentColor.current
+                        else MiuixTheme.colorScheme.disabledOnSurface,
                     )
                 }
                 IconButton(
                     onClick = { showClearConfirm = true },
-                    enabled = playback.queue.isNotEmpty(),
+                    enabled = queueNotEmpty,
                 ) {
                     Icon(
                         imageVector = MiuixIcons.Delete,
                         contentDescription = stringResource(R.string.clear_queue),
                         modifier = Modifier.size(24.dp),
+                        tint = if (queueNotEmpty) LocalContentColor.current
+                        else MiuixTheme.colorScheme.disabledOnSurface,
                     )
                 }
             }

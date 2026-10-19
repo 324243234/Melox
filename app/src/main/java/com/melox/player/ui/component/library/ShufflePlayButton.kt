@@ -9,6 +9,8 @@ import androidx.compose.ui.unit.dp
 import com.melox.player.R
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.theme.LocalContentColor
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 fun ShufflePlayButton(
@@ -21,6 +23,8 @@ fun ShufflePlayButton(
             painter = painterResource(R.drawable.ic_player_shuffle),
             contentDescription = stringResource(R.string.shuffle_play),
             modifier = Modifier.size(24.dp),
+            tint = if (enabled) LocalContentColor.current
+            else MiuixTheme.colorScheme.disabledOnSurface,
         )
     }
 }
