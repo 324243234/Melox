@@ -48,7 +48,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
@@ -118,21 +117,6 @@ private fun PlaybackQueueItem.queueSlotKey(): String = buildString {
     append(contentUri)
     append(':')
     append(sourceOrder.toBits())
-}
-
-internal fun queueListHeight(
-    itemCount: Int,
-    rowHeight: Dp,
-    maxHeight: Dp,
-): Dp {
-    val boundedMaxHeight = maxHeight.coerceAtLeast(0.dp)
-    if (itemCount <= 0 || rowHeight <= 0.dp || boundedMaxHeight == 0.dp) return 0.dp
-
-    return if (itemCount.toFloat() >= boundedMaxHeight.value / rowHeight.value) {
-        boundedMaxHeight
-    } else {
-        rowHeight * itemCount
-    }
 }
 
 internal fun <T> moveQueueListItem(
@@ -218,23 +202,6 @@ internal fun queuePlayNextPeerTranslation(
     else -> 0f
 }
 
-internal fun queueLocationAnchorHeight(
-    itemCount: Int,
-    currentIndex: Int,
-    rowHeight: Dp,
-    viewportHeight: Dp,
-    bottomPadding: Dp,
-): Dp {
-    if (currentIndex !in 0 until itemCount) return 0.dp
-    val rowsAfterCurrent = itemCount - currentIndex - 1
-    return (
-        viewportHeight -
-            rowHeight -
-            rowHeight * rowsAfterCurrent -
-            bottomPadding
-    ).coerceAtLeast(0.dp)
-}
-
 @Composable
 fun QueueSheet(
     show: Boolean,
@@ -315,9 +282,6 @@ fun QueueSheet(
         LocalWindowInfo.current.containerDpSize.height -
             queueSheetTopInset -
             QueueSheetHeaderHeight
-    ).coerceAtLeast(0.dp)
-    val queueRowsMaxHeight = (
-        queueMaxListHeight - queueListBottomPadding
     ).coerceAtLeast(0.dp)
     val currentKey = playback.currentItem?.queueSlotKey()
     val displayedCurrentIndex = draftQueue.indexOfFirst { item ->
@@ -431,7 +395,7 @@ fun QueueSheet(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(120.dp + queueListBottomPadding)
+                    .height(queueMaxListHeight)
                     .padding(bottom = queueListBottomPadding),
                 contentAlignment = Alignment.Center,
             ) {
@@ -441,24 +405,10 @@ fun QueueSheet(
                 )
             }
         } else {
-            val queueListViewportHeight = (
-                queueListHeight(
-                    itemCount = draftQueue.size,
-                    rowHeight = QueueRowHeight,
-                    maxHeight = queueRowsMaxHeight,
-                ) + queueListBottomPadding
-            ).coerceAtMost(queueMaxListHeight)
-            val locationAnchorHeight = queueLocationAnchorHeight(
-                itemCount = draftQueue.size,
-                currentIndex = displayedCurrentIndex,
-                rowHeight = QueueRowHeight,
-                viewportHeight = queueListViewportHeight,
-                bottomPadding = queueListBottomPadding,
-            )
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(queueListViewportHeight),
+                    .height(queueMaxListHeight),
                 state = queueListState,
                 userScrollEnabled = !queueReorderState.isAnyItemDragging,
                 contentPadding = PaddingValues(bottom = queueListBottomPadding),
@@ -617,11 +567,6 @@ fun QueueSheet(
                                 )
                             }
                         }
-                    }
-                }
-                if (locationAnchorHeight > 0.dp) {
-                    item(key = "queue-location-anchor") {
-                        Spacer(modifier = Modifier.height(locationAnchorHeight))
                     }
                 }
             }

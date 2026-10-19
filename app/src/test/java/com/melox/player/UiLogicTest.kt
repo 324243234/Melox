@@ -203,8 +203,6 @@ import com.melox.player.ui.screen.playback.progressGestureIsDrag
 import com.melox.player.ui.screen.playback.playerHeaderArtistText
 import com.melox.player.ui.screen.playback.fitPlayerArtworkSize
 import com.melox.player.ui.screen.playback.hiddenLyricsCenterOffsetY
-import com.melox.player.ui.screen.playback.queueListHeight
-import com.melox.player.ui.screen.playback.queueLocationAnchorHeight
 import com.melox.player.ui.screen.playback.moveQueueListItem
 import com.melox.player.ui.screen.playback.queueMoveTargetAfterCurrent
 import com.melox.player.ui.screen.playback.queueOffscreenExitAlpha
@@ -4065,51 +4063,6 @@ class UiLogicTest {
             ),
             0f,
         )
-    }
-
-    @Test
-    fun queueLocationAddsOnlyTheSpaceNeededToPlaceCurrentFirst() {
-        assertEquals(
-            0.dp,
-            queueLocationAnchorHeight(
-                itemCount = 10,
-                currentIndex = 1,
-                rowHeight = 68.dp,
-                viewportHeight = 600.dp,
-                bottomPadding = 24.dp,
-            ),
-        )
-        assertEquals(
-            508.dp,
-            queueLocationAnchorHeight(
-                itemCount = 10,
-                currentIndex = 9,
-                rowHeight = 68.dp,
-                viewportHeight = 600.dp,
-                bottomPadding = 24.dp,
-            ),
-        )
-        assertEquals(
-            0.dp,
-            queueLocationAnchorHeight(
-                itemCount = 0,
-                currentIndex = -1,
-                rowHeight = 68.dp,
-                viewportHeight = 600.dp,
-                bottomPadding = 24.dp,
-            ),
-        )
-    }
-
-    @Test
-    fun queueListHeightCapsLargeRestoredQueuesBeforeMultiplication() {
-        val rowHeight = 68.dp
-        val maxHeight = 600.dp
-
-        assertEquals(0.dp, queueListHeight(itemCount = 0, rowHeight, maxHeight))
-        assertEquals(204.dp, queueListHeight(itemCount = 3, rowHeight, maxHeight))
-        assertEquals(maxHeight, queueListHeight(itemCount = 100_000, rowHeight, maxHeight))
-        assertEquals(maxHeight, queueListHeight(itemCount = Int.MAX_VALUE, rowHeight, maxHeight))
     }
 
     @Test
