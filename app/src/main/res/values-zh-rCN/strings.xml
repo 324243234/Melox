@@ -89,6 +89,7 @@
     <string name="music_play_next">下一首播放</string>
     <string name="music_add_to_queue">添加到队列</string>
     <string name="music_song_info">歌曲信息</string>
+    <string name="music_edit_metadata">元数据编辑</string>
     <string name="music_edit_with_music_tag_editor">使用音乐标签编辑</string>
     <string name="music_edit_with_lyrico">使用Lyrico编辑</string>
     <string name="music_edit_with_luna_beat">使用LunaBeat编辑</string>

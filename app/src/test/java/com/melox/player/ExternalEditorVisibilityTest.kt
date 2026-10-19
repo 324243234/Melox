@@ -4,23 +4,23 @@ import com.melox.player.model.AppSettings
 import com.melox.player.ui.component.library.ExternalEditorKind
 import com.melox.player.ui.component.library.visibleExternalEditors
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ExternalEditorVisibilityTest {
     @Test
-    fun defaultSettingsHideAllEditors() {
+    fun defaultSettingsEnableAllEditors() {
         val settings = AppSettings()
-        assertFalse(settings.showMusicTagEditor)
-        assertFalse(settings.showLyricoEditor)
-        assertFalse(settings.showLunaBeatEditor)
-        assertTrue(
+        assertTrue(settings.showMusicTagEditor)
+        assertTrue(settings.showLyricoEditor)
+        assertTrue(settings.showLunaBeatEditor)
+        assertEquals(
+            ExternalEditorKind.entries,
             visibleExternalEditors(
                 settings.showMusicTagEditor,
                 settings.showLyricoEditor,
                 settings.showLunaBeatEditor,
-            ).isEmpty(),
+            ),
         )
     }
 
@@ -55,7 +55,7 @@ class ExternalEditorVisibilityTest {
 
     @Test
     fun enablingEditorsAgainRestoresTheirOrder() {
-        val settings = AppSettings(showMusicTagEditor = false, showLyricoEditor = false)
+        val settings = AppSettings(showMusicTagEditor = false, showLyricoEditor = false, showLunaBeatEditor = false)
             .copy(showMusicTagEditor = true, showLyricoEditor = true)
         assertEquals(
             listOf(ExternalEditorKind.MusicTagEditor, ExternalEditorKind.Lyrico),

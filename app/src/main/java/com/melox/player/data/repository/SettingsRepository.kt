@@ -142,9 +142,9 @@ class SettingsRepository(context: Context) {
                 leftAlignPlayerTitle = preferences[Keys.LeftAlignPlayerTitle] ?: false,
                 hideControlsOnLyrics = preferences[Keys.HideControlsOnLyrics] ?: false,
                 showLyricsTranslation = preferences[Keys.ShowLyricsTranslation] ?: true,
-                showMusicTagEditor = preferences[Keys.ShowMusicTagEditor] ?: false,
-                showLyricoEditor = preferences[Keys.ShowLyricoEditor] ?: false,
-                showLunaBeatEditor = preferences[Keys.ShowLunaBeatEditor] ?: false,
+                showMusicTagEditor = preferences[Keys.ShowMusicTagEditor] ?: true,
+                showLyricoEditor = preferences[Keys.ShowLyricoEditor] ?: true,
+                showLunaBeatEditor = preferences[Keys.ShowLunaBeatEditor] ?: true,
                 lyricsSourcePriority = preferences[Keys.LyricsSourcePriority]
                     ?.let { storedValue ->
                         enumValueOrDefault(storedValue, LyricsSourcePriority.EMBEDDED)

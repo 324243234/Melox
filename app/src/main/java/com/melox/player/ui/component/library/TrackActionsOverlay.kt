@@ -56,6 +56,8 @@ import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
+import top.yukonga.miuix.kmp.basic.DropdownEntry
+import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Text
@@ -75,6 +77,7 @@ import top.yukonga.miuix.kmp.icon.extended.Reset
 import top.yukonga.miuix.kmp.icon.extended.Share
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import top.yukonga.miuix.kmp.menu.OverlayDropdownMenu
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 
@@ -118,6 +121,7 @@ fun TrackActionsOverlay(
     var retainedSongInfoTrack by remember { mutableStateOf<MusicTrack?>(null) }
     var artistListTrack by remember { mutableStateOf<MusicTrack?>(null) }
     var retainedArtistListTrack by remember { mutableStateOf<MusicTrack?>(null) }
+    val editors = visibleExternalEditors(showMusicTagEditor, showLyricoEditor, showLunaBeatEditor)
     var pendingExternalEditTrackId by rememberSaveable { mutableStateOf<Long?>(null) }
     val finishExternalEdit = {
         pendingExternalEditTrackId?.let { trackId ->
@@ -136,8 +140,13 @@ fun TrackActionsOverlay(
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
-    val openExternalEditor: (MusicTrack, ExternalEditorKind, String) -> Unit =
-        { selectedTrack, editorKind, notFoundMessage ->
+    val openExternalEditor: (MusicTrack, ExternalEditorKind) -> Unit =
+        { selectedTrack, editorKind ->
+            val notFoundMessage = when (editorKind) {
+                ExternalEditorKind.MusicTagEditor -> musicTagEditorNotFoundMessage
+                ExternalEditorKind.Lyrico -> lyricoNotFoundMessage
+                ExternalEditorKind.LunaBeat -> lunaBeatNotFoundMessage
+            }
             val launched = runCatching {
                 launchExternalEditor(
                     context = context,
@@ -318,27 +327,44 @@ fun TrackActionsOverlay(
                             )
                         }
                     }
-                    visibleExternalEditors(
-                        showMusicTagEditor,
-                        showLyricoEditor,
-                        showLunaBeatEditor,
-                    ).forEach { editor ->
-                        val titleRes = when (editor) {
+                    val directEditor = editors.singleOrNull()
+                    if (directEditor != null) {
+                        val titleRes = when (directEditor) {
                             ExternalEditorKind.MusicTagEditor -> R.string.music_edit_with_music_tag_editor
                             ExternalEditorKind.Lyrico -> R.string.music_edit_with_lyrico
                             ExternalEditorKind.LunaBeat -> R.string.music_edit_with_luna_beat
                         }
-                        val notFoundMessage = when (editor) {
-                            ExternalEditorKind.MusicTagEditor -> musicTagEditorNotFoundMessage
-                            ExternalEditorKind.Lyrico -> lyricoNotFoundMessage
-                            ExternalEditorKind.LunaBeat -> lunaBeatNotFoundMessage
-                        }
                         TrackAction(
                             icon = MiuixIcons.Edit,
                             text = stringResource(titleRes),
-                            onClick = {
-                                openExternalEditor(selectedTrack, editor, notFoundMessage)
+                            onClick = { openExternalEditor(selectedTrack, directEditor) },
+                        )
+                    } else if (editors.isNotEmpty()) {
+                        OverlayDropdownMenu(
+                            title = stringResource(R.string.music_edit_metadata),
+                            modifier = Modifier.fillMaxWidth(),
+                            startAction = {
+                                Icon(
+                                    imageVector = MiuixIcons.Edit,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(TrackActionIconSize),
+                                    tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                )
                             },
+                            entry = DropdownEntry(
+                                items = editors.map { editor ->
+                                    DropdownItem(
+                                        text = stringResource(
+                                            when (editor) {
+                                                ExternalEditorKind.MusicTagEditor -> R.string.lyrics_editor_music_tag
+                                                ExternalEditorKind.Lyrico -> R.string.lyrics_editor_lyrico
+                                                ExternalEditorKind.LunaBeat -> R.string.lyrics_editor_luna_beat
+                                            },
+                                        ),
+                                        onClick = { openExternalEditor(selectedTrack, editor) },
+                                    )
+                                },
+                            ),
                         )
                     }
                     TrackAction(
