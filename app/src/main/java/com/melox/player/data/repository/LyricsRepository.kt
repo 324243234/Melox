@@ -61,10 +61,14 @@ class LyricsRepository(context: Context) {
         return null
     }
 
-    private fun readEmbedded(request: LyricsRequest): LyricsDocument? = parseEmbeddedLyrics(
-        candidates = readTagLibLyrics(request.contentUri),
-        durationMs = request.durationMs,
-    )
+    private fun readEmbedded(request: LyricsRequest): LyricsDocument? {
+        val properties = readTagLibLyrics(request.contentUri)
+        return parseEmbeddedLyrics(
+            candidates = embeddedLyricsCandidates(properties),
+            durationMs = request.durationMs,
+            translations = embeddedLyricsCandidates(properties, translation = true),
+        )
+    }
 
     private fun readSidecar(request: LyricsRequest): LyricsDocument? {
         val candidates = exactLyricsSidecarCandidates(
@@ -72,25 +76,42 @@ class LyricsRepository(context: Context) {
             formatPriority = request.sidecarFormatPriority,
         )
         if (candidates.isEmpty()) return null
-        var directReadFailure: Exception? = null
-        val directDocument = readFirstSidecar(candidates, request.durationMs) { name ->
-            try {
+        val candidateNames = candidates.flatMap { (name, format) ->
+            listOf(name) + if (format == LyricsFormat.LRC) translationSidecarCandidates(name) else emptyList()
+        }
+        val indexedUris by lazy { querySidecarUris(request, candidateNames) }
+        var readFailure: Exception? = null
+        val document = readFirstSidecar(candidates, request.durationMs) { name ->
+            val directText = try {
                 readDirectSidecar(request.folderPath, name)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
             } catch (exception: Exception) {
-                directReadFailure = exception
+                readFailure = exception
+                null
+            }
+            directText ?: try {
+                indexedUris[name]?.let(::readText)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (exception: Exception) {
+                readFailure = exception
                 null
             }
         }
-        if (directDocument != null) return directDocument
+        if (document != null) return document
+        readFailure?.let { throw it }
+        return null
+    }
+
+    private fun querySidecarUris(request: LyricsRequest, candidateNames: List<String>): Map<String, Uri> {
         val relativePath = request.folderPath.toRelativeMediaStorePath()
         val collection = request.contentUri.toMediaStoreFilesCollection()
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
             relativePath == null || collection == null
         ) {
-            directReadFailure?.let { throw it }
-            return null
+            return emptyMap()
         }
-        val candidateNames = candidates.map { it.first }
         val cursor = contentResolver.query(
             collection,
             arrayOf(MediaStore.Files.FileColumns._ID, MediaStore.Files.FileColumns.DISPLAY_NAME),
@@ -99,7 +120,7 @@ class LyricsRepository(context: Context) {
             (listOf(relativePath) + candidateNames).toTypedArray(),
             null,
         ) ?: throw IOException("Unable to query lyric sidecars")
-        val uriByName = cursor.use {
+        return cursor.use {
             val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
             val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DISPLAY_NAME)
             buildMap {
@@ -111,20 +132,6 @@ class LyricsRepository(context: Context) {
                 }
             }
         }
-        var indexedReadFailure: Exception? = null
-        val indexedDocument = readFirstSidecar(candidates, request.durationMs) { name ->
-            uriByName[name]?.let { uri ->
-                try {
-                    readText(uri)
-                } catch (exception: Exception) {
-                    indexedReadFailure = exception
-                    null
-                }
-            }
-        }
-        if (indexedDocument != null) return indexedDocument
-        (indexedReadFailure ?: directReadFailure)?.let { throw it }
-        return null
     }
 
     @Suppress("DEPRECATION")
@@ -146,13 +153,13 @@ class LyricsRepository(context: Context) {
         (contentResolver.openInputStream(uri) ?: throw IOException("Unable to open lyric sidecar"))
             .use(::readBounded)
 
-    private fun readTagLibLyrics(contentUri: String): List<String> {
+    private fun readTagLibLyrics(contentUri: String): Map<String, Array<String>> {
         val descriptor = contentResolver.openFileDescriptor(Uri.parse(contentUri), "r")
             ?: throw IOException("Unable to open embedded lyrics")
         return descriptor.use {
             val metadata = TagLib.getMetadata(descriptor.dup().detachFd(), false)
                 ?: throw IOException("Unable to read embedded lyrics")
-            embeddedLyricsCandidates(metadata.propertyMap.orEmpty())
+            metadata.propertyMap.orEmpty()
         }
     }
 
@@ -240,13 +247,24 @@ private fun String.normalizedLyricsKey(): String = uppercase(Locale.ROOT)
     .replace(" ", "")
     .replace("_", "")
 
-internal fun embeddedLyricsCandidates(properties: Map<String, Array<String>>): List<String> =
+internal fun embeddedLyricsCandidates(
+    properties: Map<String, Array<String>>,
+    translation: Boolean = false,
+): List<String> =
     properties.entries.asSequence()
         .filter { (key, _) ->
             val normalized = key.normalizedLyricsKey()
-            normalized in LYRICS_KEYS || normalized.contains("LYRIC")
+            (normalized in LYRICS_KEYS || normalized.contains("LYRIC")) &&
+                normalized.contains("TRANSLAT") == translation
         }
-        .sortedBy { (key, _) -> if (key.normalizedLyricsKey().contains("TTML")) 0 else 1 }
+        .sortedWith(compareBy<Map.Entry<String, Array<String>>> { (key, _) ->
+            val normalized = key.normalizedLyricsKey()
+            when {
+                normalized.contains("TTML") -> 0
+                normalized in LYRICS_KEYS -> 1
+                else -> 2
+            }
+        }.thenBy { (key, _) -> key.normalizedLyricsKey() })
         .flatMap { (_, values) -> values.asSequence() }
         .map(String::trim)
         .filter(String::isNotBlank)
@@ -255,10 +273,14 @@ internal fun embeddedLyricsCandidates(properties: Map<String, Array<String>>): L
         .distinct()
         .toList()
 
-internal fun parseEmbeddedLyrics(candidates: List<String>, durationMs: Long): LyricsDocument? =
+internal fun parseEmbeddedLyrics(
+    candidates: List<String>,
+    durationMs: Long,
+    translations: List<String> = emptyList(),
+): LyricsDocument? =
     candidates.firstNotNullOfOrNull { text ->
         LyricsParser.parse(text, LyricsSource.EMBEDDED, durationMs = durationMs)
-    }
+    }?.withLrcTranslation(translations.asSequence(), durationMs)
 
 internal fun exactLyricsSidecarCandidates(
     audioFileName: String?,
@@ -285,13 +307,55 @@ internal fun lyricsSourceOrder(priority: LyricsSourcePriority): List<LyricsSourc
     LyricsSourcePriority.SIDECAR -> listOf(LyricsSource.SIDECAR, LyricsSource.EMBEDDED)
 }
 
-/** Reads only as far as the first parseable sidecar in the user's format order. */
+private fun translationSidecarCandidates(lrcFileName: String): List<String> {
+    val stem = lrcFileName.removeSuffix(".lrc")
+    return listOf("${stem}_trans.lrc", "$stem.trans.lrc", "$stem.zh.lrc")
+}
+
+/** Stops after the first parseable main sidecar, then reads its optional LRC translation. */
 internal fun readFirstSidecar(
     candidates: List<Pair<String, LyricsFormat>>,
     durationMs: Long,
     read: (String) -> String?,
 ): LyricsDocument? = candidates.firstNotNullOfOrNull { (name, format) ->
     read(name)?.let { text ->
-        LyricsParser.parse(text, LyricsSource.SIDECAR, format, durationMs)
+        LyricsParser.parse(text, LyricsSource.SIDECAR, format, durationMs)?.let { document ->
+            val translations = if (format == LyricsFormat.LRC) {
+                translationSidecarCandidates(name).asSequence().mapNotNull { translationName ->
+                    try {
+                        read(translationName)
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+            } else {
+                emptySequence()
+            }
+            document.withLrcTranslation(translations, durationMs)
+        }
     }
+}
+
+private fun LyricsDocument.withLrcTranslation(texts: Sequence<String>, durationMs: Long): LyricsDocument {
+    if (format != LyricsFormat.LRC || lines.none { it.displayText.isNotBlank() && it.translation.isNullOrBlank() }) {
+        return this
+    }
+    for (text in texts) {
+        val translation = LyricsParser.parse(text, source, LyricsFormat.LRC, durationMs)
+            ?.takeIf { it.format == LyricsFormat.LRC } ?: continue
+        val byTime = translation.lines.associate { it.startTimeMs to it.displayText.trim() }
+        val translatedLines = lines.map { line ->
+            val value = byTime[line.startTimeMs]
+                ?.takeIf { it.isNotBlank() && it != line.displayText.trim() }
+            if (line.displayText.isNotBlank() && line.translation.isNullOrBlank() && value != null) {
+                line.copy(translation = value)
+            } else {
+                line
+            }
+        }
+        if (translatedLines != lines) return copy(lines = translatedLines)
+    }
+    return this
 }

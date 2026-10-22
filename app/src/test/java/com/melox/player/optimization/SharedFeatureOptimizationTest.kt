@@ -237,7 +237,7 @@ class SharedFeatureOptimizationTest {
             reads += it
             "[00:01.00]Lyrics"
         }
-        assertEquals(listOf("song.lrc"), reads)
+        assertEquals(listOf("song.lrc", "song_trans.lrc", "song.trans.lrc", "song.zh.lrc"), reads)
         assertEquals("Lyrics", document?.lines?.single()?.text)
     }
 
@@ -250,7 +250,7 @@ class SharedFeatureOptimizationTest {
                 reads += it
                 if (it.endsWith("ttml")) first else "[00:01.00]Fallback"
             }
-            assertEquals(listOf("song.ttml", "song.lrc"), reads)
+            assertEquals(listOf("song.ttml", "song.lrc", "song_trans.lrc", "song.trans.lrc", "song.zh.lrc"), reads)
             assertEquals("Fallback", document?.lines?.single()?.text)
         }
     }
