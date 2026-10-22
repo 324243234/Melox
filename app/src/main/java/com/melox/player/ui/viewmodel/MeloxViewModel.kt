@@ -661,16 +661,6 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
         playbackController.setAutoExtendSleepTimer(initialSettings.autoExtendSleepTimer)
         playbackController.setPlaybackPauseFade(initialSettings.playbackPauseFade)
         viewModelScope.launch {
-            combine(allLibraryTracks, hiddenFolderPaths, hiddenTrackUris) { tracks, paths, uris ->
-                val visibleUris = visibleMusicTracks(tracks, paths, uris)
-                    .mapTo(HashSet(), MusicTrack::contentUri)
-                uris + tracks.asSequence().map(MusicTrack::contentUri)
-                    .filterNot { it in visibleUris }.toSet()
-            }.distinctUntilChanged().collect { hiddenUris ->
-                playbackController.removeContentUris(hiddenUris)
-            }
-        }
-        viewModelScope.launch {
             playlists.value = playlistRepository.load()
             playlistsLoaded.value = true
         }

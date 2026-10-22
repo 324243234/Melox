@@ -25,12 +25,11 @@ import com.melox.player.MeloxApplication
 import com.melox.player.R
 import com.melox.player.data.playback.PlaybackSnapshotStore
 import com.melox.player.data.playback.MiniPlaybackSnapshotStore
-import com.melox.player.data.library.visibleMusicTracks
-import com.melox.player.data.repository.MusicRepository
 import com.melox.player.data.repository.SettingsRepository
 import com.melox.player.model.MusicTrack
 import com.melox.player.model.PlaybackMode
 import com.melox.player.model.PlaybackQueueItem
+import com.melox.player.model.AppSettings
 import com.melox.player.model.PlaybackSnapshot
 import com.melox.player.model.SleepTimerState
 import com.melox.player.model.PLAYBACK_SPEED_VALUES
@@ -43,6 +42,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -331,7 +331,6 @@ class PlaybackService : MediaSessionService() {
         pauseFadeEnabled = startupSettings.playbackPauseFade
         sleepTimer.autoExtend = startupSettings.autoExtendSleepTimer
         val startupSnapshot = miniSnapshotStore.load()
-            ?.takeIf { startupSettings.blockedFolderPaths.isEmpty() }
             ?.withoutContentUris(startupSettings.hiddenTrackUris)
             ?.takeIf { it.queue.isNotEmpty() }
         hiddenQueueContentUris = startupSettings.hiddenTrackUris
@@ -356,14 +355,9 @@ class PlaybackService : MediaSessionService() {
         restoreSnapshot(player, startupSnapshot)
         serviceScope.launch {
             settingsRepository.settings
-                .map { it.blockedFolderPaths to it.hiddenTrackUris }
-                .distinctUntilChanged()
-                .collectLatest { (paths, uris) ->
-                    val repository = MusicRepository(this@PlaybackService)
-                    val tracks = if (paths.isEmpty()) emptyList() else repository.loadCachedMusic().orEmpty()
-                    val queue = activePlayer?.currentPlaybackQueue().orEmpty()
-                    hiddenQueueContentUris = hiddenPlaybackContentUris(tracks, paths, uris) +
-                        repository.hiddenQueueContentUris(queue, tracks, paths, uris)
+                .playbackExclusionUpdates()
+                .collectLatest { uris ->
+                    hiddenQueueContentUris = uris
                     if (!snapshotRestorePending) {
                         activePlayer?.removePlaybackContentUris(hiddenQueueContentUris)
                     }
@@ -443,16 +437,8 @@ class PlaybackService : MediaSessionService() {
     private suspend fun visibleMediaItems(mediaItems: List<MediaItem>): List<MediaItem> {
         if (mediaItems.any { it.localConfiguration == null }) throw UnsupportedOperationException()
         val settings = settingsRepository.loadSettings()
-        if (settings.blockedFolderPaths.isEmpty() && settings.hiddenTrackUris.isEmpty()) return mediaItems
-        val repository = MusicRepository(this@PlaybackService)
-        val tracks = if (settings.blockedFolderPaths.isEmpty()) emptyList() else repository.loadCachedMusic().orEmpty()
-        val excludedUris = repository.hiddenQueueContentUris(
-            mediaItems.map(MediaItem::toPlaybackQueueItem),
-            tracks,
-            settings.blockedFolderPaths,
-            settings.hiddenTrackUris,
-        )
-        return mediaItems.filterNot { it.toPlaybackQueueItem().contentUri in excludedUris }
+        if (settings.hiddenTrackUris.isEmpty()) return mediaItems
+        return mediaItems.filterNot { it.toPlaybackQueueItem().contentUri in settings.hiddenTrackUris }
     }
 
     private fun createPlayer(highPrecision: Boolean): ExoPlayer {
@@ -576,16 +562,8 @@ class PlaybackService : MediaSessionService() {
             // A controller command issued while the disk read was running wins over restoration.
             val savedSnapshot = withContext(Dispatchers.IO) { snapshotStore.loadUnvalidated() }
             val settings = settingsRepository.loadSettings()
-            val cachedTracks = if (settings.blockedFolderPaths.isEmpty()) emptyList()
-            else MusicRepository(this@PlaybackService).loadCachedMusic().orEmpty()
-            val restoreHiddenUris = MusicRepository(this@PlaybackService).hiddenQueueContentUris(
-                savedSnapshot?.queue.orEmpty(),
-                cachedTracks,
-                settings.blockedFolderPaths,
-                settings.hiddenTrackUris,
-            )
             val snapshot = savedSnapshot?.withoutContentUris(
-                restoreHiddenUris + hiddenQueueContentUris + deferredRemovedContentUris,
+                settings.hiddenTrackUris + hiddenQueueContentUris + deferredRemovedContentUris,
             )
             if (isClosing) return@launch
             if (snapshotRestoreCancelledByQueueCommand || !player.isAwaitingSnapshotRestore(startupSnapshot)) {
@@ -977,16 +955,8 @@ internal fun Bundle.toSleepTimerState(): SleepTimerState = SleepTimerState(
     interruptionNotice = getInt("interruption_notice"),
 )
 
-internal fun hiddenPlaybackContentUris(
-    tracks: List<MusicTrack>,
-    paths: List<String>,
-    hiddenTrackUris: Set<String>,
-): Set<String> {
-    val visibleUris = visibleMusicTracks(tracks, paths, hiddenTrackUris)
-        .mapTo(HashSet(), MusicTrack::contentUri)
-    return hiddenTrackUris + tracks.asSequence().map(MusicTrack::contentUri)
-        .filterNot { it in visibleUris }.toSet()
-}
+internal fun Flow<AppSettings>.playbackExclusionUpdates(): Flow<Set<String>> =
+    map { it.hiddenTrackUris }.distinctUntilChanged()
 
 internal fun PlaybackSnapshot.withoutContentUris(contentUris: Set<String>): PlaybackSnapshot {
     val retainedIndices = queue.indices.filter { queue[it].contentUri !in contentUris }

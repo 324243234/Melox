@@ -9,13 +9,20 @@ import com.melox.player.model.MusicTrack
 import com.melox.player.model.PlaybackMode
 import com.melox.player.model.PlaybackQueueItem
 import com.melox.player.model.PlaybackSnapshot
-import com.melox.player.playback.hiddenPlaybackContentUris
+import com.melox.player.model.AppSettings
+import com.melox.player.playback.playbackExclusionUpdates
+import com.melox.player.playback.removePlaybackContentUris
 import com.melox.player.playback.withoutContentUris
 import com.melox.player.playback.visibleQueueStart
 import androidx.media3.common.C
+import androidx.media3.common.Player
+import java.lang.reflect.Proxy
 import com.melox.player.ui.viewmodel.visibleLibraryProjections
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -48,12 +55,60 @@ class HiddenTracksTest {
     }
 
     @Test
-    fun queueRulesKeepIndividualUrisEvenOutsideTheCachedLibrary() {
-        val tracks = listOf(track(1, "/Music"), track(2, "/Other"))
+    fun folderVisibilityChangesNeverReadOrMutateThePlayer() = runBlocking {
+        val player = Proxy.newProxyInstance(Player::class.java.classLoader, arrayOf(Player::class.java)) {
+            _, method, _ -> error("Folder visibility must not access the player: ${method.name}")
+        } as Player
+        val requests = mutableListOf<Set<String>>()
+        flowOf(
+            AppSettings(),
+            AppSettings(blockedFolderPaths = listOf("/Music")),
+            AppSettings(blockedFolderPaths = listOf("/Music", "/Other")),
+            AppSettings(),
+        ).playbackExclusionUpdates().collect { uris ->
+            requests += uris
+            player.removePlaybackContentUris(uris)
+        }
+        assertEquals(listOf(emptySet<String>()), requests)
+    }
+
+    @Test
+    fun queueRulesKeepOnlyIndividualUrisAcrossFolderChanges() = runBlocking {
+        val individuallyHidden = setOf("content://unindexed/7")
+        val settings = AppSettings(hiddenTrackUris = individuallyHidden)
         assertEquals(
-            setOf(tracks[0].contentUri, "content://unindexed/7"),
-            hiddenPlaybackContentUris(tracks, listOf("/Music"), setOf("content://unindexed/7")),
+            listOf(emptySet(), individuallyHidden, emptySet<String>()),
+            flowOf(
+                AppSettings(blockedFolderPaths = listOf("/Music")),
+                settings.copy(blockedFolderPaths = listOf("/Music")),
+                settings.copy(blockedFolderPaths = listOf("/Other")),
+                settings,
+                AppSettings(blockedFolderPaths = listOf("/Music")),
+            ).playbackExclusionUpdates().toList(),
         )
+    }
+
+    @Test
+    fun largeQueueRestorationRetainsFolderHiddenSongsAndCurrentPosition() = runBlocking {
+        val original = snapshot(1)
+        val large = original.copy(
+            queue = List(20_000) { original.queue[it % original.queue.size] },
+            currentIndex = 10_001,
+        )
+        flowOf(
+            AppSettings(),
+            AppSettings(blockedFolderPaths = listOf("/Music")),
+            AppSettings(),
+        ).playbackExclusionUpdates().collect { uris ->
+            assertSame(large, large.withoutContentUris(uris))
+        }
+        val individuallyHidden = flowOf(
+            AppSettings(blockedFolderPaths = listOf("/Music"), hiddenTrackUris = setOf(uri(1))),
+        ).playbackExclusionUpdates().first()
+        val restored = large.withoutContentUris(individuallyHidden)
+        assertTrue(restored.queue.none { it.contentUri == uri(1) })
+        assertEquals(large.queue[large.currentIndex], restored.queue[restored.currentIndex])
+        assertEquals(large.positionMs, restored.positionMs)
     }
 
     @Test

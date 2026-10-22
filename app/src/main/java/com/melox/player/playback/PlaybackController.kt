@@ -908,6 +908,7 @@ internal fun resolveTrackChangeDirection(
 
 /** Remove native queue slots without preparing or seeking a surviving current item. */
 internal fun Player.removePlaybackContentUris(contentUris: Set<String>) {
+    if (contentUris.isEmpty()) return
     val indices = (0 until mediaItemCount).filter { index ->
         getMediaItemAt(index).toPlaybackQueueItem().contentUri in contentUris
     }

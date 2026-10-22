@@ -15,12 +15,9 @@ import com.melox.player.data.library.MusicLibraryCacheAccess
 import com.melox.player.data.library.createMusicSortKeys
 import com.melox.player.data.library.hasReusableAudioProperties
 import com.melox.player.data.library.isWavSource
-import com.melox.player.data.library.musicFolderPathFromSourceUri
-import com.melox.player.data.library.visibleMusicTracks
 import com.melox.player.data.library.normalizeMusicFolderPath
 import com.melox.player.data.library.withRefreshedTags
 import com.melox.player.model.MusicTrack
-import com.melox.player.model.PlaybackQueueItem
 import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
@@ -423,66 +420,6 @@ class MusicRepository(context: Context) {
                 )
             }
         }.getOrNull() ?: refreshed
-    }
-
-    /** Resolve missing parent-directory evidence before admitting restored or external queue items. */
-    suspend fun hiddenQueueContentUris(
-        queue: List<PlaybackQueueItem>,
-        cachedTracks: List<MusicTrack>,
-        hiddenPaths: List<String>,
-        hiddenTrackUris: Set<String>,
-    ): Set<String> = withContext(Dispatchers.IO) {
-        if (hiddenPaths.isEmpty()) return@withContext hiddenTrackUris
-        val cachedByUri = cachedTracks.associateBy(MusicTrack::contentUri)
-        val excluded = hiddenTrackUris.toMutableSet()
-        queue.distinctBy(PlaybackQueueItem::contentUri).forEach { item ->
-            if (item.contentUri in excluded) return@forEach
-            val cached = cachedByUri[item.contentUri]
-            val folderPath = cached?.folderPath ?: sourceFolderPath(item.contentUri)
-            // An undisclosed external-provider path is not evidence of a hidden folder.
-            if (folderPath == null) return@forEach
-            val track = cached?.copy(folderPath = folderPath) ?: MusicTrack(
-                id = item.trackId ?: 0L,
-                title = item.title,
-                artist = item.artist,
-                album = item.album,
-                durationMs = item.durationMs,
-                dateAddedEpochSeconds = 0L,
-                dateModifiedEpochSeconds = item.dateModifiedEpochSeconds,
-                fileName = null,
-                fileSizeBytes = item.fileSizeBytes,
-                contentUri = item.contentUri,
-                titleSectionKey = "",
-                titleSortKey = "",
-                folderPath = folderPath,
-            )
-            if (visibleMusicTracks(listOf(track), hiddenPaths).isEmpty()) excluded += item.contentUri
-        }
-        excluded
-    }
-
-    private fun sourceFolderPath(contentUri: String): String? {
-        musicFolderPathFromSourceUri(contentUri)?.let { return it }
-        val uri = Uri.parse(contentUri)
-        if (uri.authority != MediaStore.AUTHORITY) return null
-        val folderColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            MediaStore.Audio.Media.RELATIVE_PATH
-        } else {
-            @Suppress("DEPRECATION")
-            MediaStore.Audio.Media.DATA
-        }
-        return runCatching {
-            contentResolver.query(uri, arrayOf(folderColumn), null, null, null)?.use { cursor ->
-                if (!cursor.moveToFirst()) return@use null
-                val index = cursor.getColumnIndex(folderColumn)
-                if (index < 0 || cursor.isNull(index)) return@use null
-                val path = cursor.getString(index)?.takeIf(String::isNotBlank) ?: return@use null
-                normalizeMusicFolderPath(
-                    path,
-                    includesFileName = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q,
-                ) ?: "/"
-            }
-        }.getOrNull()
     }
 
     /** Atomically stores a successful scan without changing the visible scan result on failure. */
