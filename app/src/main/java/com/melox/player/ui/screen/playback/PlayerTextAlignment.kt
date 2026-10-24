@@ -22,7 +22,9 @@ internal fun playerTextAlignmentOffset(
     lineRight: Float,
     containerWidth: Float,
     progress: Float,
+    endAligned: Boolean = false,
 ): Float {
+    if (endAligned) return containerWidth - lineRight
     if (progress == 0f) return 0f
     val lineWidth = lineRight - lineLeft
     return ((containerWidth - lineWidth) / 2f - lineLeft) * progress
@@ -35,6 +37,7 @@ internal fun Modifier.animatedPlayerTextAlignment(
     layout: TextLayoutResult?,
     progress: State<Float>,
     viewportInsetPx: Float = 0f,
+    endAligned: Boolean = false,
 ): Modifier = drawWithContent {
     if (layout == null || layout.lineCount == 0) {
         drawContent()
@@ -52,6 +55,7 @@ internal fun Modifier.animatedPlayerTextAlignment(
                     size.width
                 },
                 progress = progress.value,
+                endAligned = endAligned,
             )
             withTransform({ translate(left = offset) }) {
                 clipRect(

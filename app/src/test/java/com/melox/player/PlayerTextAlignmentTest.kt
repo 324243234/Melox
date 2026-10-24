@@ -7,6 +7,16 @@ import org.junit.Test
 
 class PlayerTextAlignmentTest {
     @Test
+    fun duetRightAlignmentKeepsEveryWrappedInkEdgeAtTheRightBoundary() {
+        for ((left, right) in listOf(0f to 80f, 0f to 180f, 120f to 200f, -5f to 90f)) {
+            for (centerPreference in listOf(0f, 0.5f, 1f)) {
+                val offset = playerTextAlignmentOffset(left, right, 200f, centerPreference, endAligned = true)
+                assertEquals(200f, right + offset, 0f)
+            }
+        }
+    }
+
+    @Test
     fun wrappedLinesMoveByTheirOwnWidth() {
         assertEquals(0f, playerTextAlignmentOffset(0f, 80f, 200f, 0f))
         assertEquals(60f, playerTextAlignmentOffset(0f, 80f, 200f, 1f))

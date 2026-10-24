@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.melox.player.model.LyricsTranslationLanguage
 import com.melox.player.model.LyricAnimationMode
 import com.melox.player.R
 import com.melox.player.model.AppSettings
@@ -220,6 +221,7 @@ internal fun LyricsSettingsScreen(
 @Composable
 internal fun LyricsInterfaceSettingsScreen(
     settings: AppSettings,
+    centerLyricsEnabled: Boolean,
     bottomContentPadding: Dp,
     listState: LazyListState,
     scrollBehavior: ScrollBehavior,
@@ -227,6 +229,8 @@ internal fun LyricsInterfaceSettingsScreen(
     onLeftAlignPlayerTitleChange: (Boolean) -> Unit,
     onCenterLyricsChange: (Boolean) -> Unit,
     onShowLyricsTranslationChange: (Boolean) -> Unit,
+    onShowLyricsRomanizationChange: (Boolean) -> Unit,
+    onLyricsTranslationLanguageChange: (LyricsTranslationLanguage) -> Unit,
     onLyricFontScaleChange: (Float) -> Unit,
     onLyricFontWeightChange: (Int) -> Unit,
     onLyricBlurEnabledChange: (Boolean) -> Unit,
@@ -239,6 +243,12 @@ internal fun LyricsInterfaceSettingsScreen(
     var centerLyrics by remember(settings.centerLyrics) { mutableStateOf(settings.centerLyrics) }
     var translation by remember(settings.showLyricsTranslation) {
         mutableStateOf(settings.showLyricsTranslation)
+    }
+    var translationLanguage by remember(settings.lyricsTranslationLanguage) {
+        mutableStateOf(settings.lyricsTranslationLanguage)
+    }
+    var romanization by remember(settings.showLyricsRomanization) {
+        mutableStateOf(settings.showLyricsRomanization)
     }
     var fontScale by remember(settings.lyricFontScale) { mutableFloatStateOf(settings.lyricFontScale) }
     var fontWeight by remember(settings.lyricFontWeight) { mutableIntStateOf(settings.lyricFontWeight) }
@@ -260,7 +270,10 @@ internal fun LyricsInterfaceSettingsScreen(
             LyricsInterfacePreferences(
                 leftAlignPlayerTitle = leftAlignTitle,
                 centerLyrics = centerLyrics,
+                centerLyricsEnabled = centerLyricsEnabled,
                 showLyricsTranslation = translation,
+                showLyricsRomanization = romanization,
+                lyricsTranslationLanguage = translationLanguage,
                 lyricFontScale = fontScale,
                 lyricFontWeight = fontWeight,
                 lyricBlurEnabled = blur,
@@ -277,6 +290,14 @@ internal fun LyricsInterfaceSettingsScreen(
                 onShowLyricsTranslationChange = {
                     translation = it
                     onShowLyricsTranslationChange(it)
+                },
+                onLyricsTranslationLanguageChange = {
+                    translationLanguage = it
+                    onLyricsTranslationLanguageChange(it)
+                },
+                onShowLyricsRomanizationChange = {
+                    romanization = it
+                    onShowLyricsRomanizationChange(it)
                 },
                 onLyricFontScalePreview = { fontScale = it },
                 onLyricFontScaleCommit = { onLyricFontScaleChange(fontScale) },

@@ -12,6 +12,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.melox.player.model.LyricsTranslationLanguage
 import com.melox.player.model.LyricAnimationMode
 import com.melox.player.model.resolveLyricAnimationMode
 import com.melox.player.data.library.AlbumSortConfig
@@ -142,6 +143,10 @@ class SettingsRepository(context: Context) {
                 leftAlignPlayerTitle = preferences[Keys.LeftAlignPlayerTitle] ?: false,
                 hideControlsOnLyrics = preferences[Keys.HideControlsOnLyrics] ?: false,
                 showLyricsTranslation = preferences[Keys.ShowLyricsTranslation] ?: true,
+                showLyricsRomanization = preferences[Keys.ShowLyricsRomanization] ?: true,
+                lyricsTranslationLanguage = preferences[Keys.LyricsTranslationLanguage]
+                    ?.let { enumValueOrDefault(it, LyricsTranslationLanguage.AUTO) }
+                    ?: LyricsTranslationLanguage.AUTO,
                 showMiniPlayerLyrics = preferences[Keys.ShowMiniPlayerLyrics] ?: true,
                 showArtworkLyrics = preferences[Keys.ShowArtworkLyrics] ?: false,
                 showMusicTagEditor = preferences[Keys.ShowMusicTagEditor] ?: true,
@@ -419,6 +424,14 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    suspend fun setLyricsTranslationLanguage(language: LyricsTranslationLanguage) {
+        dataStore.edit { it[Keys.LyricsTranslationLanguage] = language.name }
+    }
+
+    suspend fun setShowLyricsRomanization(enabled: Boolean) {
+        dataStore.edit { it[Keys.ShowLyricsRomanization] = enabled }
+    }
+
     suspend fun setLyricsSourcePriority(priority: LyricsSourcePriority) {
         dataStore.edit { preferences ->
             preferences[Keys.LyricsSourcePriority] = priority.name
@@ -656,6 +669,8 @@ class SettingsRepository(context: Context) {
         val LeftAlignPlayerTitle = booleanPreferencesKey("left_align_player_title")
         val HideControlsOnLyrics = booleanPreferencesKey("hide_controls_on_lyrics")
         val ShowLyricsTranslation = booleanPreferencesKey("show_lyrics_translation")
+        val ShowLyricsRomanization = booleanPreferencesKey("show_lyrics_romanization")
+        val LyricsTranslationLanguage = stringPreferencesKey("lyrics_translation_language")
         val ShowMiniPlayerLyrics = booleanPreferencesKey("show_mini_player_lyrics")
         val ShowArtworkLyrics = booleanPreferencesKey("show_artwork_lyrics")
         val ShowMusicTagEditor = booleanPreferencesKey("show_music_tag_editor")

@@ -4,10 +4,238 @@ import com.melox.player.data.lyrics.LyricsParser
 import com.melox.player.data.repository.parseEmbeddedLyrics
 import com.melox.player.model.LyricsFormat
 import com.melox.player.model.LyricsSource
+import com.melox.player.model.LyricsTranslationLanguage
+import com.melox.player.model.LyricAuxiliaryText
+import com.melox.player.model.LyricAlignment
+import com.melox.player.model.LyricsUiState
+import com.melox.player.model.isDuetForMedia
 import org.junit.Assert.*
 import org.junit.Test
 
 class TtmlCompatibilityTest {
+    @Test
+    fun suppliedHiirogekkaPreservesCompleteTracksWordTimesAndSingerAlignment() {
+        val raw = requireNotNull(javaClass.getResource("/lyrics/hiirogekka-anniversary.ttml")).readText()
+        val doc = requireNotNull(LyricsParser.parse(raw, LyricsSource.SIDECAR))
+        val primary = doc.lines.filterNot { it.isBackground }
+        val backgrounds = doc.lines.filter { it.isBackground }
+        assertEquals(LyricsFormat.TTML, doc.format)
+        assertEquals("ja", doc.language)
+        assertEquals(177, primary.size)
+        assertEquals(19, backgrounds.size)
+        assertEquals(1_318, doc.lines.sumOf { it.words.size })
+        assertEquals(listOf("v1", "v2"), doc.agents.map { it.id })
+        assertTrue(doc.isDuet)
+        assertEquals(100, primary.count { it.agent == "v1" })
+        assertEquals(77, primary.count { it.agent == "v2" })
+        assertEquals("緋色月下、狂咲ノ絶　-1st Anniversary Remix-", doc.metadata["musicName"]?.first())
+        assertEquals("Sacred Factor", doc.metadata["album"]?.single())
+        assertEquals((1..177).map { "L$it" }.toSet(), primary.map { it.key }.toSet())
+        doc.lines.forEachIndexed { index, line ->
+            assertTrue(line.endTimeMs > line.startTimeMs)
+            assertEquals(listOf("en", "zh-Hans"), line.translations.map { it.language })
+            assertEquals("ja-Latn", line.romanizations.single().language)
+            assertTrue(line.romanizations.single().words.isNotEmpty())
+            assertEquals(line.translations[1].text,
+                line.translationFor(LyricsTranslationLanguage.AUTO, "zh-CN"))
+            assertEquals(line.translations[0].text,
+                line.translationFor(LyricsTranslationLanguage.ENGLISH, "zh-CN"))
+            assertEquals(if (line.agent == "v1") LyricAlignment.START else LyricAlignment.END,
+                doc.lineAlignment(index))
+        }
+        val first = primary.first()
+        assertEquals("私の中の", first.displayText)
+        assertEquals(1_600L, first.startTimeMs)
+        assertEquals(2_540L, first.endTimeMs)
+        assertEquals(listOf(1_600L, 1_970L, 2_070L, 2_340L), first.words.map { it.startTimeMs })
+        assertEquals(listOf(1_970L, 2_070L, 2_340L, 2_540L), first.words.map { it.endTimeMs })
+        assertEquals("wa ta shi no na ka no", first.romanization)
+        assertEquals("Inside of me", first.translationFor(LyricsTranslationLanguage.ENGLISH, "zh"))
+        assertEquals("我身体中的", first.translationFor(LyricsTranslationLanguage.AUTO, "zh"))
+        assertEquals(334_480L, primary.last().endTimeMs)
+        val embedded = requireNotNull(parseEmbeddedLyrics(listOf(raw), 340_000L))
+        assertEquals(doc.lines, embedded.lines)
+    }
+
+    @Test
+    fun suppliedHiirogekkaKeepsOverlappingVoicesAndBackgroundAuxiliariesIndependent() {
+        val raw = requireNotNull(javaClass.getResource("/lyrics/hiirogekka-anniversary.ttml")).readText()
+        val doc = requireNotNull(LyricsParser.parse(raw, LyricsSource.SIDECAR))
+        val overlap = doc.playbackFrame(2_400L)
+        assertEquals(listOf("L1", "L2"), overlap.activeLineIndices.map { doc.lines[it].key })
+        val anchor = overlap.anchorIndex
+        assertEquals(listOf("L2"), doc.playbackFrame(2_540L).activeLineIndices.map { doc.lines[it].key })
+        assertEquals(anchor, doc.playbackFrame(2_540L).anchorIndex)
+        assertTrue(doc.lines[0].revealProgress(2_400L, false) > 0f)
+        assertTrue(doc.lines[1].revealProgress(2_400L, false) < 1f)
+        assertEquals(overlap, doc.playbackFrame(2_400L))
+        assertEquals(emptyList<Int>(), doc.playbackFrame(0).activeLineIndices)
+        val main = doc.lines.single { it.key == "L74" && !it.isBackground }
+        val bg = doc.lines.single { it.key == "L74" && it.isBackground }
+        assertEquals(97_570L, main.startTimeMs)
+        assertEquals(103_180L, bg.startTimeMs)
+        assertEquals(103_890L, bg.endTimeMs)
+        assertFalse(main.displayText.contains("("))
+        assertFalse(main.translations[0].text.contains("With you"))
+        assertFalse(main.romanization.orEmpty().contains("("))
+        assertEquals("(With you)", bg.translationFor(LyricsTranslationLanguage.ENGLISH, "zh"))
+        assertEquals("(剜心)", bg.translationFor(LyricsTranslationLanguage.AUTO, "zh"))
+        assertEquals("(e gu ru)", bg.romanization)
+        val sustained = doc.lines.single { it.key == "L99" && !it.isBackground }
+        assertEquals(235_145L, sustained.endTimeMs)
+        assertEquals(232_790L, sustained.words.last().endTimeMs)
+        val backgroundFrame = doc.playbackFrame(234_000L)
+        assertTrue(backgroundFrame.activeLineIndices.any { doc.lines[it].key == "L99" && doc.lines[it].isBackground })
+        assertTrue(backgroundFrame.activeLineIndices.any { doc.lines[it].key == "L99" && !doc.lines[it].isBackground })
+    }
+
+    @Test
+    fun translationLanguageSelectsOneTaggedTrackWithoutChangingOriginalOrRomanization() {
+        val line = document("""<p begin="1" end="5"><span begin="1" end="5">君の名は</span>
+            <span ttm:role="x-roman" xml:lang="ja-Latn">ki mi no na wa</span>
+            <span ttm:role="x-translation" xml:lang="en-US">Your name</span>
+            <span ttm:role="x-translation" xml:lang="zh-Hans">你的名字</span></p>""").lines.single()
+        val original = line.copy()
+        assertEquals("你的名字", line.translationFor(LyricsTranslationLanguage.AUTO, "zh-CN"))
+        assertEquals("Your name", line.translationFor(LyricsTranslationLanguage.AUTO, "en-GB"))
+        assertEquals("Your name", line.translationFor(LyricsTranslationLanguage.ENGLISH, "zh-CN"))
+        assertEquals("你的名字", line.translationFor(LyricsTranslationLanguage.CHINESE, "en-US"))
+        assertEquals("Your name\n你的名字", line.translationFor(LyricsTranslationLanguage.ALL, "zh-CN"))
+        assertEquals(original, line)
+        assertEquals("ki mi no na wa", line.romanization)
+        assertEquals(1_000L, line.words.single().startTimeMs)
+    }
+
+    @Test
+    fun translationLanguageFallbackAndVariantsAreIndependentOfTrackOrder() {
+        val line = document("""<p begin="1" end="5">Main</p>""").lines.single().copy(
+            translations = listOf(LyricAuxiliaryText("Traditional", "zh-Hant"),
+                LyricAuxiliaryText("English", "en"), LyricAuxiliaryText("Simplified", "zh-Hans")),
+        )
+        for (tracks in listOf(line.translations, line.translations.reversed())) {
+            val reordered = line.copy(translations = tracks)
+            assertEquals("Simplified", reordered.translationFor(LyricsTranslationLanguage.AUTO, "zh-CN"))
+            assertEquals("Traditional", reordered.translationFor(LyricsTranslationLanguage.AUTO, "zh-Hant"))
+            assertEquals("English", reordered.translationFor(LyricsTranslationLanguage.AUTO, "fr-FR"))
+            assertEquals("English", reordered.copy(translations = tracks.filterNot {
+                it.language.orEmpty().startsWith("zh")
+            }).translationFor(LyricsTranslationLanguage.CHINESE, "zh-CN"))
+        }
+    }
+
+    @Test
+    fun translationSelectionDeduplicatesNormalizedTagsAndPreservesUntypedMultilineLyrics() {
+        val line = document("""<p begin="1" end="5">Main</p>""").lines.single()
+        val tagged = line.copy(translations = listOf(
+            LyricAuxiliaryText("First\nSecond", "ZH_hans"),
+            LyricAuxiliaryText(" First\nSecond ", "zh-Hans"),
+            LyricAuxiliaryText("English", "en"), LyricAuxiliaryText(" ", "zh"),
+        ))
+        assertEquals("First\nSecond", tagged.translationFor(LyricsTranslationLanguage.AUTO, "zh-CN"))
+        assertEquals("First\nSecond\nEnglish", tagged.translationFor(LyricsTranslationLanguage.ALL, "zh"))
+        val untagged = line.copy(translations = listOf(LyricAuxiliaryText("First\nSecond"),
+            LyricAuxiliaryText("Third")))
+        for (preference in LyricsTranslationLanguage.entries) {
+            assertEquals("First\nSecond\nThird", untagged.translationFor(preference, "zh-CN"))
+            assertEquals("Legacy\ntext", line.copy(translation = "Legacy\ntext")
+                .translationFor(preference, "zh-CN"))
+            assertNull(line.translationFor(preference, "zh-CN"))
+        }
+        assertEquals("Untyped", line.copy(translations = listOf(LyricAuxiliaryText("French", "fr"),
+            LyricAuxiliaryText("Untyped"))).translationFor(LyricsTranslationLanguage.AUTO, "zh"))
+    }
+
+    @Test
+    fun duetKeepsSingerSidesAcrossOrderChangesAndCentersGroupVocals() {
+        val doc = document("""<p begin="1" end="4" ttm:agent="v2">Second</p>
+            <p begin="2" end="8" ttm:agent="v1">First
+              <span ttm:role="x-bg" begin="3" end="5">Echo</span></p>
+            <p begin="6" end="7" ttm:agent="all">Together</p>
+            <p begin="9" end="10" ttm:agent="v2">Second again</p>""",
+            head = """<ttm:agent xml:id="v1" type="person"/>
+                <ttm:agent xml:id="v2" type="person"/><ttm:agent xml:id="all" type="group"/>""")
+
+        assertTrue(doc.isDuet)
+        assertEquals(listOf(LyricAlignment.END, LyricAlignment.START, LyricAlignment.START,
+            LyricAlignment.CENTER, LyricAlignment.END), doc.lines.indices.map(doc::lineAlignment))
+        assertEquals(listOf(0, 1, 2), doc.playbackFrame(3_500L).activeLineIndices)
+        assertEquals(1, doc.playbackFrame(3_500L).anchorIndex)
+    }
+
+    @Test
+    fun backgroundsGroupsAndDuplicateAgentDeclarationsDoNotCreateADuet() {
+        val head = """<ttm:agent xml:id="v1" type="person"/><ttm:agent xml:id="v1" type="person"/>
+            <ttm:agent xml:id="all" type="group"/>"""
+        for (body in listOf(
+            """<p begin="1" end="8" ttm:agent="v1">Main
+                <span ttm:role="x-bg" ttm:agent="v2" begin="3" end="4">Echo</span></p>""",
+            """<p begin="1" end="4" ttm:agent="v1">Main</p>
+                <p begin="4" end="8" ttm:agent="all">Together</p>""",
+            """<p begin="1" end="4">Unknown</p><p begin="4" end="8" ttm:agent="v1">Main</p>""",
+        )) assertFalse(document(body, head).isDuet)
+    }
+
+    @Test
+    fun overlappingVoicesHighlightIndependentlyWithoutBackwardScrollingWhenShortPartEnds() {
+        val doc = document("""<p begin="1" end="8" ttm:agent="v1"><span begin="1" end="8">Long</span></p>
+            <p begin="3" end="4" ttm:agent="v2"><span begin="3" end="4">Short</span></p>
+            <p begin="9" end="10" ttm:agent="v2">Next</p>""")
+        val overlap = doc.playbackFrame(3_500L)
+        val afterShort = doc.playbackFrame(4_000L)
+        assertEquals(listOf(0, 1), overlap.activeLineIndices)
+        assertEquals(listOf(0), afterShort.activeLineIndices)
+        assertEquals(1, overlap.anchorIndex)
+        assertEquals(overlap.anchorIndex, afterShort.anchorIndex)
+        assertEquals(listOf(0, 1), afterShort.anchorLineIndices)
+        assertEquals(0.5f, doc.lines[1].revealProgress(3_500L, false), 0.001f)
+        assertEquals(2.5f / 7f, doc.lines[0].revealProgress(3_500L, false), 0.001f)
+        for ((position, expected) in listOf(9_500L to listOf(2), 2_000L to listOf(0),
+            3_500L to listOf(0, 1), 0L to emptyList(), 10_000L to emptyList())) {
+            assertEquals(expected, doc.playbackFrame(position).activeLineIndices)
+        }
+    }
+
+    @Test
+    fun simultaneousStartsAndSameSingerOverlapsRetainEveryActiveLine() {
+        val doc = document("""<p begin="1" end="8" ttm:agent="v1">One</p>
+            <p begin="1" end="4" ttm:agent="v2">Two</p>
+            <p begin="1" end="6" ttm:agent="v3">Three</p>""")
+        assertEquals(listOf(0, 1, 2), doc.playbackFrame(1_000L).activeLineIndices)
+        assertEquals(listOf(0, 1, 2), doc.playbackFrame(5_000L).anchorLineIndices)
+        assertEquals(listOf(0, 2), doc.playbackFrame(5_000L).activeLineIndices)
+        assertEquals(0, doc.playbackFrame(7_000L).anchorIndex)
+        val solo = document("""<p begin="1" end="8" ttm:agent="v1">Long</p>
+            <p begin="3" end="4" ttm:agent="v1">Short</p>""")
+        assertFalse(solo.isDuet)
+        assertEquals(listOf(0, 1), solo.playbackFrame(3_000L).activeLineIndices)
+    }
+
+    @Test
+    fun duetCenteringAvailabilityUsesOnlyTheCurrentMediaDocument() {
+        val duet = document("""<p begin="1" end="3" ttm:agent="v1">One</p>
+            <p begin="4" end="6" ttm:agent="v2">Two</p>""")
+        val state = LyricsUiState.Available(duet, mediaId = "current")
+        assertTrue(state.isDuetForMedia("current"))
+        assertFalse(state.isDuetForMedia("next"))
+        assertFalse(state.isDuetForMedia(null))
+        assertFalse(LyricsUiState.Loading.isDuetForMedia("current"))
+        assertFalse(LyricsUiState.Unavailable.isDuetForMedia("current"))
+        assertFalse(LyricsUiState.Available(document("""<p begin="1" end="3">Solo</p>"""),
+            mediaId = "current").isDuetForMedia("current"))
+    }
+
+    @Test
+    fun lrcPlaybackFramesPreserveTheExistingSingleLineFocusPolicy() {
+        val doc = LyricsParser.parse("[00:01]First\n[00:03]\n[00:06]Second", LyricsSource.SIDECAR)!!
+        assertFalse(doc.isDuet)
+        for (position in listOf(0L, 1_000L, 2_999L, 3_000L, 5_000L, 6_000L, 20_000L)) {
+            val current = doc.currentLineIndex(position)
+            assertEquals(if (current >= 0) listOf(current) else emptyList<Int>(),
+                doc.playbackFrame(position).activeLineIndices)
+            assertEquals(doc.focusLineIndex(position), doc.playbackFrame(position).anchorIndex)
+        }
+    }
+
     private fun document(body: String, head: String = "", attributes: String = "") =
         requireNotNull(LyricsParser.parse(
             """<tt xmlns="http://www.w3.org/ns/ttml"
@@ -102,6 +330,7 @@ class TtmlCompatibilityTest {
         assertEquals("你好\nBonjour", line.translation)
         assertEquals(listOf("zh-Hans", "fr"), line.translations.map { it.language })
         assertEquals("he lo", line.romanizations.single().text)
+        assertEquals("he lo", line.romanization)
         assertEquals("en", line.language)
         assertEquals("singer", line.agent)
         assertEquals("L1", line.key)
@@ -172,6 +401,9 @@ class TtmlCompatibilityTest {
         val lines = document(line, head).lines
         assertEquals("Inline\n主译\n主譯", lines[0].translation)
         assertEquals(listOf("en", "zh-Hans", "zh-Hant"), lines[0].translations.map { it.language })
+        assertEquals("主译", lines[0].translationFor(LyricsTranslationLanguage.AUTO, "zh-CN"))
+        assertEquals("Inline", lines[0].translationFor(LyricsTranslationLanguage.ENGLISH, "zh-CN"))
+        assertEquals("和译", lines[1].translationFor(LyricsTranslationLanguage.AUTO, "zh-CN"))
         assertEquals("主译", lines[0].translations[1].words.single().text)
         assertEquals("shu", lines[0].romanizations.single().text)
         assertEquals("和译", lines[1].translation)

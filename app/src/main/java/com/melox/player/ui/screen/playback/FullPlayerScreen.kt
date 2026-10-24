@@ -108,12 +108,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.geometry.Rect
+import com.melox.player.model.LyricsTranslationLanguage
 import com.melox.player.model.LyricAnimationMode
 import com.melox.player.R
 import com.melox.player.data.library.ArtistGroup
 import com.melox.player.data.library.displayArtistName
 import com.melox.player.model.MusicTrack
 import com.melox.player.model.LyricsUiState
+import com.melox.player.model.isDuetForMedia
 import com.melox.player.model.LyricsDocument
 import com.melox.player.model.PlaybackMode
 import com.melox.player.model.PlaybackBackgroundStyle
@@ -191,6 +193,8 @@ internal fun FullPlayerScreen(
     immersiveMode: Boolean,
     onImmersiveModeChange: (Boolean) -> Unit,
     showLyricsTranslation: Boolean,
+    showLyricsRomanization: Boolean,
+    lyricsTranslationLanguage: LyricsTranslationLanguage,
     showArtworkLyrics: Boolean,
     onLyricFontScaleChange: (Float) -> Unit,
     onLyricFontWeightChange: (Int) -> Unit,
@@ -200,6 +204,8 @@ internal fun FullPlayerScreen(
     onLeftAlignPlayerTitleChange: (Boolean) -> Unit,
     onHideControlsOnLyricsChange: (Boolean) -> Unit,
     onShowLyricsTranslationChange: (Boolean) -> Unit,
+    onShowLyricsRomanizationChange: (Boolean) -> Unit,
+    onLyricsTranslationLanguageChange: (LyricsTranslationLanguage) -> Unit,
     onDismiss: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onPrevious: () -> Boolean,
@@ -288,6 +294,7 @@ internal fun FullPlayerScreen(
     }
     var displayedLyricBlurEnabled by remember { mutableStateOf(lyricBlurEnabled) }
     var displayedCenterLyrics by remember { mutableStateOf(centerLyrics) }
+    val centerLyricsEnabled = !lyrics.isDuetForMedia(playback.currentItem?.mediaId)
     var displayedLeftAlignPlayerTitle by remember {
         mutableStateOf(leftAlignPlayerTitle)
     }
@@ -308,6 +315,12 @@ internal fun FullPlayerScreen(
     }
     var displayedShowLyricsTranslation by remember {
         mutableStateOf(showLyricsTranslation)
+    }
+    var displayedLyricsTranslationLanguage by remember {
+        mutableStateOf(lyricsTranslationLanguage)
+    }
+    var displayedShowLyricsRomanization by remember {
+        mutableStateOf(showLyricsRomanization)
     }
     var lyricsFollowRequestKey by remember { mutableIntStateOf(0) }
     var lyricsSeekRequestKey by remember { mutableIntStateOf(0) }
@@ -413,6 +426,12 @@ internal fun FullPlayerScreen(
     }
     LaunchedEffect(showLyricsTranslation) {
         displayedShowLyricsTranslation = showLyricsTranslation
+    }
+    LaunchedEffect(lyricsTranslationLanguage) {
+        displayedLyricsTranslationLanguage = lyricsTranslationLanguage
+    }
+    LaunchedEffect(showLyricsRomanization) {
+        displayedShowLyricsRomanization = showLyricsRomanization
     }
     val dismissGestureModifier = rememberPlayerSheetVerticalDragModifier(
         enabled = interactionEnabled,
@@ -702,6 +721,8 @@ internal fun FullPlayerScreen(
                                         centerLyrics = displayedCenterLyrics,
                                         lyricCenterOffsetY = 0.dp,
                                         showLyricsTranslation = displayedShowLyricsTranslation,
+                                        showLyricsRomanization = displayedShowLyricsRomanization,
+                                        lyricsTranslationLanguage = displayedLyricsTranslationLanguage,
                                         showBottomFade = true,
                                         resumeFollowRequestKey = lyricsFollowRequestKey,
                                         seekRequestKey = lyricsSeekRequestKey,
@@ -757,6 +778,8 @@ internal fun FullPlayerScreen(
                                             centerLyrics = displayedCenterLyrics,
                                             lyricCenterOffsetY = 0.dp,
                                             showLyricsTranslation = displayedShowLyricsTranslation,
+                                            showLyricsRomanization = displayedShowLyricsRomanization,
+                                            lyricsTranslationLanguage = displayedLyricsTranslationLanguage,
                                             showBottomFade = true,
                                             resumeFollowRequestKey = lyricsFollowRequestKey,
                                             seekRequestKey = lyricsSeekRequestKey,
@@ -863,6 +886,8 @@ internal fun FullPlayerScreen(
                                     centerLyrics = displayedCenterLyrics,
                                     lyricCenterOffsetY = lyricsCenterOffsetY,
                                     showLyricsTranslation = displayedShowLyricsTranslation,
+                                    showLyricsRomanization = displayedShowLyricsRomanization,
+                                    lyricsTranslationLanguage = displayedLyricsTranslationLanguage,
                                     showBottomFade = false,
                                     resumeFollowRequestKey = lyricsFollowRequestKey,
                                     seekRequestKey = lyricsSeekRequestKey,
@@ -880,7 +905,8 @@ internal fun FullPlayerScreen(
                                                     active = playerActive &&
                                                         (pagerState.currentPage == 0 || pagerState.targetPage == 0),
                                                     showTranslation = displayedShowLyricsTranslation,
-                                                    showRomanization = true,
+                                                    showRomanization = displayedShowLyricsRomanization,
+                                                    translationLanguage = displayedLyricsTranslationLanguage,
                                                     centerLyrics = displayedCenterLyrics,
                                                     animationMode = displayedLyricAnimationMode,
                                                     preferredArtworkSize = artworkSize,
@@ -974,6 +1000,9 @@ internal fun FullPlayerScreen(
                                             lyricCenterOffsetY = lyricsCenterOffsetY,
                                             showLyricsTranslation =
                                                 displayedShowLyricsTranslation,
+                                            showLyricsRomanization =
+                                                displayedShowLyricsRomanization,
+                                            lyricsTranslationLanguage = displayedLyricsTranslationLanguage,
                                             showBottomFade = true,
                                             resumeFollowRequestKey = lyricsFollowRequestKey,
                                             seekRequestKey = lyricsSeekRequestKey,
@@ -987,7 +1016,8 @@ internal fun FullPlayerScreen(
                                                     active = playerActive &&
                                                         (pagerState.currentPage == 0 || pagerState.targetPage == 0),
                                                     showTranslation = displayedShowLyricsTranslation,
-                                                    showRomanization = true,
+                                                    showRomanization = displayedShowLyricsRomanization,
+                                                    translationLanguage = displayedLyricsTranslationLanguage,
                                                     centerLyrics = displayedCenterLyrics,
                                                     animationMode = displayedLyricAnimationMode,
                                                     preferredArtworkSize = artworkSize,
@@ -1077,8 +1107,11 @@ internal fun FullPlayerScreen(
                     lyricAnimationMode = displayedLyricAnimationMode,
                     lyricBlurEnabled = displayedLyricBlurEnabled,
                     centerLyrics = displayedCenterLyrics,
+                    centerLyricsEnabled = centerLyricsEnabled,
                     hideControlsOnLyrics = displayedHideControlsOnLyrics,
                     showLyricsTranslation = displayedShowLyricsTranslation,
+                    showLyricsRomanization = displayedShowLyricsRomanization,
+                    lyricsTranslationLanguage = displayedLyricsTranslationLanguage,
                     onDismiss = { showLyricsSettings = false },
                     onLeftAlignPlayerTitleChange = {
                         displayedLeftAlignPlayerTitle = it
@@ -1111,6 +1144,14 @@ internal fun FullPlayerScreen(
                     onShowLyricsTranslationChange = {
                         displayedShowLyricsTranslation = it
                         onShowLyricsTranslationChange(it)
+                    },
+                    onLyricsTranslationLanguageChange = {
+                        displayedLyricsTranslationLanguage = it
+                        onLyricsTranslationLanguageChange(it)
+                    },
+                    onShowLyricsRomanizationChange = {
+                        displayedShowLyricsRomanization = it
+                        onShowLyricsRomanizationChange(it)
                     },
                 )
                 PlaybackOptionsDialog(
@@ -1164,8 +1205,11 @@ private fun PlayerSettingsSheet(
     lyricAnimationMode: LyricAnimationMode,
     lyricBlurEnabled: Boolean,
     centerLyrics: Boolean,
+    centerLyricsEnabled: Boolean,
     hideControlsOnLyrics: Boolean,
     showLyricsTranslation: Boolean,
+    showLyricsRomanization: Boolean,
+    lyricsTranslationLanguage: LyricsTranslationLanguage,
     onDismiss: () -> Unit,
     onLeftAlignPlayerTitleChange: (Boolean) -> Unit,
     onLyricFontScalePreview: (Float) -> Unit,
@@ -1177,6 +1221,8 @@ private fun PlayerSettingsSheet(
     onCenterLyricsChange: (Boolean) -> Unit,
     onHideControlsOnLyricsChange: (Boolean) -> Unit,
     onShowLyricsTranslationChange: (Boolean) -> Unit,
+    onShowLyricsRomanizationChange: (Boolean) -> Unit,
+    onLyricsTranslationLanguageChange: (LyricsTranslationLanguage) -> Unit,
 ) {
     val wideLayout = usesMiuixSmallTopAppBar()
     val isPortrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
@@ -1202,7 +1248,10 @@ private fun PlayerSettingsSheet(
         LyricsInterfacePreferences(
             leftAlignPlayerTitle = leftAlignPlayerTitle,
             centerLyrics = centerLyrics,
+            centerLyricsEnabled = centerLyricsEnabled,
             showLyricsTranslation = showLyricsTranslation,
+            showLyricsRomanization = showLyricsRomanization,
+            lyricsTranslationLanguage = lyricsTranslationLanguage,
             lyricFontScale = lyricFontScale,
             lyricFontWeight = lyricFontWeight,
             lyricBlurEnabled = lyricBlurEnabled,
@@ -1211,6 +1260,8 @@ private fun PlayerSettingsSheet(
             onLeftAlignPlayerTitleChange = onLeftAlignPlayerTitleChange,
             onCenterLyricsChange = onCenterLyricsChange,
             onShowLyricsTranslationChange = onShowLyricsTranslationChange,
+            onShowLyricsRomanizationChange = onShowLyricsRomanizationChange,
+            onLyricsTranslationLanguageChange = onLyricsTranslationLanguageChange,
             onLyricFontScalePreview = onLyricFontScalePreview,
             onLyricFontScaleCommit = onLyricFontScaleCommit,
             onLyricFontWeightPreview = onLyricFontWeightPreview,

@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.melox.player.model.LyricsTranslationLanguage
 import com.melox.player.model.LyricAnimationMode
 import com.melox.player.R
 import com.melox.player.ui.screen.playback.DEFAULT_LYRIC_FONT_SCALE
@@ -29,7 +30,10 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 internal fun LyricsInterfacePreferences(
     leftAlignPlayerTitle: Boolean,
     centerLyrics: Boolean,
+    centerLyricsEnabled: Boolean,
     showLyricsTranslation: Boolean,
+    showLyricsRomanization: Boolean,
+    lyricsTranslationLanguage: LyricsTranslationLanguage,
     lyricFontScale: Float,
     lyricFontWeight: Int,
     lyricBlurEnabled: Boolean,
@@ -38,6 +42,8 @@ internal fun LyricsInterfacePreferences(
     onLeftAlignPlayerTitleChange: (Boolean) -> Unit,
     onCenterLyricsChange: (Boolean) -> Unit,
     onShowLyricsTranslationChange: (Boolean) -> Unit,
+    onShowLyricsRomanizationChange: (Boolean) -> Unit,
+    onLyricsTranslationLanguageChange: (LyricsTranslationLanguage) -> Unit,
     onLyricFontScalePreview: (Float) -> Unit,
     onLyricFontScaleCommit: () -> Unit,
     onLyricFontWeightPreview: (Int) -> Unit,
@@ -68,13 +74,30 @@ internal fun LyricsInterfacePreferences(
                 )
                 SwitchPreference(
                     title = stringResource(R.string.lyrics_center),
+                    summary = if (centerLyricsEnabled) null else stringResource(R.string.lyrics_center_duet_unavailable),
                     checked = centerLyrics,
+                    enabled = centerLyricsEnabled,
                     onCheckedChange = onCenterLyricsChange,
                 )
                 SwitchPreference(
                     title = stringResource(R.string.lyrics_translation),
                     checked = showLyricsTranslation,
                     onCheckedChange = onShowLyricsTranslationChange,
+                )
+                val translationLanguages = LyricsTranslationLanguage.entries
+                OverlayDropdownPreference(
+                    title = stringResource(R.string.lyrics_translation_language),
+                    items = translationLanguages.map { lyricsTranslationLanguageLabel(it) },
+                    selectedIndex = translationLanguages.indexOf(lyricsTranslationLanguage),
+                    enabled = showLyricsTranslation,
+                    onSelectedIndexChange = { index ->
+                        translationLanguages.getOrNull(index)?.let(onLyricsTranslationLanguageChange)
+                    },
+                )
+                SwitchPreference(
+                    title = stringResource(R.string.lyrics_romanization),
+                    checked = showLyricsRomanization,
+                    onCheckedChange = onShowLyricsRomanizationChange,
                 )
                 TappableSliderPreference(
                     value = lyricFontScale,
@@ -147,5 +170,15 @@ private fun lyricAnimationModeLabel(mode: LyricAnimationMode): String = stringRe
         LyricAnimationMode.EXTEND_TO_ALL -> R.string.lyrics_animation_extend_to_all
         LyricAnimationMode.ALWAYS -> R.string.lyrics_animation_always
         LyricAnimationMode.NEVER -> R.string.lyrics_animation_never
+    },
+)
+
+@Composable
+private fun lyricsTranslationLanguageLabel(language: LyricsTranslationLanguage): String = stringResource(
+    when (language) {
+        LyricsTranslationLanguage.AUTO -> R.string.lyrics_translation_language_auto
+        LyricsTranslationLanguage.CHINESE -> R.string.lyrics_translation_language_chinese
+        LyricsTranslationLanguage.ENGLISH -> R.string.lyrics_translation_language_english
+        LyricsTranslationLanguage.ALL -> R.string.lyrics_translation_language_all
     },
 )

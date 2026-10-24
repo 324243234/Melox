@@ -344,6 +344,7 @@
     </string-array>
     <string name="player_title_left_aligned">标题左对齐</string>
     <string name="lyrics_translation">歌词翻译</string>
+    <string name="lyrics_romanization">歌词罗马音</string>
     <string name="lyrics_size">歌词大小</string>
     <string name="lyrics_size_value">%1$dsp</string>
     <string name="lyrics_weight">歌词字重</string>
@@ -356,6 +357,7 @@
     <string name="lyrics_blur">歌词模糊</string>
     <string name="lyrics_blur_summary">模糊非当前歌词</string>
     <string name="lyrics_center">歌词居中</string>
+    <string name="lyrics_center_duet_unavailable">对唱歌词使用左右对齐</string>
     <string name="lyrics_hide_controls">歌词页隐藏控制</string>
     <string name="lyrics_hide_controls_summary">隐藏控制后，可双击标题区播放/暂停，滑动切歌，长按呼出本弹窗</string>
     <string name="lyrics_source_priority">歌词来源优先级</string>
@@ -411,4 +413,9 @@
     <string name="music_cache_save_error">无法更新音乐缓存，将自动重试</string>
     <string name="music_delete_write_access">请选择歌曲所在文件夹，以授权删除源文件</string>
     <string name="folder_internal_storage">内部存储</string>
+    <string name="lyrics_translation_language">翻译语言</string>
+    <string name="lyrics_translation_language_auto">自动（中文）</string>
+    <string name="lyrics_translation_language_chinese">中文</string>
+    <string name="lyrics_translation_language_english">英文</string>
+    <string name="lyrics_translation_language_all">全部译文</string>
 </resources>

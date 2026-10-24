@@ -8,6 +8,7 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.melox.player.model.LyricsTranslationLanguage
 import com.melox.player.model.LyricAnimationMode
 import com.melox.player.data.library.AlbumGroup
 import com.melox.player.data.library.AlbumSortConfig
@@ -805,6 +806,16 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
     fun setShowLyricsTranslation(enabled: Boolean) {
         viewModelScope.launch {
             settingsRepository.setShowLyricsTranslation(enabled)
+        }
+    }
+
+    fun setLyricsTranslationLanguage(language: LyricsTranslationLanguage) {
+        viewModelScope.launch { settingsRepository.setLyricsTranslationLanguage(language) }
+    }
+
+    fun setShowLyricsRomanization(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.setShowLyricsRomanization(enabled)
         }
     }
 

@@ -1,5 +1,7 @@
 package com.melox.player.model
 
+import java.util.Locale
+
 enum class LyricsFormat {
     LRC,
     TTML,
@@ -36,6 +38,18 @@ data class LyricAgent(
     val name: String?,
 )
 
+enum class LyricAlignment {
+    START,
+    END,
+    CENTER,
+}
+
+data class LyricPlaybackFrame(
+    val activeLineIndices: List<Int>,
+    val anchorIndex: Int,
+    val anchorLineIndices: List<Int> = if (anchorIndex >= 0) listOf(anchorIndex) else emptyList(),
+)
+
 data class LyricLine(
     val agent: String,
     val startTimeMs: Long,
@@ -57,6 +71,43 @@ data class LyricLine(
 
     val romanization: String? = romanizations.map { it.text }.filter(String::isNotBlank).distinct()
         .joinToString("\n").takeIf(String::isNotEmpty)
+
+    /** Select captions for presentation without changing the parsed auxiliary tracks. */
+    fun translationFor(preference: LyricsTranslationLanguage, appLanguageTag: String): String? {
+        val captions = translations.mapNotNull { caption ->
+            val text = caption.text.trim().takeIf(String::isNotEmpty) ?: return@mapNotNull null
+            val language = caption.language.orEmpty().trim().replace('_', '-').lowercase(Locale.ROOT)
+                .takeUnless { it == "und" }.orEmpty()
+            language to text
+        }.distinct()
+        if (captions.isEmpty()) return translation?.takeIf(String::isNotBlank)
+        if (preference == LyricsTranslationLanguage.ALL) {
+            return captions.map { it.second }.distinct().joinToString("\n")
+        }
+        // Legacy LRC captions have no language labels; retain their intentional hard breaks.
+        if (captions.all { it.first.isEmpty() }) return captions.map { it.second }.joinToString("\n")
+        val appTag = appLanguageTag.replace('_', '-').lowercase(Locale.ROOT)
+        val preferred = when (preference) {
+            LyricsTranslationLanguage.AUTO -> appTag.substringBefore('-')
+            LyricsTranslationLanguage.CHINESE -> "zh"
+            LyricsTranslationLanguage.ENGLISH -> "en"
+            LyricsTranslationLanguage.ALL -> error("Handled above")
+        }
+        val languages = captions.map { it.first }.distinct()
+        fun matchingLanguage(language: String): String? = languages
+            .filter { it.substringBefore('-') == language }
+            .minWithOrNull(compareBy<String> {
+                when {
+                    it == appTag && preferred == language -> 0
+                    it == language -> 1
+                    it == "zh-hans" || it == "zh-cn" -> 2
+                    else -> 3
+                }
+            }.thenBy { it })
+        val selected = matchingLanguage(preferred) ?: matchingLanguage("en")
+            ?: "".takeIf { it in languages } ?: languages.sorted().first()
+        return captions.filter { it.first == selected }.map { it.second }.joinToString("\n")
+    }
 
     fun animationWords(): List<LyricWord> = words.ifEmpty {
         listOf(LyricWord(startTimeMs, endTimeMs, displayText, hasTrailingSpace = false))
@@ -101,6 +152,32 @@ data class LyricsDocument(
     val songwriters: List<String> = emptyList(),
     val language: String? = null,
 ) {
+    private val agentTypes = agents.associate { it.id to it.type }
+    private val singingAgents = lines.asSequence().filterNot { it.isBackground }
+        .map { it.agent }.filter { id ->
+            id.isNotBlank() && !isGroupAgent(id) && (id != "main" || id in agentTypes)
+        }.distinct().toList().let { ids ->
+            (agents.map { it.id }.filter { it in ids } + ids.filter { id -> agents.none { it.id == id } }).distinct()
+        }
+    val isDuet: Boolean = format == LyricsFormat.TTML && singingAgents.size > 1
+    private val playbackTimeline by lazy { LyricPlaybackTimeline(this) }
+
+    fun lineAlignment(index: Int): LyricAlignment {
+        val line = lines.getOrNull(index) ?: return LyricAlignment.START
+        if (!isDuet) return LyricAlignment.START
+        val singerIndex = singingAgents.indexOf(line.agent)
+        return when {
+            isGroupAgent(line.agent) || singerIndex < 0 -> LyricAlignment.CENTER
+            singerIndex % 2 == 0 -> LyricAlignment.START
+            else -> LyricAlignment.END
+        }
+    }
+
+    fun playbackFrame(positionMs: Long): LyricPlaybackFrame = playbackTimeline.frameAt(positionMs)
+
+    private fun isGroupAgent(id: String): Boolean =
+        agentTypes[id].equals("group", ignoreCase = true) || id == "v1000" && id !in agentTypes
+
     private val prefixEndTimes = LongArray(lines.size).also { ends ->
         lines.forEachIndexed { index, line ->
             ends[index] = maxOf(line.endTimeMs, ends.getOrElse(index - 1) { Long.MIN_VALUE })
@@ -160,6 +237,61 @@ data class LyricsDocument(
     }
 }
 
+/** Resolve all active vocals once per boundary; display frames only perform a binary search. */
+private class LyricPlaybackTimeline(document: LyricsDocument) {
+    private class Boundary {
+        val starts = mutableListOf<Int>()
+        val ends = mutableListOf<Int>()
+    }
+
+    private val initial = LyricPlaybackFrame(
+        emptyList(),
+        document.lines.indexOfFirst { !it.isBackground }.takeIf { it >= 0 }
+            ?: if (document.lines.isEmpty()) -1 else 0,
+    )
+    private val times: LongArray
+    private val frames: List<LyricPlaybackFrame>
+
+    init {
+        val boundaries = java.util.TreeMap<Long, Boundary>()
+        document.lines.forEachIndexed { index, line ->
+            if (line.endTimeMs > line.startTimeMs || index == document.lines.lastIndex) {
+                boundaries.getOrPut(line.startTimeMs, ::Boundary).starts += index
+                if (line.endTimeMs > line.startTimeMs) {
+                    boundaries.getOrPut(line.endTimeMs, ::Boundary).ends += index
+                }
+            }
+        }
+        val active = sortedSetOf<Int>()
+        val hasMainVocals = document.lines.any { !it.isBackground }
+        var anchor = initial.anchorIndex
+        var anchorLines = initial.anchorLineIndices
+        times = boundaries.keys.toLongArray()
+        frames = boundaries.map { (time, boundary) ->
+            active.removeAll(boundary.ends.toSet())
+            active.addAll(boundary.starts)
+            if (document.format == LyricsFormat.TTML) {
+                // An ending short part must never pull scrolling back to an older long part.
+                boundary.starts.firstOrNull { !hasMainVocals || !document.lines[it].isBackground }
+                    ?.let {
+                        anchor = maxOf(anchor, it)
+                        anchorLines = active.filter { index -> !hasMainVocals || !document.lines[index].isBackground }
+                    }
+            } else {
+                anchor = document.focusLineIndex(time)
+                anchorLines = listOf(anchor)
+            }
+            LyricPlaybackFrame(active.toList(), anchor, anchorLines)
+        }
+    }
+
+    fun frameAt(positionMs: Long): LyricPlaybackFrame {
+        val found = times.binarySearch(positionMs)
+        val index = if (found >= 0) found else -found - 2
+        return frames.getOrElse(index) { initial }
+    }
+}
+
 sealed interface LyricsUiState {
     data object Loading : LyricsUiState
 
@@ -170,6 +302,9 @@ sealed interface LyricsUiState {
         val mediaId: String? = null,
     ) : LyricsUiState
 }
+
+fun LyricsUiState.isDuetForMedia(mediaId: String?): Boolean =
+    mediaId != null && this is LyricsUiState.Available && this.mediaId == mediaId && document.isDuet
 
 private fun intervalProgress(
     positionMs: Long,

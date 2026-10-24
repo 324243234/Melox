@@ -357,6 +357,7 @@
     </string-array>
     <string name="player_title_left_aligned">Left-align title</string>
     <string name="lyrics_translation">Lyrics translation</string>
+    <string name="lyrics_romanization">Lyrics romanization</string>
     <string name="lyrics_size">Lyrics size</string>
     <string name="lyrics_size_value">%1$dsp</string>
     <string name="lyrics_weight">Lyrics weight</string>
@@ -369,6 +370,7 @@
     <string name="lyrics_blur">Lyrics blur</string>
     <string name="lyrics_blur_summary">Blur inactive lyrics</string>
     <string name="lyrics_center">Center lyrics</string>
+    <string name="lyrics_center_duet_unavailable">Duet lyrics use left and right alignment</string>
     <string name="lyrics_hide_controls">Hide controls on lyrics page</string>
     <string name="lyrics_hide_controls_summary">After hiding controls, double-tap the title area to play/pause, swipe to change song, or long-press to open this dialog</string>
     <string name="lyrics_source_priority">Lyrics source priority</string>
@@ -425,4 +427,9 @@
     <string name="music_cache_save_error">Unable to update the music cache. Melox will retry.</string>
     <string name="music_delete_write_access">Select the folder containing this song to allow file deletion</string>
     <string name="folder_internal_storage">Internal storage</string>
+    <string name="lyrics_translation_language">Translation language</string>
+    <string name="lyrics_translation_language_auto">Auto (app language)</string>
+    <string name="lyrics_translation_language_chinese">Chinese</string>
+    <string name="lyrics_translation_language_english">English</string>
+    <string name="lyrics_translation_language_all">All translations</string>
 </resources>

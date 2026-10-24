@@ -3,6 +3,14 @@ package com.melox.player.model
 import com.melox.player.data.playlist.PlaylistSortConfig
 import com.melox.player.data.library.MusicSortConfig
 
+/** Selects which auxiliary translation language is shown beside lyrics. */
+enum class LyricsTranslationLanguage {
+    AUTO,
+    CHINESE,
+    ENGLISH,
+    ALL,
+}
+
 /** Controls whether the app follows the system appearance or forces a light/dark theme. */
 enum class ThemeMode {
     SYSTEM,
@@ -171,6 +179,8 @@ data class AppSettings(
     val leftAlignPlayerTitle: Boolean = false,
     val hideControlsOnLyrics: Boolean = false,
     val showLyricsTranslation: Boolean = true,
+    val showLyricsRomanization: Boolean = true,
+    val lyricsTranslationLanguage: LyricsTranslationLanguage = LyricsTranslationLanguage.AUTO,
     val showMiniPlayerLyrics: Boolean = true,
     val showArtworkLyrics: Boolean = false,
     val showMusicTagEditor: Boolean = true,

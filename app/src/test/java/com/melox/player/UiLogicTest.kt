@@ -407,6 +407,8 @@ class UiLogicTest {
         assertFalse(settings.centerLyrics)
         assertFalse(settings.leftAlignPlayerTitle)
         assertTrue(settings.showLyricsTranslation)
+        assertTrue(settings.showLyricsRomanization)
+        assertEquals(com.melox.player.model.LyricsTranslationLanguage.AUTO, settings.lyricsTranslationLanguage)
         assertTrue(settings.showMiniPlayerLyrics)
         assertFalse(settings.showArtworkLyrics)
         assertEquals(LyricsSourcePriority.EMBEDDED, settings.lyricsSourcePriority)

@@ -99,6 +99,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.geometry.Rect
+import com.melox.player.model.LyricsTranslationLanguage
 import com.melox.player.model.LyricAnimationMode
 import com.melox.player.R
 import com.melox.player.data.library.ArtistGroup
@@ -181,6 +182,8 @@ internal fun PlayerContentPager(
     seekPositionMs: Long,
     artworkContent: @Composable (overscrollModifier: Modifier) -> Unit,
     modifier: Modifier = Modifier,
+    showLyricsRomanization: Boolean = true,
+    lyricsTranslationLanguage: LyricsTranslationLanguage = LyricsTranslationLanguage.AUTO,
     playerActive: Boolean = true,
     positionDiscontinuityRevision: Long = 0L,
 ) {
@@ -232,6 +235,8 @@ internal fun PlayerContentPager(
                     centerLyrics = centerLyrics,
                     lyricCenterOffsetY = lyricCenterOffsetY,
                     showLyricsTranslation = showLyricsTranslation,
+                    showLyricsRomanization = showLyricsRomanization,
+                    lyricsTranslationLanguage = lyricsTranslationLanguage,
                     showBottomFade = showBottomFade,
                     resumeFollowRequestKey = resumeFollowRequestKey,
                     seekRequestKey = seekRequestKey,
@@ -299,6 +304,8 @@ internal fun SyncedLyrics(
     seekRequestKey: Int,
     seekPositionMs: Long,
     modifier: Modifier = Modifier,
+    showLyricsRomanization: Boolean = true,
+    lyricsTranslationLanguage: LyricsTranslationLanguage = LyricsTranslationLanguage.AUTO,
     playerActive: Boolean = true,
     positionDiscontinuityRevision: Long = 0L,
 ) {
@@ -342,6 +349,8 @@ internal fun SyncedLyrics(
                         centerLyrics = centerLyrics,
                         centerOffsetY = lyricCenterOffsetY,
                         showLyricsTranslation = showLyricsTranslation,
+                        showLyricsRomanization = showLyricsRomanization,
+                        lyricsTranslationLanguage = lyricsTranslationLanguage,
                         showBottomFade = showBottomFade,
                         resumeFollowRequestKey = resumeFollowRequestKey,
                         seekRequestKey = seekRequestKey,

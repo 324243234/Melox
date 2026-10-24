@@ -109,7 +109,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.melox.player.model.LyricsTranslationLanguage
 import com.melox.player.model.LyricAnimationMode
+import com.melox.player.model.isDuetForMedia
 import com.melox.player.R
 import com.melox.player.ui.component.library.PLACEHOLDER_ARTWORK_RES_ID
 import com.melox.player.data.library.AlbumGroup
@@ -2106,9 +2108,11 @@ fun MeloxApp(
                                                             },
                                                         )
 
-                                                    AppRoute.LYRICS_INTERFACE ->
+                                                    AppRoute.LYRICS_INTERFACE -> {
+                                                        val currentLyrics by viewModel.lyricsState.collectAsStateWithLifecycle()
                                                         LyricsInterfaceSettingsScreen(
                                                             settings = settings,
+                                                            centerLyricsEnabled = !currentLyrics.isDuetForMedia(compactPlayback.currentItem?.mediaId),
                                                             bottomContentPadding =
                                                                 routeBottomPadding,
                                                             listState = lyricsInterfaceListState,
@@ -2121,6 +2125,10 @@ fun MeloxApp(
                                                                 viewModel::setCenterLyrics,
                                                             onShowLyricsTranslationChange =
                                                                 viewModel::setShowLyricsTranslation,
+                                                            onShowLyricsRomanizationChange =
+                                                                viewModel::setShowLyricsRomanization,
+                                                            onLyricsTranslationLanguageChange =
+                                                                viewModel::setLyricsTranslationLanguage,
                                                             onLyricFontScaleChange =
                                                                 viewModel::setLyricFontScale,
                                                             onLyricFontWeightChange =
@@ -2132,6 +2140,8 @@ fun MeloxApp(
                                                             onHideControlsOnLyricsChange =
                                                                 viewModel::setHideControlsOnLyrics,
                                                         )
+
+                                                    }
 
                                                     AppRoute.SCAN_SETTINGS ->
                                                         ScanMusicScreen(
@@ -2626,6 +2636,8 @@ fun MeloxApp(
                             hideControlsOnLyrics = settings.hideControlsOnLyrics,
                             immersiveMode = settings.immersiveMode,
                             showLyricsTranslation = settings.showLyricsTranslation,
+                            showLyricsRomanization = settings.showLyricsRomanization,
+                            lyricsTranslationLanguage = settings.lyricsTranslationLanguage,
                             showArtworkLyrics = settings.showArtworkLyrics,
                             showMusicTagEditor = settings.showMusicTagEditor,
                             showLyricoEditor = settings.showLyricoEditor,
@@ -2848,6 +2860,8 @@ private fun FullPlayerHost(
     hideControlsOnLyrics: Boolean,
     immersiveMode: Boolean,
     showLyricsTranslation: Boolean,
+    showLyricsRomanization: Boolean,
+    lyricsTranslationLanguage: LyricsTranslationLanguage,
     showArtworkLyrics: Boolean,
     showMusicTagEditor: Boolean,
     showLyricoEditor: Boolean,
@@ -2911,6 +2925,8 @@ private fun FullPlayerHost(
         immersiveMode = immersiveMode,
         onImmersiveModeChange = viewModel::setImmersiveMode,
         showLyricsTranslation = showLyricsTranslation,
+        showLyricsRomanization = showLyricsRomanization,
+        lyricsTranslationLanguage = lyricsTranslationLanguage,
         showArtworkLyrics = showArtworkLyrics,
         onLyricFontScaleChange = viewModel::setLyricFontScale,
         onLyricFontWeightChange = viewModel::setLyricFontWeight,
@@ -2920,6 +2936,8 @@ private fun FullPlayerHost(
         onLeftAlignPlayerTitleChange = viewModel::setLeftAlignPlayerTitle,
         onHideControlsOnLyricsChange = viewModel::setHideControlsOnLyrics,
         onShowLyricsTranslationChange = viewModel::setShowLyricsTranslation,
+        onShowLyricsRomanizationChange = viewModel::setShowLyricsRomanization,
+        onLyricsTranslationLanguageChange = viewModel::setLyricsTranslationLanguage,
         onDismiss = onDismiss,
         onTogglePlayPause = viewModel::togglePlayPause,
         onPrevious = viewModel::previous,

@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -51,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
+import com.melox.player.model.LyricsTranslationLanguage
 import com.melox.player.model.LyricAnimationMode
 import com.melox.player.model.LyricLine
 import com.melox.player.model.LyricsDocument
@@ -93,9 +95,11 @@ internal fun compactLyricAuxiliaryText(
     line: LyricLine,
     showTranslation: Boolean,
     showRomanization: Boolean,
+    translationLanguage: LyricsTranslationLanguage = LyricsTranslationLanguage.AUTO,
+    appLanguageTag: String = "en",
 ): List<String> = listOfNotNull(
     line.romanization?.takeIf { showRomanization && it.isNotBlank() },
-    line.translation?.takeIf { showTranslation && it.isNotBlank() },
+    line.translationFor(translationLanguage, appLanguageTag)?.takeIf { showTranslation && it.isNotBlank() },
 )
 
 /** SALT spaces adjacent entries by their actual half-heights plus a shared gap. */
@@ -301,6 +305,7 @@ internal fun PortraitArtworkWithLyrics(
     artworkContent: @Composable (Dp) -> Unit,
     modifier: Modifier = Modifier,
     previewPositionMs: Long? = null,
+    translationLanguage: LyricsTranslationLanguage = LyricsTranslationLanguage.AUTO,
 ) {
     if (!enabled) {
         BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) { artworkContent(maxHeight) }
@@ -350,6 +355,7 @@ internal fun PortraitArtworkWithLyrics(
                 CompactLyricsViewport(
                     lines, renderPlayback, renderTime, active, currentDocument && previewPositionMs != null, primaryStyle,
                     auxiliaryStyle, showTranslation, showRomanization, centerLyrics, animationMode, color,
+                    translationLanguage = translationLanguage,
                     modifier = Modifier.align(Alignment.TopCenter).width(contentWidth)
                         .height(geometry.lyricsHeight).offset(y = geometry.lyricsTop)
                         .graphicsLayer { alpha = lyricsAlpha.value },
@@ -374,6 +380,7 @@ private fun CompactLyricsViewport(
     animationMode: LyricAnimationMode,
     color: Color,
     modifier: Modifier = Modifier,
+    translationLanguage: LyricsTranslationLanguage = LyricsTranslationLanguage.AUTO,
 ) {
     val index by remember(lines, time) { derivedStateOf { compactLyricIndexAtPosition(lines, time()) } }
     val focus = index.coerceAtLeast(0)
@@ -389,8 +396,9 @@ private fun CompactLyricsViewport(
         else center.animateTo(focus.toFloat(), tween(COMPACT_LYRIC_SCROLL_MS, easing = CompactLyricScrollEasing))
     }
     val density = LocalDensity.current
-    val auxiliary = remember(lines, showTranslation, showRomanization) {
-        lines.map { compactLyricAuxiliaryText(it, showTranslation, showRomanization) }
+    val appLanguageTag = LocalConfiguration.current.locales[0].toLanguageTag()
+    val auxiliary = remember(lines, showTranslation, showRomanization, translationLanguage, appLanguageTag) {
+        lines.map { compactLyricAuxiliaryText(it, showTranslation, showRomanization, translationLanguage, appLanguageTag) }
     }
     val primaryHeight = with(density) { primaryStyle.lineHeight.toDp() }
     val auxiliaryHeight = with(density) { auxiliaryStyle.lineHeight.toDp() }

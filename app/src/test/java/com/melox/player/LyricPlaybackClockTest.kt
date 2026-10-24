@@ -209,6 +209,12 @@ class LyricPlaybackClockTest {
         }
         assertEquals(listOf(emptyList<String>(), listOf("Translation"), listOf("Romanization"),
             listOf("Romanization", "Translation"), emptyList<String>()), auxiliary)
+        val multilingual = romanized.copy(translations = listOf(
+            LyricAuxiliaryText("English", "en"), LyricAuxiliaryText("Chinese", "zh-Hans")))
+        assertEquals(listOf("Romanization", "Chinese"), compactLyricAuxiliaryText(multilingual,
+            true, true, com.melox.player.model.LyricsTranslationLanguage.AUTO, "zh-CN"))
+        assertEquals(listOf("English"), compactLyricAuxiliaryText(multilingual,
+            true, false, com.melox.player.model.LyricsTranslationLanguage.ENGLISH, "zh-CN"))
         assertEquals(listOf("Translation"), compactLyricAuxiliaryText(both, true, false))
         assertEquals(listOf("Romanization"), compactLyricAuxiliaryText(both, false, true))
         assertEquals(emptyList<String>(), compactLyricAuxiliaryText(both, false, false))

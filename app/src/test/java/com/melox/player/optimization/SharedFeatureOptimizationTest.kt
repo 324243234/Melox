@@ -137,7 +137,23 @@ class SharedFeatureOptimizationTest {
         val document = document("Original")
         val states = flowOf(request, request.copy(refreshRevision = 1L))
             .resolveLyricsStates { document.copy(lines = document.lines.toList()) }.toList()
-        assertEquals(listOf(LyricsUiState.Loading, LyricsUiState.Available(document)), states)
+        assertEquals(listOf(LyricsUiState.Loading, LyricsUiState.Available(document, request.mediaId)), states)
+    }
+
+    @Test
+    fun identicalLyricsOnAnotherTrackKeepTheirNewMediaIdentity() = runBlocking {
+        val request = request()
+        val document = document("Shared lyrics")
+        val nextRequest = request.copy(mediaId = "next", contentUri = "content://next")
+        val states = flowOf(request, nextRequest).resolveLyricsStates { document }.toList()
+        assertEquals(
+            listOf(
+                LyricsUiState.Loading,
+                LyricsUiState.Available(document, request.mediaId),
+                LyricsUiState.Loading,
+                LyricsUiState.Available(document, nextRequest.mediaId),
+            ), states,
+        )
     }
 
     @Test
@@ -149,8 +165,8 @@ class SharedFeatureOptimizationTest {
             .resolveLyricsStates {
                 when (it.refreshRevision) { 0L -> original; 1L -> changed; else -> null }
             }.toList()
-        assertEquals(listOf(LyricsUiState.Loading, LyricsUiState.Available(original),
-            LyricsUiState.Available(changed), LyricsUiState.Unavailable), states)
+        assertEquals(listOf(LyricsUiState.Loading, LyricsUiState.Available(original, request.mediaId),
+            LyricsUiState.Available(changed, request.mediaId), LyricsUiState.Unavailable), states)
     }
 
     @Test
@@ -162,8 +178,8 @@ class SharedFeatureOptimizationTest {
             .resolveLyricsStates {
                 when (it.refreshRevision) { 0L -> original; 1L -> throw IOException("temporary failure"); else -> changed }
             }.toList()
-        assertEquals(listOf(LyricsUiState.Loading, LyricsUiState.Available(original),
-            LyricsUiState.Available(changed)), states)
+        assertEquals(listOf(LyricsUiState.Loading, LyricsUiState.Available(original, request.mediaId),
+            LyricsUiState.Available(changed, request.mediaId)), states)
     }
 
     @Test
@@ -174,7 +190,7 @@ class SharedFeatureOptimizationTest {
             .resolveLyricsStates {
                 if (it.mediaId == request.mediaId) original else throw IOException("unreadable")
             }.toList()
-        assertEquals(listOf(LyricsUiState.Loading, LyricsUiState.Available(original),
+        assertEquals(listOf(LyricsUiState.Loading, LyricsUiState.Available(original, request.mediaId),
             LyricsUiState.Loading, LyricsUiState.Unavailable), states)
     }
 
@@ -188,7 +204,7 @@ class SharedFeatureOptimizationTest {
                     setOf(LyricsSource.SIDECAR), IOException("sidecar query failed"),
                 )
             }.toList()
-        assertEquals(listOf(LyricsUiState.Loading, LyricsUiState.Available(original),
+        assertEquals(listOf(LyricsUiState.Loading, LyricsUiState.Available(original, request.mediaId),
             LyricsUiState.Unavailable), states)
     }
 
@@ -202,7 +218,7 @@ class SharedFeatureOptimizationTest {
                     setOf(LyricsSource.EMBEDDED), IOException("embedded read failed"),
                 )
             }.toList()
-        assertEquals(listOf(LyricsUiState.Loading, LyricsUiState.Available(original)), states)
+        assertEquals(listOf(LyricsUiState.Loading, LyricsUiState.Available(original, request.mediaId)), states)
     }
 
     @Test

@@ -211,17 +211,32 @@ internal object LyricsParser {
             .groupBy(RawLine::startTimeMs)
             .map { (_, sameTimeLines) ->
                 val primary = sameTimeLines.first()
-                primary.copy(
-                    translation = buildList {
-                        primary.translation?.lineSequence()?.forEach(::add)
-                        sameTimeLines.drop(1).mapNotNullTo(this, RawLine::text)
+                val auxiliaryTexts = buildList {
+                    sameTimeLines.forEachIndexed { index, entry ->
+                        if (index > 0) entry.text?.let(::add)
+                        entry.translation?.lineSequence()?.forEach(::add)
                     }
-                        .distinct()
-                        .joinToString("\n")
+                }.distinct()
+                val (romanizations, translations) = auxiliaryTexts.partition { auxiliary ->
+                    isJapaneseRomanization(primary.text.orEmpty(), auxiliary)
+                }
+                primary.copy(
+                    translation = translations.joinToString("\n")
                         .takeIf(String::isNotBlank),
+                    romanizations = romanizations.map { LyricAuxiliaryText(it, language = "ja-Latn") },
                 )
             }
         return buildDocument(grouped, LyricsFormat.LRC, source, durationMs)
+    }
+
+    /** LRC has no track roles; only recognize kana-backed, syllabic Japanese captions. */
+    private fun isJapaneseRomanization(primary: String, auxiliary: String): Boolean {
+        if (primary.none { it in '\u3041'..'\u3096' || it in '\u30A1'..'\u30FA' }) return false
+        if (auxiliary.any { it.isDigit() || it.isLetter() && it !in JAPANESE_ROMAN_LETTERS }) return false
+        val tokens = JAPANESE_ROMAN_TOKEN.findAll(auxiliary).map { it.value }.toList()
+        return tokens.size >= 3 && tokens.all { token ->
+            token.length <= 64 && JAPANESE_ROMAN_SYLLABLES.matches(token)
+        }
     }
 
     private fun parseTimedWords(
@@ -732,6 +747,10 @@ internal object LyricsParser {
     private val ttmlNumber = Regex("""\d+(?:\.\d+)?""")
     private val ttmlOffset = Regex("""^(\d+(?:\.\d+)?)(ms|s|m|h|f|t)$""")
     private val AUXILIARY_ROLES = setOf("x-translation", "x-roman", "x-bg")
+    private const val JAPANESE_ROMAN_LETTERS = "abcdefghijklmnopqrstuvwxyzāīūēōâîûêô"
+    private val JAPANESE_ROMAN_TOKEN = Regex("""'?[a-zāīūēōâîûêô]+""")
+    private val JAPANESE_ROMAN_SYLLABLES =
+        Regex("""(?:(?:sh|ch|ts|[bcdfghjklmpqrstvwxyz]y?)?[aeiouāīūēōâîûêô]|n|'[bcdfghjklmnpqrstvwxyz])+""")
 
     private const val DEFAULT_AGENT = "main"
     private const val MAX_LYRICS_CHARS = 2 * 1024 * 1024

@@ -144,6 +144,45 @@ class MeloxInstrumentedTest {
     }
 
     @Test
+    fun translationLanguagePersistsIndependentlyOfCaptionVisibility() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = SettingsRepository(context)
+        val original = repository.loadSettings()
+        try {
+            for (language in com.melox.player.model.LyricsTranslationLanguage.entries) {
+                repository.setLyricsTranslationLanguage(language)
+                val restored = SettingsRepository(context).loadSettings()
+                assertEquals(language, restored.lyricsTranslationLanguage)
+                assertEquals(original.showLyricsTranslation, restored.showLyricsTranslation)
+                assertEquals(original.showLyricsRomanization, restored.showLyricsRomanization)
+            }
+        } finally {
+            repository.setLyricsTranslationLanguage(original.lyricsTranslationLanguage)
+        }
+    }
+
+    @Test
+    fun romanizationVisibilityPersistsIndependentlyOfTranslation() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = SettingsRepository(context)
+        val original = repository.loadSettings()
+        try {
+            for (romanization in listOf(true, false)) {
+                for (translation in listOf(true, false)) {
+                    repository.setShowLyricsRomanization(romanization)
+                    repository.setShowLyricsTranslation(translation)
+                    val restored = SettingsRepository(context).loadSettings()
+                    assertEquals(romanization, restored.showLyricsRomanization)
+                    assertEquals(translation, restored.showLyricsTranslation)
+                }
+            }
+        } finally {
+            repository.setShowLyricsRomanization(original.showLyricsRomanization)
+            repository.setShowLyricsTranslation(original.showLyricsTranslation)
+        }
+    }
+
+    @Test
     fun cardBlurSettingPersistsIndependentlyAndClampsBounds() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val repository = SettingsRepository(context)
