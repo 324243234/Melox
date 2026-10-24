@@ -60,19 +60,59 @@ class ArtworkFlipAnimationTest {
             assertEquals(-next.rotationY, previous.rotationY, 0f)
             assertEquals(p >= 0.5f, next.showBack)
             val width = abs(cos(Math.toRadians(next.rotationY.toDouble())))
-            assertEquals(abs(cos(Math.PI * p)), width, 0.00001)
+            if (p <= 0.5f || p == 1f) {
+                assertEquals(abs(cos(Math.PI * p)), width, 0.00001)
+            }
         }
         assertEquals(0f, artworkFlipFrame(1f, 1).rotationY, 0f)
     }
 
     @Test
     fun oldFaceBlursTowardTheEdgeAndNewFaceSharpensAfterIt() {
-        val fractions = listOf(0f, 0.25f, 0.5f, 0.75f, 1f).map { artworkFlipFrame(it, 1).blurFraction }
+        val fractions = listOf(0f, 0.25f, 0.5f, 0.6f, 1f).map { artworkFlipFrame(it, 1).blurFraction }
         assertEquals(0f, fractions.first(), 0f)
         assertEquals(0f, fractions.last(), 0f)
         assertEquals(1f, fractions[2], 0f)
         assertTrue(fractions[1] > fractions[0] && fractions[2] > fractions[1])
         assertTrue(fractions[3] < fractions[2] && fractions[4] < fractions[3])
+    }
+
+    @Test
+    fun incomingFaceOvershootsOnceThenReturnsSharpInEitherDirection() {
+        for (direction in listOf(-1, 1)) {
+            val frames = (50..100).map { artworkFlipFrame(it / 100f, direction) }
+            val angles = frames.map { it.rotationY * direction }
+            val peakIndex = angles.indices.maxBy { angles[it] }
+            assertTrue(angles[peakIndex] in 8f..10f)
+            assertTrue(angles.take(peakIndex + 1).zipWithNext().all { (a, b) -> b >= a })
+            assertTrue(angles.drop(peakIndex).zipWithNext().all { (a, b) -> b <= a })
+            assertTrue(frames.all { it.showBack })
+            assertTrue(frames.zip(angles).filter { it.second >= 0f }.all { it.first.blurFraction == 0f })
+            assertEquals(0f, angles.last(), 0f)
+        }
+    }
+
+    @Test
+    fun skippingDuringReboundKeepsTheIncomingFaceAndAngleUntilTheNextTurn() = runBlocking(clock) {
+        for (direction in listOf(-1, 1)) {
+            val state = ArtworkFlipState("a", "a")
+            val first = launch { state.transitionTo("b", "b", direction, 400) }
+            repeat(15) { frame() }
+            val outwardAngle = state.frame.rotationY * direction
+            assertTrue(outwardAngle > 0f)
+            repeat(3) { frame() }
+            val angle = state.frame.rotationY
+            assertTrue(angle * direction > outwardAngle)
+            assertEquals(0f, state.frame.blurFraction, 0f)
+            first.cancelAndJoin()
+            val second = launch { state.transitionTo("c", "c", -direction, 400) }
+            repeat(4) { yield() }
+            assertEquals("b", state.visibleValue)
+            assertEquals(angle, state.frame.rotationY, 0f)
+            finish(second)
+            assertEquals("c", state.visibleValue)
+            assertFalse(state.isRunning)
+        }
     }
 
     @Test
@@ -87,11 +127,16 @@ class ArtworkFlipAnimationTest {
         assertTrue(state.frame.showBack)
         assertEquals("new", state.visibleValue)
         assertEquals("old", state.front)
+        val reboundAngle = state.frame.rotationY
+        repeat(12) { frame() }
+        assertTrue(state.isRunning)
+        assertEquals("new", state.visibleValue)
+        assertTrue(state.frame.rotationY > 0f && state.frame.rotationY < reboundAngle)
         finish(job)
         assertEquals("new", state.visibleValue)
         assertFalse(state.isRunning)
         assertEquals(0f, state.frame.rotationY, 0f)
-        assertTrue(time in 400_000_000L..450_000_000L)
+        assertTrue(time in 800_000_000L..850_000_000L)
     }
 
     @Test
@@ -105,7 +150,7 @@ class ArtworkFlipAnimationTest {
             Snapshot.sendApplyNotifications()
             val observer = Snapshot.registerGlobalWriteObserver { observed += state.visibleValue }
             try {
-                repeat(30) {
+                repeat(40) {
                     if (job.isActive) {
                         Snapshot.sendApplyNotifications()
                         frame()

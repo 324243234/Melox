@@ -1,6 +1,8 @@
 package com.melox.player.ui.component.playback
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.EaseOutBack
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
@@ -12,6 +14,13 @@ import androidx.compose.runtime.setValue
 import kotlin.math.sin
 import kotlin.math.PI
 import kotlin.math.roundToInt
+
+private val ArtworkFlipReboundEasing = Easing { fraction ->
+    // Slow down before the incoming face reaches rest, covering both overshoot and return.
+    val turnFraction = if (fraction <= 0.2f) fraction * 2f
+        else 0.4f + (fraction - 0.2f) * 0.75f
+    FastOutSlowInEasing.transform(turnFraction)
+}
 
 internal data class ArtworkFlipFrame(
     val showBack: Boolean,
@@ -27,11 +36,15 @@ internal fun artworkFlipCameraDistance(width: Float, height: Float): Float =
 internal fun artworkFlipFrame(progress: Float, direction: Int): ArtworkFlipFrame {
     val p = progress.coerceIn(0f, 1f)
     val showBack = p >= 0.5f
+    // Keep chronological progress bounded so interrupted flips retain their face and timing.
+    val turnProgress = if (showBack) 0.5f + 0.5f * EaseOutBack.transform((p - 0.5f) * 2f) else p
+    val blurProgress = turnProgress.coerceIn(0f, 1f)
     val sign = if (direction < 0) -1f else 1f
     return ArtworkFlipFrame(
         showBack = showBack,
-        rotationY = sign * (180f * p - if (showBack) 180f else 0f),
-        blurFraction = if (p == 0f || p == 1f) 0f else sin(PI * p).toFloat(),
+        rotationY = sign * (180f * turnProgress - if (showBack) 180f else 0f),
+        blurFraction = if (blurProgress == 0f || blurProgress == 1f) 0f
+            else sin(PI * blurProgress).toFloat(),
     )
 }
 
@@ -163,7 +176,8 @@ internal class ArtworkFlipState<T>(initialValue: T?, initialKey: Any?, initialPl
     private suspend fun finish(durationMillis: Int) {
         progress.animateTo(
             1f,
-            tween((durationMillis * (1f - progress.value)).roundToInt(), easing = FastOutSlowInEasing),
+            tween((durationMillis * 2f * (1f - progress.value)).roundToInt(),
+                easing = ArtworkFlipReboundEasing),
         )
         front = back
         frontKey = backKey
