@@ -375,6 +375,10 @@
     <string name="settings_custom_background_blur_title">壁纸模糊</string>
     <string name="settings_percent_value">%1$d%%</string>
     <string name="settings_custom_background_failed">无法使用此图片</string>
+    <string name="lyrics_mini_player">播放栏歌词</string>
+    <string name="lyrics_priority_section">歌词优先级</string>
+    <string name="lyrics_display_section">歌词显示</string>
+    <string name="lyrics_artwork_page">封面页歌词</string>
     <string name="lyrics_editor_menu">歌词编辑菜单</string>
     <string name="lyrics_editor_music_tag">音乐标签</string>
     <string name="lyrics_editor_lyrico">Lyrico</string>

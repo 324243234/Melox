@@ -1,16 +1,283 @@
 package com.melox.player
 
+import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableStateOf
 import com.melox.player.model.LyricLine
+import com.melox.player.model.LyricAuxiliaryText
 import com.melox.player.model.LyricsDocument
 import com.melox.player.model.LyricsFormat
 import com.melox.player.model.LyricsSource
+import com.melox.player.model.LyricsUiState
 import com.melox.player.ui.screen.playback.LyricPlaybackClock
+import com.melox.player.ui.screen.playback.compactLyricsDocument
+import com.melox.player.ui.screen.playback.compactPrimaryLines
+import com.melox.player.ui.screen.playback.compactLyricAuxiliaryText
+import com.melox.player.ui.screen.playback.compactLyricRowCenters
+import com.melox.player.ui.screen.playback.compactLyricIndexAtPosition
+import com.melox.player.ui.screen.playback.compactLyricScrollTarget
+import com.melox.player.ui.screen.playback.CompactLyricScroll
+import com.melox.player.ui.screen.playback.compactArtworkLayout
+import com.melox.player.ui.screen.playback.PLAYER_ARTWORK_CONTAINER_EXPANSION
+import com.melox.player.ui.screen.playback.PLAYER_ARTWORK_PLAYING_PADDING
+import com.melox.player.ui.screen.playback.PLAYER_ARTWORK_VERTICAL_FOOTPRINT_EXPANSION
 import com.melox.player.ui.screen.playback.lyricPlaybackPositionMs
 import com.melox.player.ui.screen.playback.stabilizedLyricPlaybackPositionMs
+import com.melox.player.ui.screen.playback.rememberLyricDocumentTransition
+import com.melox.player.ui.screen.playback.rememberCompactArtworkLyricsPresence
+import com.melox.player.ui.screen.playback.fitPlayerArtworkSize
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
 
 class LyricPlaybackClockTest {
+    @Test
+    fun artworkLyricsKeepTheResolvedLayoutDuringLoadingAndReactToConfirmedResults() = runBlocking {
+        val line = LyricLine("main", 0, 1_000, "Lyrics", emptyList(), null)
+        val available = LyricsUiState.Available(
+            LyricsDocument(listOf(line), LyricsFormat.LRC, LyricsSource.SIDECAR), "song")
+        val input = mutableStateOf<LyricsUiState>(LyricsUiState.Loading)
+        var present = false
+        withArtworkComposition(content = {
+            val current = rememberCompactArtworkLyricsPresence(input.value)
+            SideEffect { present = current }
+        }) {
+            frame(0)
+            assertTrue(present)
+            input.value = available
+            frame(16)
+            assertTrue(present)
+            input.value = LyricsUiState.Loading
+            frame(32)
+            assertTrue(present)
+            input.value = available.copy(mediaId = "next")
+            frame(48)
+            assertTrue(present)
+
+            input.value = LyricsUiState.Unavailable
+            frame(64)
+            assertFalse(present)
+            input.value = LyricsUiState.Loading
+            frame(80)
+            assertFalse(present)
+            input.value = available.copy(document = available.document.copy(lines = emptyList()))
+            frame(96)
+            assertFalse(present)
+            input.value = available.copy(document = available.document.copy(lines = listOf(
+                line.copy(isBackground = true), line.copy(text = " "))))
+            frame(112)
+            assertFalse(present)
+            input.value = LyricsUiState.Loading
+            frame(128)
+            assertFalse(present)
+            input.value = available
+            frame(144)
+            assertTrue(present)
+        }
+    }
+
+    @Test
+    fun lyricDocumentTransitionsRetainContentForFadeOutAndFadeInAfterLoading() = runBlocking {
+        val first = LyricsUiState.Available(
+            LyricsDocument(listOf(LyricLine("main", 0, 1_000, "First", emptyList(), null)),
+                LyricsFormat.LRC, LyricsSource.SIDECAR), "first")
+        val second = first.copy(document = first.document.copy(
+            lines = first.document.lines.map { it.copy(text = "Second") }), mediaId = "second")
+        val input = mutableStateOf<LyricsUiState>(first)
+        var displayed: LyricsUiState.Available? = null
+        lateinit var alpha: State<Float>
+        withArtworkComposition(content = {
+            val transition = rememberLyricDocumentTransition(input.value)
+            SideEffect { displayed = transition.first; alpha = transition.second }
+        }) {
+            frame(0)
+            assertEquals(first, displayed)
+            assertEquals(0f, alpha.value, 0f)
+            frame(120)
+            assertTrue(alpha.value > 0f && alpha.value < 1f)
+            frame(240)
+            assertEquals(1f, alpha.value, 0f)
+
+            input.value = LyricsUiState.Loading
+            frame(256)
+            frame(346)
+            assertEquals(first, displayed)
+            assertTrue(alpha.value > 0f && alpha.value < 1f)
+            frame(436)
+            assertEquals(0f, alpha.value, 0f)
+
+            input.value = second
+            frame(452)
+            assertEquals(second, displayed)
+            assertEquals(0f, alpha.value, 0f)
+            frame(572)
+            assertTrue(alpha.value > 0f && alpha.value < 1f)
+            frame(692)
+            assertEquals(1f, alpha.value, 0f)
+
+            input.value = LyricsUiState.Unavailable
+            frame(708)
+            frame(798)
+            assertEquals(second, displayed)
+            assertTrue(alpha.value > 0f && alpha.value < 1f)
+            frame(888)
+            assertNull(displayed)
+            assertEquals(0f, alpha.value, 0f)
+        }
+    }
+
+    @Test
+    fun interruptedLyricReplacementFadesOnlyIntoTheLatestSong() = runBlocking {
+        val document = LyricsDocument(emptyList(), LyricsFormat.LRC, LyricsSource.SIDECAR)
+        val first = LyricsUiState.Available(document, "first")
+        val input = mutableStateOf<LyricsUiState>(first)
+        var displayed: LyricsUiState.Available? = null
+        lateinit var alpha: State<Float>
+        val visibleSongs = mutableListOf<String?>()
+        withArtworkComposition(content = {
+            val transition = rememberLyricDocumentTransition(input.value)
+            SideEffect {
+                displayed = transition.first
+                alpha = transition.second
+                visibleSongs += displayed?.mediaId
+            }
+        }) {
+            frame(0)
+            frame(240)
+            input.value = first.copy(mediaId = "skipped")
+            frame(256)
+            frame(346)
+            assertEquals(first, displayed)
+            assertTrue(alpha.value > 0f && alpha.value < 1f)
+            input.value = first.copy(mediaId = "latest")
+            frame(362)
+            frame(542)
+            assertEquals("latest", displayed?.mediaId)
+            assertEquals(0f, alpha.value, 0f)
+            frame(782)
+            assertEquals(1f, alpha.value, 0f)
+            assertFalse("skipped" in visibleSongs)
+        }
+    }
+
+    @Test
+    fun compactLyricsFollowPrimaryVocalsAndKeepCompletedLinesThroughGaps() {
+        val first = LyricLine("lead", 1_000, 2_000, "First", emptyList(), "Translation")
+        val second = first.copy(startTimeMs = 5_000, endTimeMs = 6_000, text = "Second")
+        val document = LyricsDocument(
+            listOf(
+                first,
+                first.copy(startTimeMs = 1_500, text = "Backing", isBackground = true),
+                first.copy(startTimeMs = 3_000, text = " "),
+                second,
+            ), LyricsFormat.TTML, LyricsSource.EMBEDDED,
+        )
+        val lines = compactPrimaryLines(document)
+        assertEquals(listOf(first, second), lines)
+        assertEquals(-1, compactLyricIndexAtPosition(lines, 999))
+        assertEquals(0, compactLyricIndexAtPosition(lines, 1_000))
+        assertEquals(0, compactLyricIndexAtPosition(lines, 4_999))
+        assertEquals(1, compactLyricIndexAtPosition(lines, 5_000))
+        assertEquals(1, compactLyricIndexAtPosition(lines, 9_000))
+        // Backward seeks and repeat restarts select directly, without replaying intermediate lines.
+        assertEquals(0, compactLyricIndexAtPosition(lines, 1_500))
+        assertEquals(-1, compactLyricIndexAtPosition(lines, 0))
+        assertEquals(-1, compactLyricIndexAtPosition(emptyList(), 10_000))
+    }
+
+    @Test
+    fun compactLyricsRejectDocumentsFromThePreviousTrack() {
+        val document = LyricsDocument(emptyList(), LyricsFormat.LRC, LyricsSource.SIDECAR)
+        val state = LyricsUiState.Available(document, "first")
+        assertSame(document, compactLyricsDocument(state, "first"))
+        assertNull(compactLyricsDocument(state, "second"))
+        assertNull(compactLyricsDocument(state, null))
+        assertNull(compactLyricsDocument(LyricsUiState.Loading, "first"))
+        assertNull(compactLyricsDocument(LyricsUiState.Unavailable, "first"))
+    }
+
+    @Test
+    fun compactLyricsPackOnlyPresentAuxiliaryTextWithConsistentEntryGaps() {
+        val primary = LyricLine("main", 0, 1_000, "Original", emptyList(), null)
+        val translated = primary.copy(translation = "Translation")
+        val romanized = primary.copy(romanizations = listOf(LyricAuxiliaryText("Romanization")))
+        val both = romanized.copy(translation = "Translation")
+        val blank = primary.copy(translation = " \n ", romanizations = listOf(LyricAuxiliaryText(" ")))
+        val auxiliary = listOf(primary, translated, romanized, both, blank).map {
+            compactLyricAuxiliaryText(it, showTranslation = true, showRomanization = true)
+        }
+        assertEquals(listOf(emptyList<String>(), listOf("Translation"), listOf("Romanization"),
+            listOf("Romanization", "Translation"), emptyList<String>()), auxiliary)
+        assertEquals(listOf("Translation"), compactLyricAuxiliaryText(both, true, false))
+        assertEquals(listOf("Romanization"), compactLyricAuxiliaryText(both, false, true))
+        assertEquals(emptyList<String>(), compactLyricAuxiliaryText(both, false, false))
+
+        val heights = auxiliary.map { 20f + 16f * it.size }
+        val centers = compactLyricRowCenters(heights, 6f)
+        assertArrayEquals(floatArrayOf(10f, 44f, 86f, 136f, 178f), centers, 0f)
+        for (index in 1..heights.lastIndex) {
+            val previousBottom = centers[index - 1] + heights[index - 1] / 2f
+            val nextTop = centers[index] - heights[index] / 2f
+            assertEquals(6f, nextTop - previousBottom, 0f)
+        }
+    }
+
+    @Test
+    fun compactLongLinesFollowTheCursorAndStopAtTextEdges() {
+        assertEquals(0f, compactLyricScrollTarget(100f, 400f, 0f, false), 0f)
+        assertEquals(-150f, compactLyricScrollTarget(100f, 400f, 200f, false), 0f)
+        assertEquals(-300f, compactLyricScrollTarget(100f, 400f, 400f, false), 0f)
+        assertEquals(20f, compactLyricScrollTarget(100f, 60f, 60f, true), 0f)
+        assertEquals(0f, compactLyricScrollTarget(100f, 60f, 60f, false), 0f)
+        val scroll = CompactLyricScroll()
+        assertEquals(0f, scroll.update(0f, 1_000, 100f, 400f), 0f)
+        val next = scroll.update(-100f, 1_250, 100f, 400f)
+        assertEquals(-63.212f, next, 0.001f)
+        // A backward seek and a resize reanchor without scrolling across obsolete text.
+        assertEquals(-200f, scroll.update(-200f, 500, 100f, 400f), 0f)
+        assertEquals(-20f, scroll.update(-20f, 516, 200f, 400f), 0f)
+        assertEquals(-40f, scroll.update(-40f, 532, 200f, 400f, smooth = false), 0f)
+    }
+
+    @Test
+    fun portraitLyricsUseSaltSpaceBudgetAndPlayingArtworkBounds() {
+        val geometry = compactArtworkLayout(600.dp, 330.dp, 28.dp)
+        val playingInset = (PLAYER_ARTWORK_VERTICAL_FOOTPRINT_EXPANSION -
+            PLAYER_ARTWORK_CONTAINER_EXPANSION) / 2f + PLAYER_ARTWORK_PLAYING_PADDING
+        val artworkBottom = geometry.artworkTop + geometry.artworkHeight - playingInset
+        val lyricCenter = geometry.lyricsTop + geometry.lyricsHeight / 2f
+        assertEquals((artworkBottom.value + 628f) / 2f, lyricCenter.value, 0.001f)
+        assertEquals(68.dp, geometry.lyricsHeight)
+        assertEquals(330.dp + PLAYER_ARTWORK_VERTICAL_FOOTPRINT_EXPANSION, geometry.artworkHeight)
+        assertTrue(geometry.artworkTop < (600.dp - geometry.artworkHeight) / 2f)
+        assertTrue(geometry.lyricsTop >= artworkBottom)
+        assertTrue(geometry.lyricsTop + geometry.lyricsHeight <= 600.dp)
+
+        val withoutLyrics = compactArtworkLayout(600.dp, 330.dp, 28.dp, reserveLyrics = false)
+        assertEquals(300.dp, withoutLyrics.artworkTop + withoutLyrics.artworkHeight / 2f)
+        assertTrue(withoutLyrics.artworkTop > geometry.artworkTop)
+        assertEquals(0.dp, withoutLyrics.lyricsHeight)
+        assertEquals(fitPlayerArtworkSize(330.dp, 600.dp),
+            withoutLyrics.artworkHeight - PLAYER_ARTWORK_VERTICAL_FOOTPRINT_EXPANSION)
+
+        assertEquals(24.dp, compactArtworkLayout(416.dp, 330.dp, 28.dp).lyricsHeight)
+        assertEquals(68.dp, compactArtworkLayout(417.dp, 330.dp, 28.dp).lyricsHeight)
+
+        val small = compactArtworkLayout(300.dp, 330.dp, 28.dp)
+        assertEquals(24.dp, small.lyricsHeight)
+        assertTrue(small.artworkHeight < geometry.artworkHeight)
+        assertTrue(small.lyricsTop + small.lyricsHeight <= 300.dp)
+        val smallWithoutLyrics = compactArtworkLayout(300.dp, 330.dp, 28.dp, reserveLyrics = false)
+        assertEquals(150.dp, smallWithoutLyrics.artworkTop + smallWithoutLyrics.artworkHeight / 2f)
+        assertEquals(fitPlayerArtworkSize(330.dp, 300.dp),
+            smallWithoutLyrics.artworkHeight - PLAYER_ARTWORK_VERTICAL_FOOTPRINT_EXPANSION)
+        val empty = compactArtworkLayout(0.dp, 330.dp, 28.dp)
+        assertEquals(0.dp, empty.artworkHeight)
+        assertEquals(0.dp, empty.lyricsHeight)
+        assertEquals(0.dp, empty.lyricsTop)
+    }
+
     @Test
     fun hiddenPlaybackSamplesKeepTheClockReadyWithoutFrames() {
         val clock = LyricPlaybackClock(1_000, 0)

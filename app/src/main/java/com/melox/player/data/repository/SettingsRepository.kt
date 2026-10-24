@@ -142,6 +142,8 @@ class SettingsRepository(context: Context) {
                 leftAlignPlayerTitle = preferences[Keys.LeftAlignPlayerTitle] ?: false,
                 hideControlsOnLyrics = preferences[Keys.HideControlsOnLyrics] ?: false,
                 showLyricsTranslation = preferences[Keys.ShowLyricsTranslation] ?: true,
+                showMiniPlayerLyrics = preferences[Keys.ShowMiniPlayerLyrics] ?: true,
+                showArtworkLyrics = preferences[Keys.ShowArtworkLyrics] ?: false,
                 showMusicTagEditor = preferences[Keys.ShowMusicTagEditor] ?: true,
                 showLyricoEditor = preferences[Keys.ShowLyricoEditor] ?: true,
                 showLunaBeatEditor = preferences[Keys.ShowLunaBeatEditor] ?: true,
@@ -403,6 +405,14 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    suspend fun setShowMiniPlayerLyrics(enabled: Boolean) {
+        dataStore.edit { it[Keys.ShowMiniPlayerLyrics] = enabled }
+    }
+
+    suspend fun setShowArtworkLyrics(enabled: Boolean) {
+        dataStore.edit { it[Keys.ShowArtworkLyrics] = enabled }
+    }
+
     suspend fun setShowLyricsTranslation(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[Keys.ShowLyricsTranslation] = enabled
@@ -646,6 +656,8 @@ class SettingsRepository(context: Context) {
         val LeftAlignPlayerTitle = booleanPreferencesKey("left_align_player_title")
         val HideControlsOnLyrics = booleanPreferencesKey("hide_controls_on_lyrics")
         val ShowLyricsTranslation = booleanPreferencesKey("show_lyrics_translation")
+        val ShowMiniPlayerLyrics = booleanPreferencesKey("show_mini_player_lyrics")
+        val ShowArtworkLyrics = booleanPreferencesKey("show_artwork_lyrics")
         val ShowMusicTagEditor = booleanPreferencesKey("show_music_tag_editor")
         val ShowLyricoEditor = booleanPreferencesKey("show_lyrico_editor")
         val ShowLunaBeatEditor = booleanPreferencesKey("show_luna_beat_editor")

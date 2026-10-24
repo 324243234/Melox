@@ -233,7 +233,8 @@ internal fun Flow<LyricsRequest?>.resolveLyricsStates(
                 document = document,
             )
         ) {
-            send(document?.let(LyricsUiState::Available) ?: LyricsUiState.Unavailable)
+            send(document?.let { LyricsUiState.Available(it, request.mediaId) }
+                ?: LyricsUiState.Unavailable)
         }
         previousRequest = request
         previousDocument = document
@@ -791,6 +792,14 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             settingsRepository.setHideControlsOnLyrics(enabled)
         }
+    }
+
+    fun setShowMiniPlayerLyrics(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.setShowMiniPlayerLyrics(enabled) }
+    }
+
+    fun setShowArtworkLyrics(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.setShowArtworkLyrics(enabled) }
     }
 
     fun setShowLyricsTranslation(enabled: Boolean) {

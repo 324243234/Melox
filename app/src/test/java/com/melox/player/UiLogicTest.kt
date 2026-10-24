@@ -407,6 +407,8 @@ class UiLogicTest {
         assertFalse(settings.centerLyrics)
         assertFalse(settings.leftAlignPlayerTitle)
         assertTrue(settings.showLyricsTranslation)
+        assertTrue(settings.showMiniPlayerLyrics)
+        assertFalse(settings.showArtworkLyrics)
         assertEquals(LyricsSourcePriority.EMBEDDED, settings.lyricsSourcePriority)
         assertEquals(
             LyricsSidecarFormatPriority.LRC,

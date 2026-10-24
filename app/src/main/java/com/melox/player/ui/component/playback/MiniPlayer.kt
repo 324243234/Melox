@@ -119,6 +119,7 @@ internal fun MiniPlayer(
     onArtworkBoundsChanged: (Rect) -> Unit,
     modifier: Modifier = Modifier,
     circularArtwork: Boolean = false,
+    subtitleContent: (@Composable (String?, String, TextStyle, Color, Dp) -> Unit)? = null,
 ) {
     val item = playback.currentItem
     val hasItem = item != null
@@ -379,6 +380,7 @@ internal fun MiniPlayer(
                     },
                     modifier = Modifier.weight(1f),
                     contentStartPadding = 4.dp,
+                    subtitleContent = subtitleContent,
                 )
                 Spacer(modifier = Modifier.width(if (isNormal) 6.dp else 2.dp))
                 Row(
@@ -473,6 +475,7 @@ private fun SwipeableMetadata(
     artistStyle: TextStyle,
     modifier: Modifier = Modifier,
     contentStartPadding: Dp = 0.dp,
+    subtitleContent: (@Composable (String?, String, TextStyle, Color, Dp) -> Unit)? = null,
 ) {
     val item = playback.currentItem
     val currentOnSwipeStart by rememberUpdatedState(onSwipeStart)
@@ -693,8 +696,7 @@ private fun SwipeableMetadata(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .graphicsLayer { translationX = horizontalOffset }
-                .padding(start = contentStartPadding),
+                .graphicsLayer { translationX = horizontalOffset },
         ) {
             outgoingMetadata?.let { metadata ->
                 MiniMetadataColumn(
@@ -704,6 +706,7 @@ private fun SwipeableMetadata(
                     alpha = 1f - crossfadeProgress,
                     titleStyle = titleStyle,
                     artistStyle = artistStyle,
+                    contentStartPadding = contentStartPadding,
                 )
             }
             MiniMetadataColumn(
@@ -713,6 +716,8 @@ private fun SwipeableMetadata(
                 alpha = if (outgoingMetadata == null) 1f else crossfadeProgress,
                 titleStyle = titleStyle,
                 artistStyle = artistStyle,
+                contentStartPadding = contentStartPadding,
+                subtitleContent = subtitleContent,
             )
         }
     }
@@ -803,6 +808,8 @@ private fun MiniMetadataColumn(
     alpha: Float,
     titleStyle: TextStyle,
     artistStyle: TextStyle,
+    contentStartPadding: Dp,
+    subtitleContent: (@Composable (String?, String, TextStyle, Color, Dp) -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier
@@ -811,7 +818,7 @@ private fun MiniMetadataColumn(
     ) {
         Text(
             text = metadata.title,
-            modifier = Modifier,
+            modifier = Modifier.padding(start = contentStartPadding),
             style = titleStyle,
             color = titleColor,
             fontWeight = FontWeight.Bold,
@@ -819,15 +826,19 @@ private fun MiniMetadataColumn(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Text(
-            text = metadata.artist,
-            modifier = Modifier,
-            style = artistStyle,
-            color = artistColor,
-            textAlign = TextAlign.Start,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (subtitleContent != null) {
+            subtitleContent(metadata.mediaId, metadata.artist, artistStyle, artistColor, contentStartPadding)
+        } else {
+            Text(
+                text = metadata.artist,
+                modifier = Modifier.padding(start = contentStartPadding),
+                style = artistStyle,
+                color = artistColor,
+                textAlign = TextAlign.Start,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

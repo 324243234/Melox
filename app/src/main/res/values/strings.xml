@@ -388,6 +388,10 @@
     <string name="settings_custom_background_blur_title">Wallpaper blur</string>
     <string name="settings_percent_value">%1$d%%</string>
     <string name="settings_custom_background_failed">Unable to use this image</string>
+    <string name="lyrics_mini_player">Mini player lyrics</string>
+    <string name="lyrics_priority_section">Lyrics priority</string>
+    <string name="lyrics_display_section">Lyrics display</string>
+    <string name="lyrics_artwork_page">Artwork page lyrics</string>
     <string name="lyrics_editor_menu">Lyrics editing menu</string>
     <string name="lyrics_editor_music_tag">Music Tag Editor</string>
     <string name="lyrics_editor_lyrico">Lyrico</string>

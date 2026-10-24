@@ -53,6 +53,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -217,6 +218,8 @@ import com.melox.player.ui.screen.library.FolderLibraryScreen
 import com.melox.player.ui.screen.home.HomeScreen
 import com.melox.player.ui.screen.home.homeInitialRecommendationCount
 import com.melox.player.ui.screen.home.rememberHomeRecommendations
+import com.melox.player.ui.screen.playback.MiniPlayerLyrics
+import com.melox.player.ui.screen.playback.compactLyricsDocument
 import com.melox.player.ui.screen.playback.FullPlayerScreen
 import com.melox.player.ui.screen.playback.QueueSheet
 import com.melox.player.ui.screen.playlist.PlaylistDetailScreen
@@ -1835,6 +1838,8 @@ fun MeloxApp(
                                     viewModel = viewModel,
                                     artworkState = artworkState,
                                     circularArtwork = settings.circularArtwork,
+                                    showMiniPlayerLyrics = settings.showMiniPlayerLyrics,
+                                    lyricAnimationMode = settings.lyricAnimationMode,
                                     chrome = chrome,
                                     onChromeChanged = { miniPlayerChrome = it },
                                     interactiveHighlight = miniPlayerInteractiveHighlight,
@@ -2085,6 +2090,10 @@ fun MeloxApp(
                                                                 viewModel::setLyricsSourcePriority,
                                                             onLyricsSidecarFormatPriorityChange =
                                                                 viewModel::setLyricsSidecarFormatPriority,
+                                                            onShowMiniPlayerLyricsChange =
+                                                                viewModel::setShowMiniPlayerLyrics,
+                                                            onShowArtworkLyricsChange =
+                                                                viewModel::setShowArtworkLyrics,
                                                             onShowMusicTagEditorChange =
                                                                 viewModel::setShowMusicTagEditor,
                                                             onShowLyricoEditorChange =
@@ -2616,6 +2625,7 @@ fun MeloxApp(
                             hideControlsOnLyrics = settings.hideControlsOnLyrics,
                             immersiveMode = settings.immersiveMode,
                             showLyricsTranslation = settings.showLyricsTranslation,
+                            showArtworkLyrics = settings.showArtworkLyrics,
                             showMusicTagEditor = settings.showMusicTagEditor,
                             showLyricoEditor = settings.showLyricoEditor,
                             showLunaBeatEditor = settings.showLunaBeatEditor,
@@ -2837,6 +2847,7 @@ private fun FullPlayerHost(
     hideControlsOnLyrics: Boolean,
     immersiveMode: Boolean,
     showLyricsTranslation: Boolean,
+    showArtworkLyrics: Boolean,
     showMusicTagEditor: Boolean,
     showLyricoEditor: Boolean,
     showLunaBeatEditor: Boolean,
@@ -2899,6 +2910,7 @@ private fun FullPlayerHost(
         immersiveMode = immersiveMode,
         onImmersiveModeChange = viewModel::setImmersiveMode,
         showLyricsTranslation = showLyricsTranslation,
+        showArtworkLyrics = showArtworkLyrics,
         onLyricFontScaleChange = viewModel::setLyricFontScale,
         onLyricFontWeightChange = viewModel::setLyricFontWeight,
         onLyricAnimationModeChange = viewModel::setLyricAnimationMode,
@@ -2966,6 +2978,8 @@ private fun MiniPlayerHost(
     viewModel: MeloxViewModel,
     artworkState: ArtworkTransitionState<Bitmap>,
     circularArtwork: Boolean,
+    showMiniPlayerLyrics: Boolean,
+    lyricAnimationMode: LyricAnimationMode,
     chrome: MiniPlayerChrome,
     onChromeChanged: (MiniPlayerChrome) -> Unit,
     interactiveHighlight: InteractiveHighlight,
@@ -3027,7 +3041,56 @@ private fun MiniPlayerHost(
         onPlayerContentBoundsChanged = onPlayerContentBoundsChanged,
         onPlayerControlsBoundsChanged = onPlayerControlsBoundsChanged,
         onArtworkBoundsChanged = onArtworkBoundsChanged,
+        subtitleContent = { mediaId, artist, style, color, textStartPadding ->
+            MiniPlayerSubtitleHost(
+                viewModel = viewModel,
+                mediaId = mediaId,
+                artist = artist,
+                style = style,
+                color = color,
+                textStartPadding = textStartPadding,
+                enabled = showMiniPlayerLyrics,
+                active = drawInPlace && surfaceVisible && !recordForTransition,
+                animationMode = lyricAnimationMode,
+            )
+        },
     )
+}
+
+@Composable
+private fun MiniPlayerSubtitleHost(
+    viewModel: MeloxViewModel,
+    mediaId: String?,
+    artist: String,
+    style: androidx.compose.ui.text.TextStyle,
+    color: androidx.compose.ui.graphics.Color,
+    textStartPadding: Dp,
+    enabled: Boolean,
+    active: Boolean,
+    animationMode: LyricAnimationMode,
+) {
+    val playback by viewModel.playbackState.collectAsStateWithLifecycle()
+    val lyrics by viewModel.lyricsState.collectAsStateWithLifecycle()
+    val document = if (enabled) {
+        compactLyricsDocument(
+            lyrics, mediaId.takeIf { it == playback.currentItem?.mediaId },
+        )
+    } else {
+        null
+    }
+    key(mediaId, playback.currentItem?.mediaId) {
+        MiniPlayerLyrics(
+            document = document,
+            playback = playback,
+            artist = artist,
+            style = style,
+            color = color,
+            active = active,
+            animationMode = animationMode,
+            modifier = Modifier.fillMaxWidth(),
+            textStartPadding = textStartPadding,
+        )
+    }
 }
 
 private fun playerSheetArtworkIsOffscreen(

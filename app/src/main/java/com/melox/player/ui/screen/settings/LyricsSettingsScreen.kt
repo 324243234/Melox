@@ -61,6 +61,8 @@ internal fun LyricsSettingsScreen(
     onLyricsSourcePriorityChange: (LyricsSourcePriority) -> Unit,
     onLyricsSidecarFormatPriorityChange: (LyricsSidecarFormatPriority) -> Unit,
     onOpenLyricsInterface: () -> Unit,
+    onShowMiniPlayerLyricsChange: (Boolean) -> Unit,
+    onShowArtworkLyricsChange: (Boolean) -> Unit,
     onShowMusicTagEditorChange: (Boolean) -> Unit,
     onShowLyricoEditorChange: (Boolean) -> Unit,
     onShowLunaBeatEditorChange: (Boolean) -> Unit,
@@ -70,6 +72,12 @@ internal fun LyricsSettingsScreen(
     }
     var formatPriority by remember(settings.lyricsSidecarFormatPriority) {
         mutableStateOf(settings.lyricsSidecarFormatPriority)
+    }
+    var showMiniPlayerLyrics by remember(settings.showMiniPlayerLyrics) {
+        mutableStateOf(settings.showMiniPlayerLyrics)
+    }
+    var showArtworkLyrics by remember(settings.showArtworkLyrics) {
+        mutableStateOf(settings.showArtworkLyrics)
     }
     var showMusicTagEditor by remember(settings.showMusicTagEditor) {
         mutableStateOf(settings.showMusicTagEditor)
@@ -87,6 +95,9 @@ internal fun LyricsSettingsScreen(
         scrollBehavior = scrollBehavior,
         onBack = onBack,
     ) {
+        item(key = "lyrics_priorities_title") {
+            SmallTitle(text = stringResource(R.string.lyrics_priority_section))
+        }
         item(key = "lyrics_priorities") {
             Card(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -137,13 +148,35 @@ internal fun LyricsSettingsScreen(
                 )
             }
         }
+        item(key = "lyrics_display_title") {
+            SmallTitle(
+                text = stringResource(R.string.lyrics_display_section),
+                modifier = Modifier.padding(top = 12.dp),
+            )
+        }
         item(key = "lyrics_interface") {
             Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 12.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
             ) {
                 ArrowPreference(
                     title = stringResource(R.string.settings_lyrics_interface_title),
                     onClick = onOpenLyricsInterface,
+                )
+                SwitchPreference(
+                    title = stringResource(R.string.lyrics_mini_player),
+                    checked = showMiniPlayerLyrics,
+                    onCheckedChange = {
+                        showMiniPlayerLyrics = it
+                        onShowMiniPlayerLyricsChange(it)
+                    },
+                )
+                SwitchPreference(
+                    title = stringResource(R.string.lyrics_artwork_page),
+                    checked = showArtworkLyrics,
+                    onCheckedChange = {
+                        showArtworkLyrics = it
+                        onShowArtworkLyricsChange(it)
+                    },
                 )
             }
         }

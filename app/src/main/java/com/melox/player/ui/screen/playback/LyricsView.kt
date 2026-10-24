@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyLayoutScrollScope
@@ -60,6 +61,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
@@ -67,6 +69,9 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -369,7 +374,7 @@ internal fun lyricLineVerticalPaddingDp(
 }
 
 @Composable
-private fun rememberSmoothLyricTimeProvider(
+internal fun rememberSmoothLyricTimeProvider(
     document: LyricsDocument,
     positionMs: Long,
     positionUpdateElapsedRealtimeMs: Long,
@@ -1251,6 +1256,88 @@ private fun TranslationText(
 }
 
 @Composable
+internal fun CompactTimedLyricLine(
+    line: LyricLine,
+    style: TextStyle,
+    color: Color,
+    currentTimeProvider: () -> Long,
+    animationMode: LyricAnimationMode,
+    documentHasTimedWords: Boolean,
+    modifier: Modifier = Modifier,
+    centered: Boolean = false,
+    focused: Boolean = true,
+    resetKey: Any? = null,
+    textStartPadding: Dp = 0.dp,
+    textBaseline: Dp? = null,
+) {
+    val density = LocalDensity.current
+    val direction = LocalLayoutDirection.current
+    val measurer = rememberTextMeasurer()
+    val cache = remember(style, color, density, direction) { PreparedLyricLineCache() }
+    val singleLine = remember(line) {
+        if ('\n' !in line.displayText) line else line.copy(
+            text = line.text?.replace('\n', ' '),
+            words = line.words.map { it.copy(text = it.text.replace('\n', ' ')) },
+        )
+    }
+    val prepared = remember(cache, singleLine) {
+        cache.prepare(singleLine, Float.MAX_VALUE, measurer, style, color, density, direction,
+            wordEffects = false)
+    }
+    val preparedBaseline = remember(prepared) {
+        prepared.rows.firstOrNull()?.layouts?.maxOfOrNull { it.position.y + it.firstBaseline } ?: 0f
+    }
+    val alignment = remember { mutableFloatStateOf(0f) }
+    val scroll = remember(singleLine, resetKey) { CompactLyricScroll() }
+    val latestTime = rememberUpdatedState(currentTimeProvider)
+    val usesWordProgress = animationMode.usesWordAnimation(line.words.isNotEmpty(), documentHasTimedWords)
+    val lineHeight = with(density) { compactLyricLineHeight(style).toDp() }
+    val effectScale = with(density) { lyricEffectGeometryScale(style.fontSize.toPx()) }
+    val fadeWidth = with(density) { style.fontSize.toPx() * 0.25f }
+    val textStartPx = with(density) { textStartPadding.toPx() }
+    val textBaselinePx = with(density) { textBaseline?.toPx() }
+    var durationScale by remember { mutableStateOf<MotionDurationScale?>(null) }
+    LaunchedEffect(Unit) { durationScale = coroutineContext[MotionDurationScale] }
+    Box(
+        modifier = modifier.height(lineHeight)
+            .semantics { text = AnnotatedString(line.displayText) }
+            .drawWithCache {
+                onDrawBehind {
+                    val row = prepared.rows.firstOrNull() ?: return@onDrawBehind
+                    val position = latestTime.value()
+                    val cursor = if (!focused) 0f else if (usesWordProgress) {
+                        linePixelPosition(row, position)
+                    } else {
+                        row.width * lyricIntervalProgress(position, line.startTimeMs, line.endTimeMs)
+                    }
+                    val target = textStartPx + compactLyricScrollTarget(
+                        (size.width - textStartPx).coerceAtLeast(0f), row.width, cursor, centered)
+                    val offset = scroll.update(target, position, size.width, row.width,
+                        smooth = durationScale?.scaleFactor != 0f)
+                    clipRect {
+                        val textTop = textBaselinePx?.minus(preparedBaseline)
+                            ?: ((size.height - prepared.heightPx) / 2f)
+                        translate(offset, textTop) {
+                            drawLyricsLine(
+                                rows = prepared.rows,
+                                canvasWidth = row.width,
+                                alignmentProgress = alignment,
+                                positionMs = if (usesWordProgress && focused) position else line.endTimeMs,
+                                color = color,
+                                activeAlpha = 1f,
+                                effectScale = effectScale,
+                                fadeWidthPx = fadeWidth,
+                                glyphMotionEnabled = false,
+                                inactiveAlpha = 0.3f,
+                            )
+                        }
+                    }
+                }
+            },
+    )
+}
+
+@Composable
 private fun TimedLyricLine(
     line: LyricLine,
     prepared: PreparedLyricLine,
@@ -1432,15 +1519,17 @@ private class RowRenderData(
     )
     private var maskAlpha = Float.NaN
     private var maskWidth = Float.NaN
+    private var maskInactiveAlpha = Float.NaN
     private var mask: Brush? = null
 
-    fun gradient(activeAlpha: Float, fadeWidth: Float): Brush {
-        if (activeAlpha != maskAlpha || fadeWidth != maskWidth) {
+    fun gradient(activeAlpha: Float, fadeWidth: Float, inactiveAlpha: Float): Brush {
+        if (activeAlpha != maskAlpha || fadeWidth != maskWidth || inactiveAlpha != maskInactiveAlpha) {
             maskAlpha = activeAlpha
             maskWidth = fadeWidth
+            maskInactiveAlpha = inactiveAlpha
             mask = Brush.horizontalGradient(
                 listOf(Color.White.copy(alpha = activeAlpha),
-                    Color.White.copy(alpha = LYRIC_INACTIVE_TEXT_ALPHA)),
+                    Color.White.copy(alpha = inactiveAlpha)),
                 startX = -fadeWidth / 2f, endX = fadeWidth / 2f,
             )
         }
@@ -1472,22 +1561,23 @@ private fun PreparedLyricLine.visualOutsets(
 
 /** Retain preparation across lazy-item disposal, bounded to a small part of the document. */
 private class PreparedLyricLineCache {
-    private data class Key(val line: LyricLine, val width: Float)
+    private data class Key(val line: LyricLine, val width: Float, val wordEffects: Boolean)
     private val entries = LinkedHashMap<Key, PreparedLyricLine>(32, 0.75f, true)
     private var rasterBytes = 0L
 
     fun prepare(
         line: LyricLine, width: Float, measurer: TextMeasurer, style: TextStyle,
         color: Color, density: androidx.compose.ui.unit.Density, direction: LayoutDirection,
+        wordEffects: Boolean = true,
     ): PreparedLyricLine {
-        val key = Key(line, width)
+        val key = Key(line, width, wordEffects)
         synchronized(entries) { entries[key]?.let { return it } }
         val syllables = line.animationWords().map {
             Syllable(it.startTimeMs, it.endTimeMs, it.text + if (it.hasTrailingSpace) " " else "")
         }
         val spaceWidth = measurer.measure(" ", style).size.width.toFloat()
         val measured = measureSyllables(syllables, measurer, style, spaceWidth, width,
-            hasNativeWordTiming = line.words.isNotEmpty())
+            hasNativeWordTiming = line.words.isNotEmpty() && wordEffects)
         val wrapped = calculateWrappedLines(measured, width, measurer, style)
         val height = measurer.measure("M", style).size.height.toFloat()
         val effectScale = with(density) { lyricEffectGeometryScale(style.fontSize.toPx()) }
@@ -1750,6 +1840,7 @@ private fun DrawScope.drawLyricsLine(
     effectScale: Float,
     fadeWidthPx: Float,
     glyphMotionEnabled: Boolean,
+    inactiveAlpha: Float = LYRIC_INACTIVE_TEXT_ALPHA,
 ) {
     val motionStrength = lyricLineMotionStrength(activeAlpha)
     rows.forEach { row ->
@@ -1757,9 +1848,9 @@ private fun DrawScope.drawLyricsLine(
         val fade = lyricFadeBounds(row.minX, row.maxX, linePixelPosition(row, positionMs), width)
         val offset = playerTextAlignmentOffset(row.minX, row.maxX, canvasWidth, alignmentProgress.value)
         val uniformAlpha = when {
-            positionMs <= row.firstStartTimeMs -> LYRIC_INACTIVE_TEXT_ALPHA
+            positionMs <= row.firstStartTimeMs -> inactiveAlpha
             positionMs >= row.lastEndTimeMs -> activeAlpha
-            activeAlpha == LYRIC_INACTIVE_TEXT_ALPHA -> LYRIC_INACTIVE_TEXT_ALPHA
+            activeAlpha == inactiveAlpha -> inactiveAlpha
             else -> null
         }
         withTransform({ translate(left = offset) }) {
@@ -1775,7 +1866,7 @@ private fun DrawScope.drawLyricsLine(
                     val clippedWidth = (fade.endX - fade.startX).coerceAtLeast(0.001f)
                     translate(left = center) {
                         drawRect(
-                            brush = row.gradient(activeAlpha, clippedWidth),
+                            brush = row.gradient(activeAlpha, clippedWidth, inactiveAlpha),
                             topLeft = row.layerBounds.topLeft - Offset(center, 0f),
                             size = row.layerBounds.size,
                             blendMode = BlendMode.DstIn,

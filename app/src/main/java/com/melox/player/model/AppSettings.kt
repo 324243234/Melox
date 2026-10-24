@@ -171,6 +171,8 @@ data class AppSettings(
     val leftAlignPlayerTitle: Boolean = false,
     val hideControlsOnLyrics: Boolean = false,
     val showLyricsTranslation: Boolean = true,
+    val showMiniPlayerLyrics: Boolean = true,
+    val showArtworkLyrics: Boolean = false,
     val showMusicTagEditor: Boolean = true,
     val showLyricoEditor: Boolean = true,
     val showLunaBeatEditor: Boolean = true,

@@ -191,6 +191,7 @@ internal fun FullPlayerScreen(
     immersiveMode: Boolean,
     onImmersiveModeChange: (Boolean) -> Unit,
     showLyricsTranslation: Boolean,
+    showArtworkLyrics: Boolean,
     onLyricFontScaleChange: (Float) -> Unit,
     onLyricFontWeightChange: (Int) -> Unit,
     onLyricAnimationModeChange: (LyricAnimationMode) -> Unit,
@@ -871,21 +872,42 @@ internal fun FullPlayerScreen(
                                         PortraitPlayerLayout(
                                             spacing = spacing,
                                             artworkModifier = overscrollModifier,
-                                            artworkContent = { artworkHeight ->
-                                                PlayerArtwork(
-                                                    circularArtwork = circularArtwork,
-                                                    showArtwork = item != null,
-                                                    size = fitPlayerArtworkSize(
-                                                        artworkSize,
-                                                        artworkHeight,
-                                                    ),
-                                                    artworkPadding = artworkPadding,
-                                                    artworkBlend = artworkBlend,
-                                                    cornerRadius = artworkCornerRadius,
-                                                    sharedArtworkVisible = sharedArtworkVisible,
-                                                    onArtworkBoundsChanged = onArtworkBoundsChanged,
-                                                    onArtworkDisplaySizeChanged =
-                                                        onArtworkDisplaySizeChanged,
+                                            artworkContent = { _ ->
+                                                PortraitArtworkWithLyrics(
+                                                    lyrics = lyrics,
+                                                    playback = playback,
+                                                    enabled = showArtworkLyrics,
+                                                    active = playerActive &&
+                                                        (pagerState.currentPage == 0 || pagerState.targetPage == 0),
+                                                    showTranslation = displayedShowLyricsTranslation,
+                                                    showRomanization = true,
+                                                    centerLyrics = displayedCenterLyrics,
+                                                    animationMode = displayedLyricAnimationMode,
+                                                    preferredArtworkSize = artworkSize,
+                                                    progressGap = spacing.artworkToProgress +
+                                                        PLAYER_PROGRESS_TOUCH_HEIGHT / 2f,
+                                                    contentWidth = artworkContentWidth,
+                                                    color = emphasisControlColor,
+                                                    previewPositionMs = lyricsPreviewPositionMs
+                                                        ?: lyricsSeekPositionMs.takeIf { lyricsSeekRequestKey != 0 },
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    artworkContent = { captionArtworkHeight ->
+                                                        PlayerArtwork(
+                                                            circularArtwork = circularArtwork,
+                                                            showArtwork = item != null,
+                                                            size = fitPlayerArtworkSize(
+                                                                artworkSize,
+                                                                captionArtworkHeight,
+                                                            ),
+                                                            artworkPadding = artworkPadding,
+                                                            artworkBlend = artworkBlend,
+                                                            cornerRadius = artworkCornerRadius,
+                                                            sharedArtworkVisible = sharedArtworkVisible,
+                                                            onArtworkBoundsChanged = onArtworkBoundsChanged,
+                                                            onArtworkDisplaySizeChanged =
+                                                                onArtworkDisplaySizeChanged,
+                                                        )
+                                                    },
                                                 )
                                             },
                                             detailsContent = {
@@ -924,7 +946,7 @@ internal fun FullPlayerScreen(
                             } else {
                                 PortraitPlayerLayout(
                                     spacing = spacing,
-                                    artworkContent = { artworkHeight ->
+                                    artworkContent = { _ ->
                                         PlayerContentPager(
                                             pagerState = pagerState,
                                             lyrics = lyrics,
@@ -958,27 +980,43 @@ internal fun FullPlayerScreen(
                                             seekPositionMs = lyricsSeekPositionMs,
                                             modifier = Modifier.fillMaxSize(),
                                             artworkContent = { overscrollModifier ->
-                                                Box(
+                                                PortraitArtworkWithLyrics(
+                                                    lyrics = lyrics,
+                                                    playback = playback,
+                                                    enabled = showArtworkLyrics,
+                                                    active = playerActive &&
+                                                        (pagerState.currentPage == 0 || pagerState.targetPage == 0),
+                                                    showTranslation = displayedShowLyricsTranslation,
+                                                    showRomanization = true,
+                                                    centerLyrics = displayedCenterLyrics,
+                                                    animationMode = displayedLyricAnimationMode,
+                                                    preferredArtworkSize = artworkSize,
+                                                    progressGap = spacing.artworkToProgress +
+                                                        PLAYER_PROGRESS_TOUCH_HEIGHT / 2f,
+                                                    contentWidth = artworkContentWidth,
+                                                    color = emphasisControlColor,
+                                                    previewPositionMs = lyricsPreviewPositionMs
+                                                        ?: lyricsSeekPositionMs.takeIf { lyricsSeekRequestKey != 0 },
                                                     modifier = Modifier.fillMaxSize().then(overscrollModifier),
-                                                    contentAlignment = Alignment.Center,
-                                                ) {
-                                                    PlayerArtwork(
-                                                        circularArtwork = circularArtwork,
-                                                        showArtwork = item != null,
-                                                        size = fitPlayerArtworkSize(
-                                                            artworkSize,
-                                                            artworkHeight,
-                                                        ),
-                                                        artworkPadding = artworkPadding,
-                                                        artworkBlend = artworkBlend,
-                                                        cornerRadius = artworkCornerRadius,
-                                                        sharedArtworkVisible = sharedArtworkVisible,
-                                                        onArtworkBoundsChanged =
-                                                            onArtworkBoundsChanged,
-                                                        onArtworkDisplaySizeChanged =
-                                                            onArtworkDisplaySizeChanged,
-                                                    )
-                                                }
+                                                    artworkContent = { captionArtworkHeight ->
+                                                        PlayerArtwork(
+                                                            circularArtwork = circularArtwork,
+                                                            showArtwork = item != null,
+                                                            size = fitPlayerArtworkSize(
+                                                                artworkSize,
+                                                                captionArtworkHeight,
+                                                            ),
+                                                            artworkPadding = artworkPadding,
+                                                            artworkBlend = artworkBlend,
+                                                            cornerRadius = artworkCornerRadius,
+                                                            sharedArtworkVisible = sharedArtworkVisible,
+                                                            onArtworkBoundsChanged =
+                                                                onArtworkBoundsChanged,
+                                                            onArtworkDisplaySizeChanged =
+                                                                onArtworkDisplaySizeChanged,
+                                                        )
+                                                    },
+                                                )
                                             },
                                         )
                                     },

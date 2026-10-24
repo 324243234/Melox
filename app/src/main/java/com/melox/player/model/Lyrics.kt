@@ -55,6 +55,9 @@ data class LyricLine(
             word.text + if (word.hasTrailingSpace) " " else ""
         }.trimEnd()
 
+    val romanization: String? = romanizations.map { it.text }.filter(String::isNotBlank).distinct()
+        .joinToString("\n").takeIf(String::isNotEmpty)
+
     fun animationWords(): List<LyricWord> = words.ifEmpty {
         listOf(LyricWord(startTimeMs, endTimeMs, displayText, hasTrailingSpace = false))
     }
@@ -164,6 +167,7 @@ sealed interface LyricsUiState {
 
     data class Available(
         val document: LyricsDocument,
+        val mediaId: String? = null,
     ) : LyricsUiState
 }
 

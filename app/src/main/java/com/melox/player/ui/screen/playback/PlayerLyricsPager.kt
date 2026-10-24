@@ -49,6 +49,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -104,7 +105,6 @@ import com.melox.player.data.library.ArtistGroup
 import com.melox.player.data.library.displayArtistName
 import com.melox.player.model.MusicTrack
 import com.melox.player.model.LyricsUiState
-import com.melox.player.model.LyricsDocument
 import com.melox.player.model.PlaybackMode
 import com.melox.player.model.PlaybackBackgroundStyle
 import com.melox.player.model.PlaybackQueueItem
@@ -242,6 +242,37 @@ internal fun PlayerContentPager(
         }
     }
 }
+
+@Composable
+internal fun rememberLyricDocumentTransition(
+    lyrics: LyricsUiState,
+): Pair<LyricsUiState.Available?, State<Float>> {
+    var displayedLyrics by remember { mutableStateOf<LyricsUiState.Available?>(null) }
+    val alpha = remember { Animatable(0f) }
+    LaunchedEffect(lyrics) {
+        when (lyrics) {
+            LyricsUiState.Loading -> {
+                if (displayedLyrics != null && alpha.value > 0f) alpha.animateTo(0f, tween(180))
+            }
+            LyricsUiState.Unavailable -> {
+                if (displayedLyrics != null) {
+                    if (alpha.value > 0f) alpha.animateTo(0f, tween(180))
+                    displayedLyrics = null
+                }
+            }
+            is LyricsUiState.Available -> {
+                if (displayedLyrics != lyrics) {
+                    if (displayedLyrics != null && alpha.value > 0f) alpha.animateTo(0f, tween(180))
+                    displayedLyrics = lyrics
+                    alpha.snapTo(0f)
+                }
+                alpha.animateTo(1f, tween(240))
+            }
+        }
+    }
+    return displayedLyrics to alpha.asState()
+}
+
 @Composable
 internal fun SyncedLyrics(
     lyrics: LyricsUiState,
@@ -271,8 +302,8 @@ internal fun SyncedLyrics(
     playerActive: Boolean = true,
     positionDiscontinuityRevision: Long = 0L,
 ) {
-    var displayedDocument by remember { mutableStateOf<LyricsDocument?>(null) }
-    val lyricsAlpha = remember { Animatable(0f) }
+    val (displayedLyrics, lyricsAlpha) = rememberLyricDocumentTransition(lyrics)
+    val displayedDocument = displayedLyrics?.document
     var unavailableTextLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val alignmentProgress = animateFloatAsState(
         targetValue = if (centerLyrics) 1f else 0f,
@@ -280,53 +311,12 @@ internal fun SyncedLyrics(
         label = "unavailableLyricsAlignment",
     )
 
-    LaunchedEffect(lyrics) {
-        when (lyrics) {
-            LyricsUiState.Loading -> {
-                if (displayedDocument != null) {
-                    lyricsAlpha.animateTo(
-                        targetValue = 0f,
-                        animationSpec = tween(180),
-                    )
-                }
-            }
-
-            LyricsUiState.Unavailable -> {
-                if (displayedDocument != null) {
-                    lyricsAlpha.animateTo(
-                        targetValue = 0f,
-                        animationSpec = tween(180),
-                    )
-                    displayedDocument = null
-                }
-            }
-
-            is LyricsUiState.Available -> {
-                val incomingDocument = lyrics.document
-                if (displayedDocument != incomingDocument) {
-                    if (displayedDocument != null) {
-                        lyricsAlpha.animateTo(
-                            targetValue = 0f,
-                            animationSpec = tween(180),
-                        )
-                    }
-                    displayedDocument = incomingDocument
-                    lyricsAlpha.snapTo(0f)
-                }
-                lyricsAlpha.animateTo(
-                    targetValue = 1f,
-                    animationSpec = tween(240),
-                )
-            }
-        }
-    }
-
     Box(
         modifier = modifier,
         contentAlignment = Alignment.Center,
     ) {
         if (displayedDocument != null) {
-            displayedDocument?.let { document ->
+            displayedDocument.let { document ->
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
