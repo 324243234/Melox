@@ -299,6 +299,7 @@
         <item quantity="one">%1$d song</item>
         <item quantity="other">%1$d songs</item>
     </plurals>
+    <string name="scan_hidden_card_title">Hidden</string>
     <string name="scan_music_card_title">Scan</string>
     <string name="scan_song_list_pull_to_refresh">Pull to refresh on Songs</string>
     <string name="music_pull_to_refresh">Pull down to refresh</string>

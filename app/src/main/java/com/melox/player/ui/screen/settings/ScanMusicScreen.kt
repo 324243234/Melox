@@ -28,7 +28,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -42,6 +44,7 @@ import com.melox.player.R
 import com.melox.player.model.AppSettings
 import com.melox.player.model.ScanStatus
 import com.melox.player.ui.component.AdaptiveTopAppBar
+import com.melox.player.ui.component.expandedTopBarBottomContentGap
 import com.melox.player.ui.component.BlurredBar
 import com.melox.player.ui.component.miuixBarColor
 import com.melox.player.ui.component.rememberBlurBackdrop
@@ -174,6 +177,33 @@ fun ScanMusicScreen(
                             )
                         }
                     },
+                    bottomContent = {
+                        Button(
+                            onClick = onStartScan,
+                            enabled = !isScanning,
+                            minHeight = 46.dp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp)
+                                .padding(
+                                    top = expandedTopBarBottomContentGap(scrollBehavior, 12.dp),
+                                    bottom = 6.dp,
+                                ),
+                            colors = ButtonDefaults.buttonColorsPrimary(),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = stringResource(R.string.scan_start),
+                                    modifier = Modifier.alpha(if (isScanning) 0f else 1f),
+                                )
+                                if (isScanning) {
+                                    InfiniteProgressIndicator(
+                                        color = MiuixTheme.colorScheme.disabledOnPrimaryButton,
+                                    )
+                                }
+                            }
+                        }
+                    },
                 )
             }
         },
@@ -200,6 +230,29 @@ fun ScanMusicScreen(
                 ),
                 overscrollEffect = null,
             ) {
+                item(key = "custom_folder_title") {
+                    SmallTitle(text = stringResource(R.string.scan_custom_folder_title))
+                }
+                item(key = "custom_folders") {
+                    ScanCard {
+                        ArrowPreference(
+                            title = stringResource(R.string.scan_add_custom_folder),
+                            onClick = {
+                                customFolderLauncher.launch(
+                                    Uri.parse(
+                                        "content://com.android.externalstorage.documents/root/primary",
+                                    ),
+                                )
+                            },
+                        )
+                        customFolders.forEach { folder ->
+                            CustomFolderRow(
+                                folder = folder,
+                                onLongClick = { pendingRemoval = folder },
+                            )
+                        }
+                    }
+                }
                 item(key = "scan_title") {
                     SmallTitle(text = stringResource(R.string.scan_music_card_title))
                 }
@@ -231,53 +284,11 @@ fun ScanMusicScreen(
                         )
                     }
                 }
-                item(key = "custom_folder_title") {
-                    SmallTitle(text = stringResource(R.string.scan_custom_folder_title))
-                }
-                item(key = "custom_folders") {
-                    ScanCard(bottomPadding = 0.dp) {
-                        ArrowPreference(
-                            title = stringResource(R.string.scan_add_custom_folder),
-                            onClick = {
-                                customFolderLauncher.launch(
-                                    Uri.parse(
-                                        "content://com.android.externalstorage.documents/root/primary",
-                                    ),
-                                )
-                            },
-                        )
-                        customFolders.forEach { folder ->
-                            CustomFolderRow(
-                                folder = folder,
-                                onLongClick = { pendingRemoval = folder },
-                            )
-                        }
-                    }
-                }
-                item(key = "start_scan") {
-                    Button(
-                        onClick = onStartScan,
-                        enabled = !isScanning,
-                        minHeight = 46.dp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp)
-                            .padding(top = 16.dp),
-                        colors = ButtonDefaults.buttonColorsPrimary(),
-                    ) {
-                        if (isScanning) {
-                            InfiniteProgressIndicator(
-                                color = MiuixTheme.colorScheme.disabledOnPrimaryButton,
-                            )
-                        } else {
-                            Text(
-                                text = stringResource(R.string.scan_start),
-                            )
-                        }
-                    }
+                item(key = "hidden_title") {
+                    SmallTitle(text = stringResource(R.string.scan_hidden_card_title))
                 }
                 item(key = "blocked_folders") {
-                    ScanCard(topPadding = 16.dp, bottomPadding = 0.dp) {
+                    ScanCard(bottomPadding = 0.dp) {
                         ArrowPreference(
                             title = stringResource(R.string.scan_blocked_folder_title),
                             onClick = onOpenBlockedFolders,
@@ -404,7 +415,6 @@ private fun CustomFolderRow(
 
 @Composable
 private fun ScanCard(
-    topPadding: Dp = 0.dp,
     bottomPadding: Dp = 12.dp,
     content: @Composable () -> Unit,
 ) {
@@ -412,7 +422,7 @@ private fun ScanCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
-            .padding(top = topPadding, bottom = bottomPadding),
+            .padding(bottom = bottomPadding),
         content = { content() },
     )
 }

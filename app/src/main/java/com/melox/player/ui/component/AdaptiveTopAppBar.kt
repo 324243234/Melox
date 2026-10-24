@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import com.melox.player.ui.usesMiuixSmallTopAppBar
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
@@ -43,3 +44,9 @@ internal fun AdaptiveTopAppBar(
         )
     }
 }
+
+@Composable
+internal fun expandedTopBarBottomContentGap(
+    scrollBehavior: ScrollBehavior,
+    expandedGap: Dp,
+): Dp = expandedGap * (1f - scrollBehavior.state.collapsedFraction.coerceIn(0f, 1f))

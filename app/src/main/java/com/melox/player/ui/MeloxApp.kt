@@ -159,6 +159,7 @@ import com.melox.player.ui.component.rememberCustomPageBackground
 import com.melox.player.ui.component.customPageBackground
 import com.melox.player.ui.component.customPageContainerColor
 import com.melox.player.ui.component.PageScaffold
+import com.melox.player.ui.component.expandedTopBarBottomContentGap
 import com.melox.player.ui.component.TopBarBlurSettings
 import com.melox.player.ui.component.miuixBarColor
 import com.melox.player.ui.component.stableTopAppBarInsets
@@ -3442,12 +3443,6 @@ internal fun shouldClearSearchFocusAfterImeDismissed(
     imeVisible: Boolean,
     imeWasVisible: Boolean,
 ): Boolean = searchFocused && imeWasVisible && !imeVisible
-
-@Composable
-private fun expandedTopBarBottomContentGap(
-    scrollBehavior: ScrollBehavior,
-    expandedGap: Dp,
-): Dp = expandedGap * (1f - scrollBehavior.state.collapsedFraction.coerceIn(0f, 1f))
 
 @Composable
 private fun PlayerPage(
