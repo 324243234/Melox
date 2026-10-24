@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -59,7 +58,6 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.NumberPickerDefaults
-import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import top.yukonga.miuix.kmp.basic.TabRowWithContour
 import top.yukonga.miuix.kmp.basic.Text
@@ -149,38 +147,18 @@ private fun TimerTimeRow(
 }
 
 @Composable
-internal fun PlaybackOptionsDialog(
+internal fun SleepTimerSheet(
     show: Boolean,
-    playbackSpeed: Float,
-    floatOutputActive: Boolean,
-    highPrecisionOutput: Boolean,
-    onHighPrecisionOutputChange: (Boolean) -> Unit,
     timerSeconds: Int,
     timerState: SleepTimerState,
     autoExtendSleepTimer: Boolean,
-    playbackPauseFade: Boolean,
     onDismiss: () -> Unit,
-    onPlaybackSpeedChange: (Float) -> Unit,
     onTimerSecondsChange: (Int) -> Unit,
     onStartTimer: (Int) -> Unit,
     onCancelTimer: () -> Unit,
     onAutoExtendSleepTimerChange: (Boolean) -> Unit,
-    onPlaybackPauseFadeChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val speedLabels = stringArrayResource(R.array.playback_speed_options).toList()
-    val speedBackgroundColor = bottomSheetCardColor().let { color ->
-        // Miuix 0.9.4's squircle-background shader returns an unpremultiplied color.
-        if (isRuntimeShaderSupported() && LocalSquircleEnabled.current) {
-            color.copy(
-                red = color.red * color.alpha,
-                green = color.green * color.alpha,
-                blue = color.blue * color.alpha,
-            )
-        } else {
-            color
-        }
-    }
     val scrollState = rememberScrollState()
     val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val hourPicker = remember(show) { TimerNumberPickerState(timerSeconds / 3600, 0..23) }
@@ -232,11 +210,199 @@ internal fun PlaybackOptionsDialog(
         show = show,
         modifier = modifier.then(bottomSheetGlassModifier()),
         backgroundColor = bottomSheetMaterialColor(),
+        title = stringResource(R.string.playback_sleep_timer),
+        enableWindowDim = true,
         onDismissRequest = onDismiss,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .overScrollVertical(
+                    nestedScrollToParent = false,
+                    isEnabled = { scrollState.maxValue > 0 },
+                )
+                .verticalScroll(scrollState, overscrollEffect = null)
+                .padding(bottom = bottomPadding + 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(timerCardHeight)
+                    .squircleClip(cornerRadius = CardDefaults.CornerRadius),
+                colors = CardDefaults.defaultColors(color = bottomSheetCardColor()),
+            ) {
+                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .fillMaxWidth()
+                            .requiredHeight(expandedTimerHeight)
+                            .padding(12.dp)
+                            .graphicsLayer { alpha = pickerAlpha },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TimerNumberPicker(
+                            state = hourPicker,
+                            onValueChange = { onTimerSecondsChange(pickerDuration()) },
+                            modifier = Modifier.weight(1f),
+                            enabled = !timerState.active,
+                        )
+                        TimerSeparator()
+                        TimerNumberPicker(
+                            state = minutePicker,
+                            onValueChange = { onTimerSecondsChange(pickerDuration()) },
+                            modifier = Modifier.weight(1f),
+                            enabled = !timerState.active,
+                        )
+                        TimerSeparator()
+                        TimerNumberPicker(
+                            state = secondPicker,
+                            onValueChange = { onTimerSecondsChange(pickerDuration()) },
+                            modifier = Modifier.weight(1f),
+                            enabled = !timerState.active,
+                        )
+                    }
+                    val expandedTimeWidth = maxWidth - 24.dp
+                    val compactTimeWidth = minOf(168.dp, expandedTimeWidth)
+                    val timeRowCompactness =
+                        ((timerCollapseProgress - 0.2f) / 0.8f).coerceIn(0f, 1f)
+                    val timeWidth = expandedTimeWidth +
+                        (compactTimeWidth - expandedTimeWidth) * timeRowCompactness
+                    val timeRowModifier = Modifier
+                        .align(Alignment.Center)
+                        .width(timeWidth)
+                    TimerTimeRow(
+                        seconds = if (timerState.active) {
+                            if (timerState.extending) timerState.extensionSeconds
+                            else timerState.remainingSeconds
+                        } else {
+                            lastActiveTimerSeconds
+                        },
+                        showPlus = if (timerState.active) timerState.extending
+                        else lastActiveTimerWasExtended,
+                        modifier = timeRowModifier.graphicsLayer {
+                            alpha = overlayAlpha *
+                                if (timerState.active) 1f else 1f - selectedTimeFraction
+                        },
+                    )
+                    if (!timerState.active) {
+                        TimerTimeRow(
+                            seconds = selectedTimerSeconds,
+                            modifier = timeRowModifier.graphicsLayer {
+                                alpha = overlayAlpha * selectedTimeFraction
+                            },
+                        )
+                    }
+                }
+            }
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.defaultColors(color = bottomSheetCardColor()),
+            ) {
+                SwitchPreference(
+                    title = stringResource(R.string.playback_timer_auto_extend),
+                    checked = autoExtendSleepTimer,
+                    onCheckedChange = onAutoExtendSleepTimerChange,
+                )
+            }
+            Button(
+                onClick = {
+                    if (timerState.active) {
+                        startJob?.cancel()
+                        hourPicker.unlock()
+                        minutePicker.unlock()
+                        secondPicker.unlock()
+                        onCancelTimer()
+                    } else {
+                        if (hourPicker.inputLocked) return@Button
+                        val duration = hourPicker.captureForStart() * 3600 +
+                            minutePicker.captureForStart() * 60 + secondPicker.captureForStart()
+                        if (duration > 0) {
+                            onTimerSecondsChange(duration)
+                            startJob = startScope.launch {
+                                var started = false
+                                try {
+                                    coroutineScope {
+                                        val hours = async { hourPicker.alignForStart() }
+                                        val minutes = async { minutePicker.alignForStart() }
+                                        val seconds = async { secondPicker.alignForStart() }
+                                        hours.await()
+                                        minutes.await()
+                                        seconds.await()
+                                    }
+                                    onStartTimer(duration)
+                                    started = true
+                                } finally {
+                                    if (!started) {
+                                        hourPicker.unlock()
+                                        minutePicker.unlock()
+                                        secondPicker.unlock()
+                                    }
+                                }
+                            }
+                        } else {
+                            hourPicker.unlock()
+                            minutePicker.unlock()
+                            secondPicker.unlock()
+                        }
+                    }
+                },
+                enabled = timerState.active || selectedTimerSeconds > 0,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColorsPrimary(),
+            ) {
+                Text(
+                    text = stringResource(
+                        if (timerState.active) R.string.playback_sleep_timer_stop
+                        else R.string.playback_sleep_timer_start,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun AudioSettingsSheet(
+    show: Boolean,
+    playbackSpeed: Float,
+    floatOutputActive: Boolean,
+    highPrecisionOutput: Boolean,
+    playbackPauseFade: Boolean,
+    onDismiss: () -> Unit,
+    onPlaybackSpeedChange: (Float) -> Unit,
+    onHighPrecisionOutputChange: (Boolean) -> Unit,
+    onPlaybackPauseFadeChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val speedLabels = stringArrayResource(R.array.playback_speed_options).toList()
+    val speedBackgroundColor = bottomSheetCardColor().let { color ->
+        // Miuix 0.9.4's squircle-background shader returns an unpremultiplied color.
+        if (isRuntimeShaderSupported() && LocalSquircleEnabled.current) {
+            color.copy(
+                red = color.red * color.alpha,
+                green = color.green * color.alpha,
+                blue = color.blue * color.alpha,
+            )
+        } else {
+            color
+        }
+    }
+    val scrollState = rememberScrollState()
+    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    OverlayBottomSheet(
+        show = show,
+        modifier = modifier.then(bottomSheetGlassModifier()),
+        backgroundColor = bottomSheetMaterialColor(),
+        title = stringResource(R.string.playback_audio_settings),
+        enableWindowDim = true,
+        onDismissRequest = onDismiss,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth()
                 .overScrollVertical(
                     nestedScrollToParent = false,
                     isEnabled = { scrollState.maxValue > 0 },
@@ -279,161 +445,12 @@ internal fun PlaybackOptionsDialog(
                         checked = highPrecisionOutput,
                         onCheckedChange = onHighPrecisionOutputChange,
                     )
-                }
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column {
-                    SmallTitle(
-                        text = stringResource(R.string.playback_sleep_timer),
-                        insideMargin = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                    )
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(timerCardHeight)
-                            .squircleClip(cornerRadius = CardDefaults.CornerRadius),
-                        colors = CardDefaults.defaultColors(color = bottomSheetCardColor()),
-                    ) {
-                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                            Row(
-                                modifier = Modifier
-                                    .align(Alignment.Center)
-                                    .fillMaxWidth()
-                                    .requiredHeight(expandedTimerHeight)
-                                    .padding(12.dp)
-                                    .graphicsLayer { alpha = pickerAlpha },
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                TimerNumberPicker(
-                                    state = hourPicker,
-                                    onValueChange = { onTimerSecondsChange(pickerDuration()) },
-                                    modifier = Modifier.weight(1f),
-                                    enabled = !timerState.active,
-                                )
-                                TimerSeparator()
-                                TimerNumberPicker(
-                                    state = minutePicker,
-                                    onValueChange = { onTimerSecondsChange(pickerDuration()) },
-                                    modifier = Modifier.weight(1f),
-                                    enabled = !timerState.active,
-                                )
-                                TimerSeparator()
-                                TimerNumberPicker(
-                                    state = secondPicker,
-                                    onValueChange = { onTimerSecondsChange(pickerDuration()) },
-                                    modifier = Modifier.weight(1f),
-                                    enabled = !timerState.active,
-                                )
-                            }
-                            val expandedTimeWidth = maxWidth - 24.dp
-                            val compactTimeWidth = minOf(168.dp, expandedTimeWidth)
-                            val timeRowCompactness =
-                                ((timerCollapseProgress - 0.2f) / 0.8f).coerceIn(0f, 1f)
-                            val timeWidth = expandedTimeWidth +
-                                (compactTimeWidth - expandedTimeWidth) * timeRowCompactness
-                            val timeRowModifier = Modifier
-                                .align(Alignment.Center)
-                                .width(timeWidth)
-                            TimerTimeRow(
-                                seconds = if (timerState.active) {
-                                    if (timerState.extending) timerState.extensionSeconds
-                                    else timerState.remainingSeconds
-                                } else {
-                                    lastActiveTimerSeconds
-                                },
-                                showPlus = if (timerState.active) timerState.extending
-                                else lastActiveTimerWasExtended,
-                                modifier = timeRowModifier.graphicsLayer {
-                                    alpha = overlayAlpha *
-                                        if (timerState.active) 1f else 1f - selectedTimeFraction
-                                },
-                            )
-                            if (!timerState.active) {
-                                TimerTimeRow(
-                                    seconds = selectedTimerSeconds,
-                                    modifier = timeRowModifier.graphicsLayer {
-                                        alpha = overlayAlpha * selectedTimeFraction
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
-                Button(
-                    onClick = {
-                        if (timerState.active) {
-                            startJob?.cancel()
-                            hourPicker.unlock()
-                            minutePicker.unlock()
-                            secondPicker.unlock()
-                            onCancelTimer()
-                        } else {
-                            if (hourPicker.inputLocked) return@Button
-                            val duration = hourPicker.captureForStart() * 3600 +
-                                minutePicker.captureForStart() * 60 + secondPicker.captureForStart()
-                            if (duration > 0) {
-                                onTimerSecondsChange(duration)
-                                startJob = startScope.launch {
-                                    var started = false
-                                    try {
-                                        coroutineScope {
-                                            val hours = async { hourPicker.alignForStart() }
-                                            val minutes = async { minutePicker.alignForStart() }
-                                            val seconds = async { secondPicker.alignForStart() }
-                                            hours.await()
-                                            minutes.await()
-                                            seconds.await()
-                                        }
-                                        onStartTimer(duration)
-                                        started = true
-                                    } finally {
-                                        if (!started) {
-                                            hourPicker.unlock()
-                                            minutePicker.unlock()
-                                            secondPicker.unlock()
-                                        }
-                                    }
-                                }
-                            } else {
-                                hourPicker.unlock()
-                                minutePicker.unlock()
-                                secondPicker.unlock()
-                            }
-                        }
-                    },
-                    enabled = timerState.active || selectedTimerSeconds > 0,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColorsPrimary(),
-                ) {
-                    Text(
-                        text = stringResource(
-                            if (timerState.active) R.string.playback_sleep_timer_stop
-                            else R.string.playback_sleep_timer_start,
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center,
-                    )
-                }
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.defaultColors(color = bottomSheetCardColor()),
-                ) {
                     SwitchPreference(
-                        title = stringResource(R.string.playback_timer_auto_extend),
-                        checked = autoExtendSleepTimer,
-                        onCheckedChange = onAutoExtendSleepTimerChange,
+                        title = stringResource(R.string.playback_pause_fade),
+                        checked = playbackPauseFade,
+                        onCheckedChange = onPlaybackPauseFadeChange,
                     )
                 }
-            }
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.defaultColors(color = bottomSheetCardColor()),
-            ) {
-                SwitchPreference(
-                    title = stringResource(R.string.playback_pause_fade),
-                    checked = playbackPauseFade,
-                    onCheckedChange = onPlaybackPauseFadeChange,
-                )
             }
         }
     }

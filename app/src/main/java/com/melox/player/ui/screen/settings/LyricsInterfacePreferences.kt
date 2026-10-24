@@ -31,9 +31,6 @@ internal fun LyricsInterfacePreferences(
     leftAlignPlayerTitle: Boolean,
     centerLyrics: Boolean,
     centerLyricsEnabled: Boolean,
-    showLyricsTranslation: Boolean,
-    showLyricsRomanization: Boolean,
-    lyricsTranslationLanguage: LyricsTranslationLanguage,
     lyricFontScale: Float,
     lyricFontWeight: Int,
     lyricBlurEnabled: Boolean,
@@ -41,9 +38,6 @@ internal fun LyricsInterfacePreferences(
     hideControlsOnLyrics: Boolean,
     onLeftAlignPlayerTitleChange: (Boolean) -> Unit,
     onCenterLyricsChange: (Boolean) -> Unit,
-    onShowLyricsTranslationChange: (Boolean) -> Unit,
-    onShowLyricsRomanizationChange: (Boolean) -> Unit,
-    onLyricsTranslationLanguageChange: (LyricsTranslationLanguage) -> Unit,
     onLyricFontScalePreview: (Float) -> Unit,
     onLyricFontScaleCommit: () -> Unit,
     onLyricFontWeightPreview: (Int) -> Unit,
@@ -55,14 +49,13 @@ internal fun LyricsInterfacePreferences(
     cardColor: Color = MiuixTheme.colorScheme.surfaceContainer,
     usePageMaterial: Boolean = true,
     showHideControls: Boolean = true,
-    firstCardModifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Card(
-            modifier = Modifier.fillMaxWidth().then(firstCardModifier),
+            modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.defaultColors(color = cardColor),
             usePageMaterial = usePageMaterial,
         ) {
@@ -78,26 +71,6 @@ internal fun LyricsInterfacePreferences(
                     checked = centerLyrics,
                     enabled = centerLyricsEnabled,
                     onCheckedChange = onCenterLyricsChange,
-                )
-                SwitchPreference(
-                    title = stringResource(R.string.lyrics_translation),
-                    checked = showLyricsTranslation,
-                    onCheckedChange = onShowLyricsTranslationChange,
-                )
-                val translationLanguages = LyricsTranslationLanguage.entries
-                OverlayDropdownPreference(
-                    title = stringResource(R.string.lyrics_translation_language),
-                    items = translationLanguages.map { lyricsTranslationLanguageLabel(it) },
-                    selectedIndex = translationLanguages.indexOf(lyricsTranslationLanguage),
-                    enabled = showLyricsTranslation,
-                    onSelectedIndexChange = { index ->
-                        translationLanguages.getOrNull(index)?.let(onLyricsTranslationLanguageChange)
-                    },
-                )
-                SwitchPreference(
-                    title = stringResource(R.string.lyrics_romanization),
-                    checked = showLyricsRomanization,
-                    onCheckedChange = onShowLyricsRomanizationChange,
                 )
                 TappableSliderPreference(
                     value = lyricFontScale,
@@ -182,3 +155,37 @@ private fun lyricsTranslationLanguageLabel(language: LyricsTranslationLanguage):
         LyricsTranslationLanguage.ALL -> R.string.lyrics_translation_language_all
     },
 )
+
+@Composable
+internal fun LyricsTranslationPreferences(
+    showLyricsTranslation: Boolean,
+    showLyricsRomanization: Boolean,
+    lyricsTranslationLanguage: LyricsTranslationLanguage,
+    onShowLyricsTranslationChange: (Boolean) -> Unit,
+    onShowLyricsRomanizationChange: (Boolean) -> Unit,
+    onLyricsTranslationLanguageChange: (LyricsTranslationLanguage) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        SwitchPreference(
+            title = stringResource(R.string.lyrics_translation),
+            checked = showLyricsTranslation,
+            onCheckedChange = onShowLyricsTranslationChange,
+        )
+        val translationLanguages = LyricsTranslationLanguage.entries
+        OverlayDropdownPreference(
+            title = stringResource(R.string.lyrics_translation_language),
+            items = translationLanguages.map { lyricsTranslationLanguageLabel(it) },
+            selectedIndex = translationLanguages.indexOf(lyricsTranslationLanguage),
+            enabled = showLyricsTranslation,
+            onSelectedIndexChange = { index ->
+                translationLanguages.getOrNull(index)?.let(onLyricsTranslationLanguageChange)
+            },
+        )
+        SwitchPreference(
+            title = stringResource(R.string.lyrics_romanization),
+            checked = showLyricsRomanization,
+            onCheckedChange = onShowLyricsRomanizationChange,
+        )
+    }
+}

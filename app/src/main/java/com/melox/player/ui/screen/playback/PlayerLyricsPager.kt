@@ -38,7 +38,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -52,7 +51,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,7 +72,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
@@ -112,6 +109,7 @@ import com.melox.player.model.PlaybackQueueItem
 import com.melox.player.model.PlaybackUiState
 import com.melox.player.model.withTrackMetadata
 import com.melox.player.ui.isMiuixWideLayout
+import com.melox.player.ui.component.liquid.rememberCombinedBackdrop
 import com.melox.player.ui.component.library.PlaybackArtworkFrame
 import com.melox.player.ui.component.library.PLAYBACK_ARTWORK_SHADOW_BLUR_RADIUS
 import com.melox.player.ui.component.library.TrackActionsOverlay
@@ -134,6 +132,9 @@ import com.melox.player.ui.component.playback.fittedArtworkRect
 import kotlin.math.abs
 import kotlin.math.roundToLong
 import kotlin.math.roundToInt
+import top.yukonga.miuix.kmp.blur.Backdrop
+import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -182,10 +183,13 @@ internal fun PlayerContentPager(
     seekPositionMs: Long,
     artworkContent: @Composable (overscrollModifier: Modifier) -> Unit,
     modifier: Modifier = Modifier,
+    activeLyricAlpha: Float = 1f,
     showLyricsRomanization: Boolean = true,
     lyricsTranslationLanguage: LyricsTranslationLanguage = LyricsTranslationLanguage.AUTO,
     playerActive: Boolean = true,
     positionDiscontinuityRevision: Long = 0L,
+    lyricsBottomContent: (@Composable (Backdrop?) -> Unit)? = null,
+    lyricsBackground: Backdrop? = null,
 ) {
     val overscrollEffect = rememberOverscrollEffect()
     val pagerOverscroll = remember(overscrollEffect) {
@@ -213,7 +217,14 @@ internal fun PlayerContentPager(
             if (page == 0) {
                 artworkContent(overscrollModifier)
             } else {
+                val lyricBackdrop = if (lyricsBackground != null && lyricsBottomContent != null) {
+                    rememberLayerBackdrop()
+                } else null
+                val actionBackdrop = if (lyricsBackground != null && lyricBackdrop != null) {
+                    rememberCombinedBackdrop(lyricsBackground, lyricBackdrop)
+                } else null
                 SyncedLyrics(
+                    activeLyricAlpha = activeLyricAlpha,
                     lyrics = lyrics,
                     positionMs = positionMs,
                     positionUpdateElapsedRealtimeMs = positionUpdateElapsedRealtimeMs,
@@ -241,8 +252,17 @@ internal fun PlayerContentPager(
                     resumeFollowRequestKey = resumeFollowRequestKey,
                     seekRequestKey = seekRequestKey,
                     seekPositionMs = seekPositionMs,
-                    modifier = Modifier.fillMaxSize().then(overscrollModifier),
+                    modifier = Modifier.fillMaxSize().then(overscrollModifier).then(
+                        if (lyricBackdrop != null) Modifier.layerBackdrop(lyricBackdrop)
+                        else Modifier,
+                    ),
                 )
+                lyricsBottomContent?.let { content ->
+                    Box(
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                            .fillMaxWidth(),
+                    ) { content(actionBackdrop) }
+                }
             }
         }
     }
@@ -304,6 +324,7 @@ internal fun SyncedLyrics(
     seekRequestKey: Int,
     seekPositionMs: Long,
     modifier: Modifier = Modifier,
+    activeLyricAlpha: Float = 1f,
     showLyricsRomanization: Boolean = true,
     lyricsTranslationLanguage: LyricsTranslationLanguage = LyricsTranslationLanguage.AUTO,
     playerActive: Boolean = true,
@@ -330,6 +351,7 @@ internal fun SyncedLyrics(
                         .graphicsLayer { alpha = lyricsAlpha.value },
                 ) {
                     LyricsView(
+                        activeLyricAlpha = activeLyricAlpha,
                         document = document,
                         positionMs = positionMs,
                         positionUpdateElapsedRealtimeMs = positionUpdateElapsedRealtimeMs,

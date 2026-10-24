@@ -1,7 +1,6 @@
 package com.melox.player.ui.screen.playback
 
 import android.graphics.Bitmap
-import android.content.res.Configuration
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -82,8 +81,6 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -125,6 +122,7 @@ import com.melox.player.model.SleepTimerState
 import com.melox.player.model.withTrackMetadata
 import com.melox.player.ui.usesMiuixSmallTopAppBar
 import com.melox.player.ui.screen.settings.LyricsInterfacePreferences
+import com.melox.player.ui.screen.settings.LyricsTranslationPreferences
 import com.melox.player.ui.isMiuixWideLayout
 import com.melox.player.ui.component.library.PlaybackArtworkFrame
 import com.melox.player.ui.component.library.PLAYBACK_ARTWORK_SHADOW_BLUR_RADIUS
@@ -153,6 +151,10 @@ import kotlin.math.abs
 import kotlin.math.roundToLong
 import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
+import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
@@ -183,6 +185,7 @@ internal fun FullPlayerScreen(
     dynamicFlowBackgroundState: DynamicFlowBackgroundState,
     playbackBackgroundDark: Boolean,
     playbackContentColor: Color,
+    dynamicColorEnabled: Boolean,
     lyricFontScale: Float,
     lyricFontWeight: Int,
     lyricAnimationMode: LyricAnimationMode,
@@ -275,6 +278,11 @@ internal fun FullPlayerScreen(
     )
     val artworkBlend = artworkState.toArtworkBlend()
     val emphasisControlColor = playbackContentColor
+    val primaryControlAlpha = if (
+        playbackBackgroundStyle == PlaybackBackgroundStyle.DYNAMIC_FLOW &&
+        !playbackBackgroundDark && !dynamicColorEnabled
+    ) 0.9f else null
+    val activeLyricAlpha = if (primaryControlAlpha != null) 0.8f else 1f
     val controlColor = emphasisControlColor.copy(alpha = 0.6f)
     val artistControlColor = emphasisControlColor.copy(
         alpha = 0.6f,
@@ -282,7 +290,9 @@ internal fun FullPlayerScreen(
     val artworkCornerRadius = PLAYER_FULL_ARTWORK_CORNER_RADIUS
     var showTrackActions by remember { mutableStateOf(false) }
     var showLyricsSettings by remember { mutableStateOf(false) }
-    var showPlaybackOptions by remember { mutableStateOf(false) }
+    var showAudioSettings by remember { mutableStateOf(false) }
+    var showSleepTimer by remember { mutableStateOf(false) }
+    var showTranslationSettings by remember { mutableStateOf(false) }
     var showTimerInterruption by remember { mutableStateOf(false) }
     LaunchedEffect(sleepTimerState.interruptionNotice) {
         showTimerInterruption = sleepTimerState.interruptionNotice > 0
@@ -315,6 +325,10 @@ internal fun FullPlayerScreen(
     }
     var displayedShowLyricsTranslation by remember {
         mutableStateOf(showLyricsTranslation)
+    }
+    val toggleLyricsTranslation = {
+        displayedShowLyricsTranslation = !displayedShowLyricsTranslation
+        onShowLyricsTranslationChange(displayedShowLyricsTranslation)
     }
     var displayedLyricsTranslationLanguage by remember {
         mutableStateOf(lyricsTranslationLanguage)
@@ -445,6 +459,9 @@ internal fun FullPlayerScreen(
         enabled = interactionEnabled,
         onBack = onDismiss,
     )
+    val lyricActionsBackground = if (isRuntimeShaderSupported()) {
+        rememberLayerBackdrop()
+    } else null
     Scaffold(
         modifier = modifier
             .fillMaxSize()
@@ -480,6 +497,7 @@ internal fun FullPlayerScreen(
                         drawInPlace = drawInPlace,
                         recordingGeneration = frameRecordingGeneration,
                         recordInPlace = recordInPlace,
+                        backdrop = lyricActionsBackground,
                         onRecorded = onBackgroundLayerRecorded,
                     ),
             ) {
@@ -605,7 +623,6 @@ internal fun FullPlayerScreen(
                                         onTogglePlayPause = onTogglePlayPause,
                                         onPrevious = { onPrevious() },
                                         onNext = { onNext() },
-                                        onOpenLyricsSettings = { showLyricsSettings = true },
                                     ),
                                 ),
                         )
@@ -671,6 +688,7 @@ internal fun FullPlayerScreen(
                                     }
                                     Spacer(Modifier.height(LANDSCAPE_PLAYER_ARTWORK_TO_PROGRESS_SPACING))
                                     PlayerDetails(
+                                        primaryControlAlpha = primaryControlAlpha,
                                         immersiveMode = immersiveMode,
                                         onToggleImmersiveMode = onToggleImmersiveMode,
                                         modifier = Modifier
@@ -686,8 +704,8 @@ internal fun FullPlayerScreen(
                                         onSeek = onSeekFromPlayer,
                                         onPreviewPositionChange = onPreviewSeekFromPlayer,
                                         onCyclePlaybackMode = onCyclePlaybackMode,
-                                        onOpenPlaybackOptions = { showPlaybackOptions = true },
-                                        onOpenLyricsSettings = { showLyricsSettings = true },
+                                        onOpenAudioSettings = { showAudioSettings = true },
+                                        onOpenSleepTimer = { showSleepTimer = true },
                                         onOpenQueue = onOpenQueue,
                                         onOpenTrackActions = {
                                             if (currentTrack != null) showTrackActions = true
@@ -698,37 +716,50 @@ internal fun FullPlayerScreen(
                                     Spacer(Modifier.height(spacing.panelBottom))
                                 },
                                 lyricsContent = {
-                                    SyncedLyrics(
-                                        lyrics = lyrics,
-                                        positionMs = playback.positionMs,
-                                        positionUpdateElapsedRealtimeMs =
-                                            playback.positionUpdateElapsedRealtimeMs,
-                                        playbackIteration = playback.playbackIteration,
-                                        playbackSpeed = playback.playbackSpeed,
-                                        previewPositionMs = lyricsPreviewPositionMs,
-                                        isPlaying = playback.isPlaying,
-                                        active = lyricsActive,
-                                        playerActive = playerActive,
-                                        positionDiscontinuityRevision = playback.positionDiscontinuityRevision,
-                                        onSeek = onSeekFromPlayer,
-                                        contentWidth = landscapePlayerLyricsContentWidth(lyricsPaneWidth),
-                                        controlColor = controlColor,
-                                        emphasisControlColor = emphasisControlColor,
-                                        lyricFontScale = displayedLyricFontScale,
-                                        lyricFontWeight = displayedLyricFontWeight,
-                                        lyricAnimationMode = displayedLyricAnimationMode,
-                                        lyricBlurEnabled = displayedLyricBlurEnabled,
-                                        centerLyrics = displayedCenterLyrics,
-                                        lyricCenterOffsetY = 0.dp,
-                                        showLyricsTranslation = displayedShowLyricsTranslation,
-                                        showLyricsRomanization = displayedShowLyricsRomanization,
-                                        lyricsTranslationLanguage = displayedLyricsTranslationLanguage,
-                                        showBottomFade = true,
-                                        resumeFollowRequestKey = lyricsFollowRequestKey,
-                                        seekRequestKey = lyricsSeekRequestKey,
-                                        seekPositionMs = lyricsSeekPositionMs,
-                                        modifier = Modifier.fillMaxSize(),
-                                    )
+                                    Box(Modifier.fillMaxSize()) {
+                                        SyncedLyrics(
+                                            activeLyricAlpha = activeLyricAlpha,
+                                            lyrics = lyrics,
+                                            positionMs = playback.positionMs,
+                                            positionUpdateElapsedRealtimeMs =
+                                                playback.positionUpdateElapsedRealtimeMs,
+                                            playbackIteration = playback.playbackIteration,
+                                            playbackSpeed = playback.playbackSpeed,
+                                            previewPositionMs = lyricsPreviewPositionMs,
+                                            isPlaying = playback.isPlaying,
+                                            active = lyricsActive,
+                                            playerActive = playerActive,
+                                            positionDiscontinuityRevision = playback.positionDiscontinuityRevision,
+                                            onSeek = onSeekFromPlayer,
+                                            contentWidth = landscapePlayerLyricsContentWidth(lyricsPaneWidth),
+                                            controlColor = controlColor,
+                                            emphasisControlColor = emphasisControlColor,
+                                            lyricFontScale = displayedLyricFontScale,
+                                            lyricFontWeight = displayedLyricFontWeight,
+                                            lyricAnimationMode = displayedLyricAnimationMode,
+                                            lyricBlurEnabled = displayedLyricBlurEnabled,
+                                            centerLyrics = displayedCenterLyrics,
+                                            lyricCenterOffsetY = 0.dp,
+                                            showLyricsTranslation = displayedShowLyricsTranslation,
+                                            showLyricsRomanization = displayedShowLyricsRomanization,
+                                            lyricsTranslationLanguage = displayedLyricsTranslationLanguage,
+                                            showBottomFade = true,
+                                            resumeFollowRequestKey = lyricsFollowRequestKey,
+                                            seekRequestKey = lyricsSeekRequestKey,
+                                            seekPositionMs = lyricsSeekPositionMs,
+                                            modifier = Modifier.fillMaxSize(),
+                                        )
+                                        PlayerLyricActionsRow(
+                                            showLyricsTranslation = displayedShowLyricsTranslation,
+                                            emphasisControlColor = emphasisControlColor,
+                                            onOpenLyricsSettings = { showLyricsSettings = true },
+                                            onToggleLyricsTranslation = toggleLyricsTranslation,
+                                            onOpenTranslationSettings = { showTranslationSettings = true },
+                                            enabled = !immersiveMode,
+                                            modifier = Modifier.align(Alignment.BottomCenter)
+                                                .fillMaxWidth().playerChromeVisibility(!immersiveMode),
+                                        )
+                                    }
                                 },
                             )
                         } else if (playerLayout == PlayerLayout.COMPACT_LANDSCAPE) {
@@ -756,6 +787,7 @@ internal fun FullPlayerScreen(
                                             .height(contentHeight),
                                     ) {
                                         SyncedLyrics(
+                                            activeLyricAlpha = activeLyricAlpha,
                                             lyrics = lyrics,
                                             positionMs = playback.positionMs,
                                             positionUpdateElapsedRealtimeMs =
@@ -786,6 +818,16 @@ internal fun FullPlayerScreen(
                                             seekPositionMs = lyricsSeekPositionMs,
                                             modifier = Modifier.fillMaxSize(),
                                         )
+                                        PlayerLyricActionsRow(
+                                            showLyricsTranslation = displayedShowLyricsTranslation,
+                                            emphasisControlColor = emphasisControlColor,
+                                            onOpenLyricsSettings = { showLyricsSettings = true },
+                                            onToggleLyricsTranslation = toggleLyricsTranslation,
+                                            onOpenTranslationSettings = { showTranslationSettings = true },
+                                            enabled = !immersiveMode,
+                                            modifier = Modifier.align(Alignment.BottomCenter)
+                                                .fillMaxWidth().playerChromeVisibility(!immersiveMode),
+                                        )
                                     }
                                 },
                                 controlsContent = { paneWidth, contentWidth ->
@@ -809,6 +851,7 @@ internal fun FullPlayerScreen(
                                         )
                                         Spacer(Modifier.height(COMPACT_LANDSCAPE_HEADER_TO_CONTROLS_SPACING))
                                         PlayerDetails(
+                                            primaryControlAlpha = primaryControlAlpha,
                                             immersiveMode = immersiveMode,
                                             onToggleImmersiveMode = onToggleImmersiveMode,
                                             modifier = Modifier.fillMaxWidth(),
@@ -822,8 +865,8 @@ internal fun FullPlayerScreen(
                                             onSeek = onSeekFromPlayer,
                                             onPreviewPositionChange = onPreviewSeekFromPlayer,
                                             onCyclePlaybackMode = onCyclePlaybackMode,
-                                            onOpenPlaybackOptions = { showPlaybackOptions = true },
-                                            onOpenLyricsSettings = { showLyricsSettings = true },
+                                            onOpenAudioSettings = { showAudioSettings = true },
+                                            onOpenSleepTimer = { showSleepTimer = true },
                                             onOpenQueue = onOpenQueue,
                                             onOpenTrackActions = {
                                                 if (currentTrack != null) showTrackActions = true
@@ -862,6 +905,7 @@ internal fun FullPlayerScreen(
                             )
                             if (hideLyricsControls) {
                                 PlayerContentPager(
+                                    activeLyricAlpha = activeLyricAlpha,
                                     pagerState = pagerState,
                                     lyrics = lyrics,
                                     positionMs = playback.positionMs,
@@ -893,15 +937,32 @@ internal fun FullPlayerScreen(
                                     seekRequestKey = lyricsSeekRequestKey,
                                     seekPositionMs = lyricsSeekPositionMs,
                                     modifier = Modifier.fillMaxSize(),
+                                    lyricsBackground = lyricActionsBackground,
+                                    lyricsBottomContent = { blurBackdrop ->
+                                        PlayerLyricActionsRow(
+                                            showLyricsTranslation = displayedShowLyricsTranslation,
+                                            emphasisControlColor = emphasisControlColor,
+                                            onOpenLyricsSettings = { showLyricsSettings = true },
+                                            onToggleLyricsTranslation = toggleLyricsTranslation,
+                                            onOpenTranslationSettings = { showTranslationSettings = true },
+                                            enabled = !immersiveMode,
+                                            blurBackdrop = blurBackdrop,
+                                            modifier = Modifier.fillMaxWidth()
+                                                .padding(bottom = spacing.panelBottom)
+                                                .playerChromeVisibility(!immersiveMode),
+                                        )
+                                    },
                                     artworkContent = { overscrollModifier ->
                                         PortraitPlayerLayout(
                                             spacing = spacing,
                                             artworkModifier = overscrollModifier,
                                             artworkContent = { _ ->
                                                 PortraitArtworkWithLyrics(
+                                                    activeLyricAlpha = activeLyricAlpha,
                                                     lyrics = lyrics,
                                                     playback = playback,
                                                     enabled = showArtworkLyrics,
+                                                    lyricsVisible = !immersiveMode,
                                                     active = playerActive &&
                                                         (pagerState.currentPage == 0 || pagerState.targetPage == 0),
                                                     showTranslation = displayedShowLyricsTranslation,
@@ -909,6 +970,7 @@ internal fun FullPlayerScreen(
                                                     translationLanguage = displayedLyricsTranslationLanguage,
                                                     centerLyrics = displayedCenterLyrics,
                                                     animationMode = displayedLyricAnimationMode,
+                                                    lyricFontWeight = displayedLyricFontWeight,
                                                     preferredArtworkSize = artworkSize,
                                                     progressGap = spacing.artworkToProgress +
                                                         PLAYER_PROGRESS_TOUCH_HEIGHT / 2f,
@@ -938,6 +1000,7 @@ internal fun FullPlayerScreen(
                                             },
                                             detailsContent = {
                                                 PlayerDetails(
+                                                    primaryControlAlpha = primaryControlAlpha,
                                                     immersiveMode = immersiveMode,
                                                     onToggleImmersiveMode = onToggleImmersiveMode,
                                                     modifier = Modifier.fillMaxWidth(),
@@ -953,10 +1016,8 @@ internal fun FullPlayerScreen(
                                                     onSeek = onSeekFromPlayer,
                                                     onPreviewPositionChange = onPreviewSeekFromPlayer,
                                                     onCyclePlaybackMode = onCyclePlaybackMode,
-                                                    onOpenPlaybackOptions = { showPlaybackOptions = true },
-                                                    onOpenLyricsSettings = {
-                                                        showLyricsSettings = true
-                                                    },
+                                                    onOpenAudioSettings = { showAudioSettings = true },
+                                                    onOpenSleepTimer = { showSleepTimer = true },
                                                     onOpenQueue = onOpenQueue,
                                                     onOpenTrackActions = {
                                                         if (currentTrack != null) {
@@ -970,10 +1031,14 @@ internal fun FullPlayerScreen(
                                     },
                                 )
                             } else {
+                                val progressTrackInset =
+                                    (PLAYER_PROGRESS_TOUCH_HEIGHT - PLAYER_PROGRESS_IDLE_HEIGHT) / 2f
                                 PortraitPlayerLayout(
-                                    spacing = spacing,
+                                    spacing = spacing.copy(artworkToProgress = 0.dp),
+                                    artworkBottomOverlap = progressTrackInset,
                                     artworkContent = { _ ->
                                         PlayerContentPager(
+                                            activeLyricAlpha = activeLyricAlpha,
                                             pagerState = pagerState,
                                             lyrics = lyrics,
                                             positionMs = playback.positionMs,
@@ -1008,11 +1073,28 @@ internal fun FullPlayerScreen(
                                             seekRequestKey = lyricsSeekRequestKey,
                                             seekPositionMs = lyricsSeekPositionMs,
                                             modifier = Modifier.fillMaxSize(),
+                                            lyricsBackground = lyricActionsBackground,
+                                            lyricsBottomContent = { blurBackdrop ->
+                                                PlayerLyricActionsRow(
+                                                    showLyricsTranslation = displayedShowLyricsTranslation,
+                                                    emphasisControlColor = emphasisControlColor,
+                                                    onOpenLyricsSettings = { showLyricsSettings = true },
+                                                    onToggleLyricsTranslation = toggleLyricsTranslation,
+                                                    onOpenTranslationSettings = { showTranslationSettings = true },
+                                                    enabled = !immersiveMode,
+                                                    blurBackdrop = blurBackdrop,
+                                                    modifier = Modifier.fillMaxWidth()
+                                                        .padding(bottom = PLAYER_PROGRESS_TIME_SPACING + 12.dp)
+                                                        .playerChromeVisibility(!immersiveMode),
+                                                )
+                                            },
                                             artworkContent = { overscrollModifier ->
                                                 PortraitArtworkWithLyrics(
+                                                    activeLyricAlpha = activeLyricAlpha,
                                                     lyrics = lyrics,
                                                     playback = playback,
                                                     enabled = showArtworkLyrics,
+                                                    lyricsVisible = !immersiveMode,
                                                     active = playerActive &&
                                                         (pagerState.currentPage == 0 || pagerState.targetPage == 0),
                                                     showTranslation = displayedShowLyricsTranslation,
@@ -1020,6 +1102,7 @@ internal fun FullPlayerScreen(
                                                     translationLanguage = displayedLyricsTranslationLanguage,
                                                     centerLyrics = displayedCenterLyrics,
                                                     animationMode = displayedLyricAnimationMode,
+                                                    lyricFontWeight = displayedLyricFontWeight,
                                                     preferredArtworkSize = artworkSize,
                                                     progressGap = spacing.artworkToProgress +
                                                         PLAYER_PROGRESS_TOUCH_HEIGHT / 2f,
@@ -1027,7 +1110,9 @@ internal fun FullPlayerScreen(
                                                     color = emphasisControlColor,
                                                     previewPositionMs = lyricsPreviewPositionMs
                                                         ?: lyricsSeekPositionMs.takeIf { lyricsSeekRequestKey != 0 },
-                                                    modifier = Modifier.fillMaxSize().then(overscrollModifier),
+                                                    modifier = Modifier.fillMaxSize()
+                                                        .padding(bottom = spacing.artworkToProgress + progressTrackInset)
+                                                        .then(overscrollModifier),
                                                     artworkContent = { captionArtworkHeight ->
                                                         PlayerArtwork(
                                                             circularArtwork = circularArtwork,
@@ -1052,6 +1137,7 @@ internal fun FullPlayerScreen(
                                     },
                                     detailsContent = {
                                         PlayerDetails(
+                                            primaryControlAlpha = primaryControlAlpha,
                                             immersiveMode = immersiveMode,
                                             onToggleImmersiveMode = onToggleImmersiveMode,
                                             modifier = Modifier.fillMaxWidth(),
@@ -1066,10 +1152,8 @@ internal fun FullPlayerScreen(
                                             onSeek = onSeekFromPlayer,
                                             onPreviewPositionChange = onPreviewSeekFromPlayer,
                                             onCyclePlaybackMode = onCyclePlaybackMode,
-                                            onOpenPlaybackOptions = { showPlaybackOptions = true },
-                                            onOpenLyricsSettings = {
-                                                showLyricsSettings = true
-                                            },
+                                            onOpenAudioSettings = { showAudioSettings = true },
+                                            onOpenSleepTimer = { showSleepTimer = true },
                                             onOpenQueue = onOpenQueue,
                                             onOpenTrackActions = {
                                                 if (currentTrack != null) {
@@ -1109,9 +1193,6 @@ internal fun FullPlayerScreen(
                     centerLyrics = displayedCenterLyrics,
                     centerLyricsEnabled = centerLyricsEnabled,
                     hideControlsOnLyrics = displayedHideControlsOnLyrics,
-                    showLyricsTranslation = displayedShowLyricsTranslation,
-                    showLyricsRomanization = displayedShowLyricsRomanization,
-                    lyricsTranslationLanguage = displayedLyricsTranslationLanguage,
                     onDismiss = { showLyricsSettings = false },
                     onLeftAlignPlayerTitleChange = {
                         displayedLeftAlignPlayerTitle = it
@@ -1141,6 +1222,13 @@ internal fun FullPlayerScreen(
                         displayedHideControlsOnLyrics = it
                         onHideControlsOnLyricsChange(it)
                     },
+                )
+                LyricsTranslationSheet(
+                    show = showTranslationSettings,
+                    onDismiss = { showTranslationSettings = false },
+                    showLyricsTranslation = displayedShowLyricsTranslation,
+                    showLyricsRomanization = displayedShowLyricsRomanization,
+                    lyricsTranslationLanguage = displayedLyricsTranslationLanguage,
                     onShowLyricsTranslationChange = {
                         displayedShowLyricsTranslation = it
                         onShowLyricsTranslationChange(it)
@@ -1154,23 +1242,27 @@ internal fun FullPlayerScreen(
                         onShowLyricsRomanizationChange(it)
                     },
                 )
-                PlaybackOptionsDialog(
-                    show = showPlaybackOptions,
-                    playbackSpeed = playback.playbackSpeed,
-                    floatOutputActive = playback.floatOutputActive,
-                    highPrecisionOutput = highPrecisionOutput,
-                    onHighPrecisionOutputChange = onHighPrecisionOutputChange,
+                SleepTimerSheet(
+                    show = showSleepTimer,
                     timerSeconds = sleepTimerSeconds,
                     timerState = sleepTimerState,
                     autoExtendSleepTimer = autoExtendSleepTimer,
                     onAutoExtendSleepTimerChange = onAutoExtendSleepTimerChange,
-                    playbackPauseFade = playbackPauseFade,
-                    onPlaybackPauseFadeChange = onPlaybackPauseFadeChange,
-                    onDismiss = { showPlaybackOptions = false },
-                    onPlaybackSpeedChange = onPlaybackSpeedChange,
+                    onDismiss = { showSleepTimer = false },
                     onTimerSecondsChange = onSleepTimerSecondsChange,
                     onStartTimer = onStartSleepTimer,
                     onCancelTimer = onCancelSleepTimer,
+                )
+                AudioSettingsSheet(
+                    show = showAudioSettings,
+                    playbackSpeed = playback.playbackSpeed,
+                    floatOutputActive = playback.floatOutputActive,
+                    highPrecisionOutput = highPrecisionOutput,
+                    onHighPrecisionOutputChange = onHighPrecisionOutputChange,
+                    playbackPauseFade = playbackPauseFade,
+                    onPlaybackPauseFadeChange = onPlaybackPauseFadeChange,
+                    onDismiss = { showAudioSettings = false },
+                    onPlaybackSpeedChange = onPlaybackSpeedChange,
                 )
                 OverlayDialog(
                     show = showTimerInterruption,
@@ -1207,9 +1299,6 @@ private fun PlayerSettingsSheet(
     centerLyrics: Boolean,
     centerLyricsEnabled: Boolean,
     hideControlsOnLyrics: Boolean,
-    showLyricsTranslation: Boolean,
-    showLyricsRomanization: Boolean,
-    lyricsTranslationLanguage: LyricsTranslationLanguage,
     onDismiss: () -> Unit,
     onLeftAlignPlayerTitleChange: (Boolean) -> Unit,
     onLyricFontScalePreview: (Float) -> Unit,
@@ -1220,19 +1309,8 @@ private fun PlayerSettingsSheet(
     onLyricBlurEnabledChange: (Boolean) -> Unit,
     onCenterLyricsChange: (Boolean) -> Unit,
     onHideControlsOnLyricsChange: (Boolean) -> Unit,
-    onShowLyricsTranslationChange: (Boolean) -> Unit,
-    onShowLyricsRomanizationChange: (Boolean) -> Unit,
-    onLyricsTranslationLanguageChange: (LyricsTranslationLanguage) -> Unit,
 ) {
     val wideLayout = usesMiuixSmallTopAppBar()
-    val isPortrait = LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
-    val density = LocalDensity.current
-    var firstCardHeightPx by remember { mutableIntStateOf(0) }
-    val contentMaxHeight = if (isPortrait && firstCardHeightPx > 0) {
-        with(density) { firstCardHeightPx.toDp() } + 32.dp
-    } else {
-        Dp.Infinity
-    }
     val bottomPadding = WindowInsets.navigationBars
         .asPaddingValues()
         .calculateBottomPadding()
@@ -1249,9 +1327,6 @@ private fun PlayerSettingsSheet(
             leftAlignPlayerTitle = leftAlignPlayerTitle,
             centerLyrics = centerLyrics,
             centerLyricsEnabled = centerLyricsEnabled,
-            showLyricsTranslation = showLyricsTranslation,
-            showLyricsRomanization = showLyricsRomanization,
-            lyricsTranslationLanguage = lyricsTranslationLanguage,
             lyricFontScale = lyricFontScale,
             lyricFontWeight = lyricFontWeight,
             lyricBlurEnabled = lyricBlurEnabled,
@@ -1259,9 +1334,6 @@ private fun PlayerSettingsSheet(
             hideControlsOnLyrics = hideControlsOnLyrics,
             onLeftAlignPlayerTitleChange = onLeftAlignPlayerTitleChange,
             onCenterLyricsChange = onCenterLyricsChange,
-            onShowLyricsTranslationChange = onShowLyricsTranslationChange,
-            onShowLyricsRomanizationChange = onShowLyricsRomanizationChange,
-            onLyricsTranslationLanguageChange = onLyricsTranslationLanguageChange,
             onLyricFontScalePreview = onLyricFontScalePreview,
             onLyricFontScaleCommit = onLyricFontScaleCommit,
             onLyricFontWeightPreview = onLyricFontWeightPreview,
@@ -1271,7 +1343,6 @@ private fun PlayerSettingsSheet(
             onHideControlsOnLyricsChange = onHideControlsOnLyricsChange,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = contentMaxHeight)
                 .overScrollVertical(
                     nestedScrollToParent = false,
                     isEnabled = { scrollState.maxValue > 0 },
@@ -1281,8 +1352,51 @@ private fun PlayerSettingsSheet(
             cardColor = bottomSheetCardColor(),
             usePageMaterial = false,
             showHideControls = !wideLayout,
-            firstCardModifier = Modifier.onSizeChanged { firstCardHeightPx = it.height },
         )
+    }
+}
+
+@Composable
+private fun LyricsTranslationSheet(
+    show: Boolean,
+    showLyricsTranslation: Boolean,
+    showLyricsRomanization: Boolean,
+    lyricsTranslationLanguage: LyricsTranslationLanguage,
+    onDismiss: () -> Unit,
+    onShowLyricsTranslationChange: (Boolean) -> Unit,
+    onShowLyricsRomanizationChange: (Boolean) -> Unit,
+    onLyricsTranslationLanguageChange: (LyricsTranslationLanguage) -> Unit,
+) {
+    val scrollState = rememberScrollState()
+    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    OverlayBottomSheet(
+        show = show,
+        modifier = bottomSheetGlassModifier(),
+        backgroundColor = bottomSheetMaterialColor(),
+        title = stringResource(R.string.lyrics_translation),
+        enableWindowDim = true,
+        onDismissRequest = onDismiss,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth()
+                .overScrollVertical(
+                    nestedScrollToParent = false,
+                    isEnabled = { scrollState.maxValue > 0 },
+                )
+                .verticalScroll(scrollState, overscrollEffect = null)
+                .padding(bottom = bottomPadding + 12.dp),
+        ) {
+            Card(colors = CardDefaults.defaultColors(color = bottomSheetCardColor())) {
+                LyricsTranslationPreferences(
+                    showLyricsTranslation = showLyricsTranslation,
+                    showLyricsRomanization = showLyricsRomanization,
+                    lyricsTranslationLanguage = lyricsTranslationLanguage,
+                    onShowLyricsTranslationChange = onShowLyricsTranslationChange,
+                    onShowLyricsRomanizationChange = onShowLyricsRomanizationChange,
+                    onLyricsTranslationLanguageChange = onLyricsTranslationLanguageChange,
+                )
+            }
+        }
     }
 }
 

@@ -491,6 +491,7 @@ internal fun LyricsView(
     seekPositionMs: Long,
     emphasisColor: Color,
     modifier: Modifier = Modifier,
+    activeLyricAlpha: Float = 1f,
     active: Boolean = true,
     playerActive: Boolean = true,
     positionDiscontinuityRevision: Long = 0L,
@@ -1096,6 +1097,7 @@ internal fun LyricsView(
                             )
                         }
                         LyricsLineItem(
+                            activeOpacityLimit = activeLyricAlpha,
                             pressColor = emphasisColor,
                             isFocused = isCurrentLine,
                             usesWordProgress = usesWordProgress,
@@ -1137,9 +1139,10 @@ internal fun LyricsView(
                                 isUserBrowsingLyrics = false
                                 onSeek(line.startTimeMs)
                             },
-                        ) { wordProgressActiveAlpha, translationAlpha ->
+                        ) { wordProgressActiveAlpha, translationAlpha, primaryTextAlpha ->
                             if (prepared != null) {
                                 TimedLyricLine(
+                                    activeOpacityLimit = activeLyricAlpha,
                                     line = line,
                                     translation = selectedTranslations[index],
                                     prepared = prepared,
@@ -1159,6 +1162,7 @@ internal fun LyricsView(
                                 )
                             } else {
                                 SyncedLyricLine(
+                                    primaryTextAlpha = primaryTextAlpha,
                                     line = line,
                                     translation = selectedTranslations[index],
                                     translationAlpha = translationAlpha,
@@ -1183,6 +1187,7 @@ internal fun LyricsView(
 
 @Composable
 private fun LyricsLineItem(
+    activeOpacityLimit: Float,
     pressColor: Color,
     isFocused: Boolean,
     usesWordProgress: Boolean,
@@ -1196,6 +1201,7 @@ private fun LyricsLineItem(
     content: @Composable (
         wordProgressActiveAlpha: Float,
         translationAlpha: Float,
+        primaryTextAlpha: Float,
     ) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -1281,6 +1287,7 @@ private fun LyricsLineItem(
                     usesWordProgress = usesWordProgress,
                 ),
                 lyricTranslationAlpha(layerAlpha),
+                minOf(alpha, activeOpacityLimit) / alpha.coerceAtLeast(LYRIC_INACTIVE_TEXT_ALPHA),
             )
         }
     }
@@ -1331,6 +1338,7 @@ internal fun CompactTimedLyricLine(
     animationMode: LyricAnimationMode,
     documentHasTimedWords: Boolean,
     modifier: Modifier = Modifier,
+    activeOpacityLimit: Float = 1f,
     centered: Boolean = false,
     focused: Boolean = true,
     resetKey: Any? = null,
@@ -1393,6 +1401,7 @@ internal fun CompactTimedLyricLine(
                                 positionMs = if (usesWordProgress && focused) position else line.endTimeMs,
                                 color = color,
                                 activeAlpha = 1f,
+                                activeOpacityLimit = activeOpacityLimit,
                                 effectScale = effectScale,
                                 fadeWidthPx = fadeWidth,
                                 glyphMotionEnabled = false,
@@ -1407,6 +1416,7 @@ internal fun CompactTimedLyricLine(
 
 @Composable
 private fun TimedLyricLine(
+    activeOpacityLimit: Float,
     line: LyricLine,
     translation: String?,
     prepared: PreparedLyricLine,
@@ -1448,6 +1458,7 @@ private fun TimedLyricLine(
 
             val latestTimeProvider = rememberUpdatedState(currentTimeProvider)
             val latestActiveAlpha = rememberUpdatedState(activeAlpha)
+            val latestActiveOpacityLimit = rememberUpdatedState(activeOpacityLimit)
             val staticCompleted by remember(line, latestTimeProvider) {
                 derivedStateOf { latestTimeProvider.value() >= line.endTimeMs }
             }
@@ -1470,6 +1481,7 @@ private fun TimedLyricLine(
                             },
                             color = emphasisColor,
                             activeAlpha = latestActiveAlpha.value,
+                            activeOpacityLimit = latestActiveOpacityLimit.value,
                             effectScale = effectScale,
                             fadeWidthPx = fadeWidth,
                             glyphMotionEnabled = motionDurationScale?.scaleFactor != 0f,
@@ -1515,6 +1527,7 @@ private fun TimedLyricLine(
 
 @Composable
 private fun SyncedLyricLine(
+    primaryTextAlpha: Float,
     line: LyricLine,
     translation: String?,
     translationAlpha: Float,
@@ -1548,7 +1561,7 @@ private fun SyncedLyricLine(
                 .animatedPlayerTextAlignment(textLayout, alignmentProgress,
                     endAligned = lineAlignment == LyricAlignment.END),
             style = normalTextStyle,
-            color = emphasisColor,
+            color = emphasisColor.copy(alpha = emphasisColor.alpha * primaryTextAlpha),
             textAlign = if (lineAlignment == null) TextAlign.Start else TextAlign.Left,
             onTextLayout = { textLayout = it },
         )
@@ -1951,16 +1964,18 @@ private fun DrawScope.drawLyricsLine(
     fadeWidthPx: Float,
     glyphMotionEnabled: Boolean,
     inactiveAlpha: Float = LYRIC_INACTIVE_TEXT_ALPHA,
+    activeOpacityLimit: Float = 1f,
 ) {
     val motionStrength = lyricLineMotionStrength(activeAlpha)
+    val foregroundAlpha = minOf(activeAlpha, activeOpacityLimit)
     rows.forEach { row ->
         val width = minOf(fadeWidthPx, row.width).coerceAtLeast(1f)
         val fade = lyricFadeBounds(row.minX, row.maxX, linePixelPosition(row, positionMs), width)
         val offset = playerTextAlignmentOffset(row.minX, row.maxX, canvasWidth, alignmentProgress.value, endAligned)
         val uniformAlpha = when {
             positionMs <= row.firstStartTimeMs -> inactiveAlpha
-            positionMs >= row.lastEndTimeMs -> activeAlpha
-            activeAlpha == inactiveAlpha -> inactiveAlpha
+            positionMs >= row.lastEndTimeMs -> foregroundAlpha
+            foregroundAlpha == inactiveAlpha -> inactiveAlpha
             else -> null
         }
         withTransform({ translate(left = offset) }) {
@@ -1976,7 +1991,7 @@ private fun DrawScope.drawLyricsLine(
                     val clippedWidth = (fade.endX - fade.startX).coerceAtLeast(0.001f)
                     translate(left = center) {
                         drawRect(
-                            brush = row.gradient(activeAlpha, clippedWidth, inactiveAlpha),
+                            brush = row.gradient(foregroundAlpha, clippedWidth, inactiveAlpha),
                             topLeft = row.layerBounds.topLeft - Offset(center, 0f),
                             size = row.layerBounds.size,
                             blendMode = BlendMode.DstIn,

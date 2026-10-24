@@ -43,6 +43,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontSynthesis
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -298,12 +300,15 @@ internal fun PortraitArtworkWithLyrics(
     showRomanization: Boolean,
     centerLyrics: Boolean,
     animationMode: LyricAnimationMode,
+    lyricFontWeight: Int,
     contentWidth: Dp,
     preferredArtworkSize: Dp,
     progressGap: Dp,
     color: Color,
     artworkContent: @Composable (Dp) -> Unit,
     modifier: Modifier = Modifier,
+    activeLyricAlpha: Float = 1f,
+    lyricsVisible: Boolean = true,
     previewPositionMs: Long? = null,
     translationLanguage: LyricsTranslationLanguage = LyricsTranslationLanguage.AUTO,
 ) {
@@ -312,8 +317,10 @@ internal fun PortraitArtworkWithLyrics(
         return
     }
     val incomingDocument = compactLyricsDocument(lyrics, playback.currentItem?.mediaId)
-    val incomingLyrics = if (incomingDocument != null) lyrics else when (lyrics) {
-        LyricsUiState.Unavailable -> LyricsUiState.Unavailable
+    val incomingLyrics = when {
+        !lyricsVisible -> LyricsUiState.Unavailable
+        incomingDocument != null -> lyrics
+        lyrics == LyricsUiState.Unavailable -> LyricsUiState.Unavailable
         else -> LyricsUiState.Loading
     }
     val reserveLyrics = rememberCompactArtworkLyricsPresence(incomingLyrics)
@@ -326,8 +333,15 @@ internal fun PortraitArtworkWithLyrics(
     // Retain the outgoing song's last sample only for its fade, without following the new song's clock.
     val renderPlayback = if (currentDocument) playback else retainedPlayback.copy(isPlaying = false)
     val renderActive = active && currentDocument
-    val primaryStyle = MiuixTheme.textStyles.footnote1.copy(fontSize = 14.sp, lineHeight = 20.sp)
-    val auxiliaryStyle = MiuixTheme.textStyles.footnote1.copy(fontSize = 12.sp, lineHeight = 16.sp)
+    val lyricFontFamily = rememberLyricFontFamily(lyricFontWeight)
+    val primaryStyle = MiuixTheme.textStyles.footnote1.copy(
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        fontFamily = lyricFontFamily,
+        fontWeight = FontWeight(lyricFontWeight.coerceIn(1, 1000)),
+        fontSynthesis = FontSynthesis.None,
+    )
+    val auxiliaryStyle = primaryStyle.copy(fontSize = 12.sp, lineHeight = 16.sp)
     BoxWithConstraints(modifier = modifier) {
         val geometry = compactArtworkLayout(maxHeight, preferredArtworkSize, progressGap)
         val artworkTarget = if (reserveLyrics) geometry else {
@@ -356,6 +370,7 @@ internal fun PortraitArtworkWithLyrics(
                     lines, renderPlayback, renderTime, active, currentDocument && previewPositionMs != null, primaryStyle,
                     auxiliaryStyle, showTranslation, showRomanization, centerLyrics, animationMode, color,
                     translationLanguage = translationLanguage,
+                    activeLyricAlpha = activeLyricAlpha,
                     modifier = Modifier.align(Alignment.TopCenter).width(contentWidth)
                         .height(geometry.lyricsHeight).offset(y = geometry.lyricsTop)
                         .graphicsLayer { alpha = lyricsAlpha.value },
@@ -380,6 +395,7 @@ private fun CompactLyricsViewport(
     animationMode: LyricAnimationMode,
     color: Color,
     modifier: Modifier = Modifier,
+    activeLyricAlpha: Float = 1f,
     translationLanguage: LyricsTranslationLanguage = LyricsTranslationLanguage.AUTO,
 ) {
     val index by remember(lines, time) { derivedStateOf { compactLyricIndexAtPosition(lines, time()) } }
@@ -443,6 +459,7 @@ private fun CompactLyricsViewport(
                 ) {
                     CompactTimedLyricLine(line, primaryStyle, rowColor, time, animationMode, hasTimedWords,
                         modifier = Modifier.fillMaxWidth(), centered = centered, focused = focused,
+                        activeOpacityLimit = if (focused) activeLyricAlpha else 1f,
                         resetKey = playback.playbackIteration to playback.positionDiscontinuityRevision)
                     auxiliary[row].forEach { text ->
                         CompactAuxiliaryLine(line, text, auxiliaryStyle, auxiliaryColor, time, focused, centered)

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +33,7 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.platform.ComposeView
@@ -41,6 +43,7 @@ import androidx.compose.ui.zIndex
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.melox.player.ui.component.liquid.rememberCombinedBackdrop
 import com.melox.player.ui.component.playback.PlayerSheetDragInputOverlay
 import com.melox.player.ui.component.playback.PlayerSheetTransitionState
 import com.melox.player.ui.component.playback.recordPlayerLayer
@@ -52,6 +55,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 
 @RunWith(AndroidJUnit4::class)
 class PlayerSheetRenderingTest {
@@ -461,6 +466,72 @@ class PlayerSheetRenderingTest {
                 tap(view, size.width * 0.5f, size.height * 0.7f)
                 assertEquals(1, pageTaps)
                 assertEquals(0, hiddenControlTaps)
+            }
+        }
+    }
+
+    @Test
+    fun backgroundAndMovingForegroundRemainSampleableDuringOffscreenHandoff() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val live = mutableStateOf(true)
+        val foregroundOffset = mutableStateOf(0f)
+        val firstDraw = CountDownLatch(1)
+        lateinit var view: ComposeView
+
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                view = ComposeView(activity).apply {
+                    setContent {
+                        val frame = rememberGraphicsLayer()
+                        val backgroundFrame = rememberGraphicsLayer()
+                        val background = rememberLayerBackdrop()
+                        val foreground = rememberLayerBackdrop()
+                        val combined = rememberCombinedBackdrop(background, foreground)
+                        val sampleCoordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
+                        Box(Modifier.fillMaxSize()) {
+                            Box(Modifier.fillMaxSize().recordPlayerLayer(
+                                layer = frame,
+                                drawInPlace = live.value,
+                            )) {
+                                Canvas(Modifier.fillMaxSize().recordPlayerLayer(
+                                    layer = backgroundFrame,
+                                    drawInPlace = live.value,
+                                    backdrop = background,
+                                )) { drawRect(Color.Green) }
+                                Canvas(Modifier.fillMaxSize().layerBackdrop(foreground)) {
+                                    drawRect(
+                                        Color.Magenta,
+                                        topLeft = Offset(0f, size.height * (0.5f + foregroundOffset.value)),
+                                        size = Size(size.width, size.height),
+                                    )
+                                }
+                                Canvas(Modifier.fillMaxSize().onGloballyPositioned {
+                                    sampleCoordinates.value = it
+                                }) {
+                                    with(combined) {
+                                        drawBackdrop(this@Canvas, sampleCoordinates.value)
+                                    }
+                                }
+                            }
+                            Canvas(Modifier.fillMaxSize()) {
+                                if (!live.value) drawLayer(frame)
+                                firstDraw.countDown()
+                            }
+                        }
+                    }
+                }
+                activity.setContentView(view)
+            }
+            assertTrue(firstDraw.await(5, TimeUnit.SECONDS))
+            instrumentation.waitForIdleSync()
+            assertCompleteFrame(scenario, view)
+            for (inPlace in listOf(false, true, false, true)) {
+                scenario.onActivity {
+                    live.value = inPlace
+                    foregroundOffset.value = if (inPlace) 0.08f else -0.08f
+                }
+                instrumentation.waitForIdleSync()
+                assertCompleteFrame(scenario, view)
             }
         }
     }

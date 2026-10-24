@@ -271,9 +271,6 @@ internal fun LyricsInterfaceSettingsScreen(
                 leftAlignPlayerTitle = leftAlignTitle,
                 centerLyrics = centerLyrics,
                 centerLyricsEnabled = centerLyricsEnabled,
-                showLyricsTranslation = translation,
-                showLyricsRomanization = romanization,
-                lyricsTranslationLanguage = translationLanguage,
                 lyricFontScale = fontScale,
                 lyricFontWeight = fontWeight,
                 lyricBlurEnabled = blur,
@@ -286,18 +283,6 @@ internal fun LyricsInterfaceSettingsScreen(
                 onCenterLyricsChange = {
                     centerLyrics = it
                     onCenterLyricsChange(it)
-                },
-                onShowLyricsTranslationChange = {
-                    translation = it
-                    onShowLyricsTranslationChange(it)
-                },
-                onLyricsTranslationLanguageChange = {
-                    translationLanguage = it
-                    onLyricsTranslationLanguageChange(it)
-                },
-                onShowLyricsRomanizationChange = {
-                    romanization = it
-                    onShowLyricsRomanizationChange(it)
                 },
                 onLyricFontScalePreview = { fontScale = it },
                 onLyricFontScaleCommit = { onLyricFontScaleChange(fontScale) },
@@ -317,6 +302,27 @@ internal fun LyricsInterfaceSettingsScreen(
                 },
                 modifier = Modifier.padding(horizontal = 12.dp),
             )
+        }
+        item(key = "lyrics_translation_preferences") {
+            Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 12.dp)) {
+                LyricsTranslationPreferences(
+                    showLyricsTranslation = translation,
+                    showLyricsRomanization = romanization,
+                    lyricsTranslationLanguage = translationLanguage,
+                    onShowLyricsTranslationChange = {
+                        translation = it
+                        onShowLyricsTranslationChange(it)
+                    },
+                    onLyricsTranslationLanguageChange = {
+                        translationLanguage = it
+                        onLyricsTranslationLanguageChange(it)
+                    },
+                    onShowLyricsRomanizationChange = {
+                        romanization = it
+                        onShowLyricsRomanizationChange(it)
+                    },
+                )
+            }
         }
     }
 }

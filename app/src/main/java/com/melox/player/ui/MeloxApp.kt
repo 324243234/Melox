@@ -2621,6 +2621,7 @@ fun MeloxApp(
                                 settings.playbackBackgroundStyle,
                             dynamicFlowBackgroundState = dynamicFlowBackgroundState,
                             playbackBackgroundDark = playerBackgroundDark,
+                            dynamicColorEnabled = settings.dynamicColorEnabled,
                             playbackContentColor = rememberPlaybackContentColor(
                                 settings = settings,
                                 playbackArtworkColor = playbackArtworkColor,
@@ -2850,6 +2851,7 @@ private fun FullPlayerHost(
     playbackBackgroundStyle: PlaybackBackgroundStyle,
     dynamicFlowBackgroundState: DynamicFlowBackgroundState,
     playbackBackgroundDark: Boolean,
+    dynamicColorEnabled: Boolean,
     playbackContentColor: androidx.compose.ui.graphics.Color,
     lyricFontScale: Float,
     lyricFontWeight: Int,
@@ -2914,6 +2916,7 @@ private fun FullPlayerHost(
         playbackBackgroundStyle = playbackBackgroundStyle,
         dynamicFlowBackgroundState = dynamicFlowBackgroundState,
         playbackBackgroundDark = playbackBackgroundDark,
+        dynamicColorEnabled = dynamicColorEnabled,
         playbackContentColor = playbackContentColor,
         lyricFontScale = lyricFontScale,
         lyricFontWeight = lyricFontWeight,

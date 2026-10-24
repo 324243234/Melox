@@ -16,13 +16,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.offset
 
 @Composable
 internal fun PortraitPlayerLayout(
     spacing: PlayerVerticalSpacing,
     modifier: Modifier = Modifier,
     artworkModifier: Modifier = Modifier,
+    artworkBottomOverlap: Dp = 0.dp,
     artworkContent: @Composable (Dp) -> Unit,
     detailsContent: @Composable () -> Unit,
 ) {
@@ -34,6 +38,15 @@ internal fun PortraitPlayerLayout(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
+                .then(
+                    if (artworkBottomOverlap > 0.dp) Modifier.layout { measurable, constraints ->
+                        val overlap = artworkBottomOverlap.roundToPx()
+                        val placeable = measurable.measure(constraints.offset(vertical = overlap))
+                        layout(placeable.width, (placeable.height - overlap).coerceAtLeast(0)) {
+                            placeable.place(0, 0)
+                        }
+                    } else Modifier,
+                )
                 .then(artworkModifier),
             contentAlignment = Alignment.Center,
         ) {

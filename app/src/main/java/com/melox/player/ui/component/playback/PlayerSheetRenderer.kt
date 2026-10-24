@@ -69,6 +69,8 @@ import androidx.compose.runtime.saveable.Saver
 import top.yukonga.miuix.kmp.squircle.squircleClip
 import top.yukonga.miuix.kmp.squircle.isSquircleEnabled
 import top.yukonga.miuix.kmp.squircle.squircleBorder
+import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.basic.DividerDefaults
 import top.yukonga.miuix.kmp.utils.getRoundedCorner
 
@@ -115,6 +117,7 @@ internal fun Modifier.recordPlayerLayer(
     drawInPlace: Boolean,
     recordingGeneration: Int = 0,
     recordInPlace: Boolean = false,
+    backdrop: LayerBackdrop? = null,
     onRecorded: (generation: Int, size: IntSize) -> Unit = { _, _ -> },
 ): Modifier = drawWithContent {
     if (drawInPlace && !recordInPlace) {
@@ -131,7 +134,10 @@ internal fun Modifier.recordPlayerLayer(
         }
         onRecorded(recordingGeneration, layer.size)
     }
-}
+}.then(
+    // Capture inside the handoff recorder, including frames that are not drawn live.
+    if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier,
+)
 
 internal fun Modifier.recordMiniPlayerLayer(
     layer: GraphicsLayer,

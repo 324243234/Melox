@@ -338,8 +338,7 @@
     <string name="lyrics_unavailable">No lyrics</string>
     <string name="player_settings">Lyrics settings</string>
     <string name="player_settings_open">Open lyrics settings</string>
-    <string name="playback_options_open">Playback speed and sleep timer</string>
-    <string name="playback_sleep_timer">Timer</string>
+    <string name="playback_sleep_timer">Sleep timer</string>
     <string name="playback_sleep_timer_start">Start</string>
     <string name="playback_sleep_timer_stop">Stop</string>
     <string name="playback_timer_auto_extend">Extend until this song ends</string>
@@ -432,4 +431,6 @@
     <string name="lyrics_translation_language_chinese">Chinese</string>
     <string name="lyrics_translation_language_english">English</string>
     <string name="lyrics_translation_language_all">All translations</string>
+    <string name="playback_audio_settings">Audio settings</string>
+    <string name="lyrics_translation_open">Open lyrics translation</string>
 </resources>

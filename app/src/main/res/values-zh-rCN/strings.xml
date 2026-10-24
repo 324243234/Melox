@@ -325,8 +325,7 @@
     <string name="lyrics_unavailable">暂无歌词</string>
     <string name="player_settings">歌词设置</string>
     <string name="player_settings_open">打开歌词设置</string>
-    <string name="playback_options_open">播放倍速与定时</string>
-    <string name="playback_sleep_timer">定时</string>
+    <string name="playback_sleep_timer">睡眠定时</string>
     <string name="playback_sleep_timer_start">开始</string>
     <string name="playback_sleep_timer_stop">停止</string>
     <string name="playback_timer_auto_extend">延长到单首歌曲播完</string>
@@ -418,4 +417,6 @@
     <string name="lyrics_translation_language_chinese">中文</string>
     <string name="lyrics_translation_language_english">英文</string>
     <string name="lyrics_translation_language_all">全部译文</string>
+    <string name="playback_audio_settings">音频设置</string>
+    <string name="lyrics_translation_open">打开歌词翻译</string>
 </resources>

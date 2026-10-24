@@ -14,6 +14,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.MarqueeSpacing
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
@@ -34,6 +36,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -60,7 +63,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.CompositingStrategy
@@ -69,17 +74,19 @@ import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.findRootCoordinates
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -132,11 +139,15 @@ import com.melox.player.ui.component.playback.fittedArtworkRect
 import kotlin.math.abs
 import kotlin.math.roundToLong
 import kotlin.math.roundToInt
+import top.yukonga.miuix.kmp.blur.Backdrop
+import top.yukonga.miuix.kmp.blur.blur
+import top.yukonga.miuix.kmp.blur.drawBackdrop
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.IconButtonDefaults
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.ProgressIndicatorDefaults
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -144,12 +155,13 @@ import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.More
-import top.yukonga.miuix.kmp.icon.extended.SearchDevice
+import top.yukonga.miuix.kmp.icon.extended.Translate
 import top.yukonga.miuix.kmp.icon.extended.Playlist
-import top.yukonga.miuix.kmp.icon.extended.Tune
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.SinkFeedback
+import top.yukonga.miuix.kmp.utils.pressable
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 
 @Composable
@@ -165,15 +177,19 @@ internal fun PlayerDetails(
     onSeek: (Long) -> Unit,
     onPreviewPositionChange: (Long?) -> Unit,
     onCyclePlaybackMode: () -> Unit,
-    onOpenPlaybackOptions: () -> Unit,
-    onOpenLyricsSettings: () -> Unit,
+    onOpenAudioSettings: () -> Unit,
+    onOpenSleepTimer: () -> Unit,
     onOpenQueue: () -> Unit,
     onOpenTrackActions: () -> Unit,
     modifier: Modifier = Modifier,
+    primaryControlAlpha: Float? = null,
     primaryControlsWidth: Dp = contentWidth,
     secondaryControlsWidth: Dp = contentWidth,
     spacing: PlayerVerticalSpacing = PlayerVerticalSpacing(),
 ) {
+    val primaryControlColor = emphasisControlColor.copy(
+        alpha = primaryControlAlpha ?: emphasisControlColor.alpha,
+    )
     val progressIndicatorColor = emphasisControlColor.copy(alpha = 0.6f)
     val progressLabelColor = emphasisControlColor.copy(alpha = 0.6f)
     val secondaryControlColor = emphasisControlColor.copy(alpha = 0.6f)
@@ -210,7 +226,7 @@ internal fun PlayerDetails(
                 val layout = playerPrimaryControlLayout(maxWidth)
                 PlayerTrackSkipButton(
                     direction = -1,
-                    tint = emphasisControlColor,
+                    tint = primaryControlColor,
                     iconSize = PLAYER_SIDE_CONTROL_ICON_SIZE,
                     touchSize = PLAYER_SIDE_CONTROL_TOUCH_SIZE,
                     onClick = { playback.currentItem != null && onPrevious() },
@@ -220,7 +236,7 @@ internal fun PlayerDetails(
                 )
                 AnimatedPlayPauseButton(
                     playWhenReady = playback.playWhenReady,
-                    tint = emphasisControlColor,
+                    tint = primaryControlColor,
                     onClick = {
                         if (playback.currentItem != null) onTogglePlayPause()
                     },
@@ -235,7 +251,7 @@ internal fun PlayerDetails(
                 )
                 PlayerTrackSkipButton(
                     direction = 1,
-                    tint = emphasisControlColor,
+                    tint = primaryControlColor,
                     iconSize = PLAYER_SIDE_CONTROL_ICON_SIZE,
                     touchSize = PLAYER_SIDE_CONTROL_TOUCH_SIZE,
                     onClick = { playback.currentItem != null && onNext() },
@@ -258,24 +274,25 @@ internal fun PlayerDetails(
                     enabled = !immersiveMode,
                     onClick = onCyclePlaybackMode,
                 )
-                IconButton(
-                    onClick = onOpenLyricsSettings,
+                PlayerFunctionButton(
+                    onClick = onOpenSleepTimer,
                     enabled = !immersiveMode,
                 ) {
                     Icon(
-                        imageVector = MiuixIcons.Tune,
-                        contentDescription = stringResource(R.string.player_settings_open),
+                        painter = painterResource(R.drawable.ic_player_sleep_timer),
+                        contentDescription = stringResource(R.string.playback_sleep_timer),
                         modifier = Modifier.size(24.dp),
                         tint = secondaryControlColor,
                     )
                 }
-                IconButton(
-                    onClick = onOpenPlaybackOptions,
+                PlayerFunctionButton(
+                    onClick = onOpenAudioSettings,
                     enabled = !immersiveMode,
                 ) {
                     Icon(
-                        imageVector = MiuixIcons.SearchDevice,
-                        contentDescription = stringResource(R.string.playback_options_open),
+                        painter = painterResource(R.drawable.ic_player_audio_settings),
+                        contentDescription = stringResource(R.string.playback_audio_settings),
+                        modifier = Modifier.size(24.dp),
                         tint = secondaryControlColor,
                     )
                 }
@@ -345,7 +362,7 @@ private fun PlaybackModeButton(
     onClick: () -> Unit,
     enabled: Boolean,
 ) {
-    IconButton(
+    PlayerFunctionButton(
         onClick = onClick,
         enabled = enabled,
     ) {
@@ -526,7 +543,7 @@ private fun PlayerIconButton(
     tint: Color = MiuixTheme.colorScheme.onSurface,
     enabled: Boolean = true,
 ) {
-    IconButton(
+    PlayerFunctionButton(
         onClick = onClick,
         enabled = enabled,
     ) {
@@ -536,5 +553,114 @@ private fun PlayerIconButton(
             modifier = Modifier.size(size),
             tint = tint,
         )
+    }
+}
+
+@Composable
+internal fun PlayerLyricActionsRow(
+    showLyricsTranslation: Boolean,
+    emphasisControlColor: Color,
+    onOpenLyricsSettings: () -> Unit,
+    onToggleLyricsTranslation: () -> Unit,
+    onOpenTranslationSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    blurBackdrop: Backdrop? = null,
+) {
+    val secondaryControlColor = emphasisControlColor.copy(alpha = 0.6f)
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        PlayerFunctionButton(
+            onClick = onOpenLyricsSettings,
+            blurBackdrop = blurBackdrop,
+            enabled = enabled,
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_player_lyrics_settings),
+                contentDescription = stringResource(R.string.player_settings_open),
+                modifier = Modifier.size(24.dp),
+                tint = secondaryControlColor,
+            )
+        }
+        repeat(3) { Spacer(Modifier.width(IconButtonDefaults.MinWidth)) }
+        PlayerFunctionButton(
+            onClick = onToggleLyricsTranslation,
+            onLongClick = onOpenTranslationSettings,
+            onLongClickLabel = stringResource(R.string.lyrics_translation_open),
+            enabled = enabled,
+            blurBackdrop = blurBackdrop,
+            modifier = Modifier.semantics {
+                toggleableState = ToggleableState(showLyricsTranslation)
+            },
+        ) {
+            Icon(
+                imageVector = MiuixIcons.Translate,
+                contentDescription = stringResource(R.string.lyrics_translation),
+                tint = if (showLyricsTranslation) secondaryControlColor
+                    else emphasisControlColor.copy(alpha = 0.3f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerFunctionButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onLongClick: (() -> Unit)? = null,
+    onLongClickLabel: String? = null,
+    blurBackdrop: Backdrop? = null,
+    content: @Composable () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val feedback = remember { SinkFeedback() }
+    Box(
+        modifier = modifier
+            .pressable(
+                interactionSource = interactionSource,
+                indication = feedback,
+                enabled = enabled,
+                delay = null,
+            )
+            .combinedClickable(
+                enabled = enabled,
+                role = Role.Button,
+                interactionSource = null,
+                indication = null,
+                onLongClick = onLongClick,
+                onLongClickLabel = onLongClickLabel,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (blurBackdrop != null) {
+            Box(
+                modifier = Modifier.matchParentSize()
+                    .requiredSize(64.dp)
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    .drawWithCache {
+                        val mask = Brush.radialGradient(
+                            0f to Color.White,
+                            0.45f to Color.White,
+                            1f to Color.Transparent,
+                            radius = size.minDimension / 2f,
+                        )
+                        onDrawWithContent {
+                            drawContent()
+                            drawRect(mask, blendMode = BlendMode.DstIn)
+                        }
+                    }
+                    .drawBackdrop(
+                        backdrop = blurBackdrop,
+                        shape = { RectangleShape },
+                        effects = { blur(12.dp.toPx()) },
+                    ),
+            )
+        }
+        IconButton(onClick = onClick, enabled = false, content = content)
     }
 }
