@@ -83,19 +83,33 @@ internal class DynamicFlowBackgroundState {
     private var previousPaint: Paint? = null
     private var previousFrame: Bitmap? = null
     private val shaderMatrix = Matrix()
+    private var frameViewportSize = IntSize.Zero
+    private var frameDensityDpi = 0
+    private var viewportRenderer: ((IntSize, Int) -> Bitmap)? = null
     internal var elapsedMillis: Long = 0L
     internal var frameRevision by mutableIntStateOf(0)
         private set
 
-    internal fun publishFrame(frame: Bitmap) {
+    internal fun publishFrame(
+        frame: Bitmap,
+        viewportSize: IntSize = frameViewportSize,
+        densityDpi: Int = frameDensityDpi,
+    ) {
         displayedFrame = frame
+        frameViewportSize = viewportSize
+        frameDensityDpi = densityDpi
         currentPaint = shaderPaint(frame)
         previousPaint = null
         previousFrame = null
         frameRevision += 1
     }
 
-    internal fun beginTransition(frame: Bitmap, fallbackColor: Color = DynamicFlowFallbackColor) {
+    internal fun beginTransition(
+        frame: Bitmap,
+        fallbackColor: Color = DynamicFlowFallbackColor,
+        viewportSize: IntSize = frameViewportSize,
+        densityDpi: Int = frameDensityDpi,
+    ) {
         freezeTransition()
         val previous = displayedFrame ?: Bitmap.createBitmap(
             1, 1, Bitmap.Config.ARGB_8888,
@@ -103,8 +117,28 @@ internal class DynamicFlowBackgroundState {
         previousFrame = previous
         previousPaint = currentPaint ?: shaderPaint(previous)
         displayedFrame = frame
+        frameViewportSize = viewportSize
+        frameDensityDpi = densityDpi
         currentPaint = shaderPaint(frame).apply { alpha = 0 }
         frameRevision += 1
+    }
+
+    internal fun setViewportRenderer(renderer: (IntSize, Int) -> Bitmap) {
+        viewportRenderer = renderer
+    }
+
+    internal fun prepareViewport(size: IntSize, densityDpi: Int) {
+        if (size.width <= 0 || size.height <= 0 ||
+            size == frameViewportSize && densityDpi == frameDensityDpi
+        ) return
+        val renderer = viewportRenderer ?: return
+        val alpha = currentPaint?.alpha ?: 255
+        // Like SALT's onSizeChanged/onDraw path, replace size-dependent pixels
+        // before drawing. An asynchronous replacement would stretch the old frame.
+        displayedFrame = renderer(size, densityDpi)
+        currentPaint = shaderPaint(requireNotNull(displayedFrame)).apply { this.alpha = alpha }
+        frameViewportSize = size
+        frameDensityDpi = densityDpi
     }
 
     internal fun updateTransition(progress: Float) {
@@ -114,11 +148,11 @@ internal class DynamicFlowBackgroundState {
 
     // A cancelled fade is flattened once, before its source buffers can be reused.
     internal fun freezeTransition() {
-        val previous = previousFrame ?: return
+        if (previousFrame == null) return
         val current = displayedFrame ?: return
         val snapshot = Bitmap.createBitmap(
-            max(previous.width, current.width),
-            max(previous.height, current.height),
+            current.width,
+            current.height,
             Bitmap.Config.ARGB_8888,
         )
         Canvas(snapshot).apply {
@@ -131,7 +165,7 @@ internal class DynamicFlowBackgroundState {
     internal fun drawTo(canvas: Canvas, width: Float, height: Float) {
         fun draw(frame: Bitmap?, paint: Paint?) {
             if (frame == null || paint == null) return
-            shaderMatrix.setScale(width / frame.width, height / frame.height)
+            fitShaderMatrix(frame, width, height)
             paint.shader.setLocalMatrix(shaderMatrix)
             canvas.drawRect(0f, 0f, width, height, paint)
         }
@@ -151,13 +185,13 @@ internal class DynamicFlowBackgroundState {
         val currentShader = currentPaint?.shader as? BitmapShader ?: return false
         // RuntimeShader inputs do not inherit Paint's bitmap filtering flag.
         currentShader.setFilterMode(BitmapShader.FILTER_MODE_LINEAR)
-        shaderMatrix.setScale(width / current.width, height / current.height)
+        fitShaderMatrix(current, width, height)
         currentShader.setLocalMatrix(shaderMatrix)
         val previous = previousFrame
         val previousShader = previousPaint?.shader as? BitmapShader
         if (previous != null && previousShader != null) {
             previousShader.setFilterMode(BitmapShader.FILTER_MODE_LINEAR)
-            shaderMatrix.setScale(width / previous.width, height / previous.height)
+            fitShaderMatrix(previous, width, height)
             previousShader.setLocalMatrix(shaderMatrix)
         }
         painter.draw(
@@ -170,6 +204,12 @@ internal class DynamicFlowBackgroundState {
 
     private fun shaderPaint(frame: Bitmap) = Paint(Paint.FILTER_BITMAP_FLAG).apply {
         shader = BitmapShader(frame, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+    }
+
+    private fun fitShaderMatrix(frame: Bitmap, width: Float, height: Float) {
+        val scale = max(width / frame.width, height / frame.height)
+        shaderMatrix.setScale(scale, scale)
+        shaderMatrix.postTranslate((width - frame.width * scale) / 2f, (height - frame.height * scale) / 2f)
     }
 }
 
@@ -227,33 +267,35 @@ internal fun DynamicFlowBackground(
         val washSecondaryArgb = dynamicFlowSecondaryWashColor(dark).toArgb()
         var renderedSize = IntSize.Zero
         var renderedDensity = 0
+        fun renderAt(size: IntSize, density: Int, visibleFrame: Bitmap?): Bitmap =
+            if (cover == null) {
+                Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).apply {
+                    eraseColor(resolvedBackgroundColor.toArgb())
+                }
+            } else {
+                createDynamicFlowFrameBitmap(
+                    frameBufferPool = frameBufferPool,
+                    displayedFrame = visibleFrame,
+                    cover = cover,
+                    meshSeed = meshSeed,
+                    viewportWidth = size.width,
+                    viewportHeight = size.height,
+                    timeMillis = scaledDynamicFlowTimeMs(
+                        state.elapsedMillis, DYNAMIC_FLOW_DEFAULT_SPEED_TENTHS,
+                    ),
+                    densityDpi = density,
+                    blur = DYNAMIC_FLOW_DEFAULT_BLUR,
+                    washPrimaryArgb = washPrimaryArgb,
+                    washSecondaryArgb = washSecondaryArgb,
+                    backgroundArgb = resolvedBackgroundColor.toArgb(),
+                )
+            }
         suspend fun renderFrame(): Bitmap {
             val size = viewportSize
             val density = currentDensityDpi
             val visibleFrame = state.displayedFrame
             val frame = withContext(Dispatchers.Default) {
-                if (cover == null) {
-                    Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).apply {
-                        eraseColor(resolvedBackgroundColor.toArgb())
-                    }
-                } else {
-                    createDynamicFlowFrameBitmap(
-                        frameBufferPool = frameBufferPool,
-                        displayedFrame = visibleFrame,
-                        cover = cover,
-                        meshSeed = meshSeed,
-                        viewportWidth = size.width,
-                        viewportHeight = size.height,
-                        timeMillis = scaledDynamicFlowTimeMs(
-                            state.elapsedMillis, DYNAMIC_FLOW_DEFAULT_SPEED_TENTHS,
-                        ),
-                        densityDpi = density,
-                        blur = DYNAMIC_FLOW_DEFAULT_BLUR,
-                        washPrimaryArgb = washPrimaryArgb,
-                        washSecondaryArgb = washSecondaryArgb,
-                        backgroundArgb = resolvedBackgroundColor.toArgb(),
-                    )
-                }
+                renderAt(size, density, visibleFrame)
             }
             renderedSize = size
             renderedDensity = density
@@ -261,7 +303,9 @@ internal fun DynamicFlowBackground(
         }
 
         val target = renderFrame()
-        state.beginTransition(target, fallbackColor = fallbackColor)
+        state.beginTransition(target, fallbackColor = fallbackColor,
+            viewportSize = renderedSize, densityDpi = renderedDensity)
+        state.setViewportRenderer { size, density -> renderAt(size, density, state.displayedFrame) }
         Animatable(0f).animateTo(
             targetValue = 1f,
             animationSpec = tween(
@@ -271,13 +315,14 @@ internal fun DynamicFlowBackground(
         ) {
             state.updateTransition(value)
         }
-        state.publishFrame(if (
+        val completedFrame = if (
             renderedSize != viewportSize || renderedDensity != currentDensityDpi
         ) {
             renderFrame()
         } else {
             target
-        })
+        }
+        state.publishFrame(completedFrame, renderedSize, renderedDensity)
         onFrameReady()
         if (cover == null) return@LaunchedEffect
 
@@ -291,13 +336,19 @@ internal fun DynamicFlowBackground(
                     state.elapsedMillis, previousFrameNanos, frameNanos,
                 )
                 previousFrameNanos = frameNanos
-                state.publishFrame(renderFrame())
+                val frame = renderFrame()
+                if (renderedSize == viewportSize && renderedDensity == currentDensityDpi) {
+                    state.publishFrame(frame, renderedSize, renderedDensity)
+                }
             } else {
                 previousFrameNanos = null
                 if (viewportSize.width > 0 && viewportSize.height > 0 &&
                     (renderedSize != viewportSize || renderedDensity != currentDensityDpi)
                 ) {
-                    state.publishFrame(renderFrame())
+                    val frame = renderFrame()
+                    if (renderedSize == viewportSize && renderedDensity == currentDensityDpi) {
+                        state.publishFrame(frame, renderedSize, renderedDensity)
+                    }
                 }
                 snapshotFlow { Triple(animationEnabled, viewportSize, currentDensityDpi) }
                     .first { (enabled, size, density) ->
@@ -318,6 +369,7 @@ internal fun DynamicFlowBackground(
             // Snapshot observation stays in the draw phase, so frame publication
             // invalidates only this background node.
             state.frameRevision
+            state.prepareViewport(IntSize(size.width.roundToInt(), size.height.roundToInt()), densityDpi)
             val canvas = drawContext.canvas.nativeCanvas
             val dithered = isRuntimeShaderSupported() && ditherPainter != null && canvas.isHardwareAccelerated &&
                 state.drawDitheredTo(canvas, size.width, size.height, ditherPainter, dark = dark)
@@ -406,10 +458,12 @@ internal class DynamicFlowFrameBufferPool {
     private var nextBufferIndex = 0
     private var previousCompleteFrame: Bitmap? = null
 
+    @Synchronized
     fun resetHistory() {
         previousCompleteFrame = null
     }
 
+    @Synchronized
     fun render(
         displayedFrame: Bitmap?,
         cover: Bitmap,
