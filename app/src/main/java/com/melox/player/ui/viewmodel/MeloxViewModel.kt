@@ -1336,7 +1336,6 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
     fun cyclePlaybackMode() = playbackController.cyclePlaybackMode()
 
     fun setPlaybackSpeed(speed: Float) {
-        if (playbackController.state.value.floatOutputActive && speed != 1f) return
         playbackController.setPlaybackSpeed(speed)
         viewModelScope.launch { settingsRepository.setPlaybackSpeed(speed) }
     }

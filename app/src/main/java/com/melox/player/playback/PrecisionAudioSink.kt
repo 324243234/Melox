@@ -64,6 +64,7 @@ internal class PrecisionRenderersFactory(
         enableAudioOutputPlaybackParams: Boolean,
     ): AudioSink = object : ForwardingAudioSink(
         DefaultAudioSink.Builder(context)
+            .setAudioProcessorChain(PcmPlaybackProcessorChain())
             .setEnableFloatOutput(highPrecisionEnabled)
             .setEnableAudioOutputPlaybackParameters(false)
             .build(),

@@ -132,10 +132,6 @@ class PlaybackService : MediaSessionService() {
         override fun onEvents(player: Player, events: Player.Events) {
             if (player !== activePlayer) return
             sleepTimer.onPlayerEvents(player)
-            if (floatOutputActive && player.playbackParameters.speed != 1f) {
-                player.setPlaybackSpeed(1f)
-                return
-            }
             if (events.contains(Player.EVENT_REPEAT_MODE_CHANGED)) {
                 refreshMediaButtonPreferences(player.currentPlaybackMode())
             }
@@ -295,7 +291,7 @@ class PlaybackService : MediaSessionService() {
 
             ACTION_SET_PLAYBACK_SPEED -> {
                 val speed = args.getFloat(EXTRA_PLAYBACK_SPEED, 1f)
-                if (speed in PLAYBACK_SPEED_VALUES && (!floatOutputActive || speed == 1f)) {
+                if (speed in PLAYBACK_SPEED_VALUES) {
                     if (snapshotRestorePending) deferredPlaybackSpeed = speed
                     else activePlayer?.setPlaybackSpeed(speed)
                     Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -553,14 +549,6 @@ class PlaybackService : MediaSessionService() {
         if (floatOutputActive == active) return
         floatOutputActive = active
         updateSessionExtras()
-        if (active && activePlayer?.playbackParameters?.speed != 1f) {
-            activePlayer?.setPlaybackSpeed(1f)
-            serviceScope.launch {
-                if (highPrecisionOutput && floatOutputActive) {
-                    settingsRepository.setPlaybackSpeed(1f)
-                }
-            }
-        }
     }
 
     private fun sessionExtras(): Bundle = Bundle().apply {
@@ -688,7 +676,7 @@ class PlaybackService : MediaSessionService() {
         }
         deferredPlaybackSpeed?.let { speed ->
             deferredPlaybackSpeed = null
-            if (!floatOutputActive || speed == 1f) activePlayer?.setPlaybackSpeed(speed)
+            activePlayer?.setPlaybackSpeed(speed)
         }
         updateSessionExtras()
     }

@@ -293,7 +293,6 @@ class PlaybackController(context: Context) {
 
     fun setPlaybackSpeed(speed: Float) {
         if (speed !in PLAYBACK_SPEED_VALUES) return
-        if (mutableState.value.floatOutputActive && speed != 1f) return
         val request = ++speedRequestSerial
         pendingPlaybackSpeed = speed
         mutableState.value = mutableState.value.copy(playbackSpeed = speed)
@@ -538,10 +537,7 @@ class PlaybackController(context: Context) {
         }
         val floatOutputActive = controller?.sessionExtras
             ?.getBoolean(EXTRA_FLOAT_OUTPUT_ACTIVE, false) ?: false
-        if (floatOutputActive) {
-            pendingPlaybackSpeed = null
-            pendingSpeedTimeoutJob?.cancel()
-        } else if (pendingPlaybackSpeed == player.playbackParameters.speed) {
+        if (pendingPlaybackSpeed == player.playbackParameters.speed) {
             pendingPlaybackSpeed = null
             pendingSpeedTimeoutJob?.cancel()
         }
