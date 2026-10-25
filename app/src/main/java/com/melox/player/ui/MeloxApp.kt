@@ -237,6 +237,7 @@ import com.melox.player.ui.screen.settings.SettingsScreen
 import com.melox.player.ui.screen.settings.ScanMusicScreen
 import com.melox.player.ui.screen.settings.MusicStatisticsScreen
 import com.melox.player.ui.screen.settings.AboutScreen
+import com.melox.player.ui.screen.settings.PlaybackBehaviorScreen
 import com.melox.player.ui.screen.settings.SponsorScreen
 import com.melox.player.ui.screen.settings.InterfaceStyleSettingsScreen
 import com.melox.player.ui.screen.settings.ThemeSettingsScreen
@@ -313,6 +314,7 @@ private enum class AppRoute {
     ROOT,
     SCAN_SETTINGS,
     MUSIC_STATISTICS,
+    PLAYBACK_BEHAVIOR,
     THEME_SETTINGS,
     INTERFACE_STYLE,
     MAIN_BACKGROUND,
@@ -868,6 +870,7 @@ fun MeloxApp(
         val mainBackgroundListState = rememberLazyListState()
         val lyricsSettingsListState = rememberLazyListState()
         val lyricsInterfaceListState = rememberLazyListState()
+        val playbackBehaviorListState = rememberLazyListState()
         var renderedBottomBarStyle by remember {
             mutableStateOf(settings.bottomBarStyle)
         }
@@ -904,6 +907,7 @@ fun MeloxApp(
         val mainBackgroundScrollBehavior = MiuixScrollBehavior()
         val lyricsSettingsScrollBehavior = MiuixScrollBehavior()
         val lyricsInterfaceScrollBehavior = MiuixScrollBehavior()
+        val playbackBehaviorScrollBehavior = MiuixScrollBehavior()
         LaunchedEffect(
             pendingAlbumGridReset,
             albumSortConfig.gridStyle,
@@ -1559,6 +1563,7 @@ fun MeloxApp(
                                 currentRoute = AppRoute.LYRICS_SETTINGS
                             },
                             onOpenAbout = { currentRoute = AppRoute.ABOUT },
+                            onOpenPlaybackBehavior = { currentRoute = AppRoute.PLAYBACK_BEHAVIOR },
                             onOpenScanSettings = {
                                 currentRoute = AppRoute.SCAN_SETTINGS
                             },
@@ -2237,6 +2242,16 @@ fun MeloxApp(
                                                                 routeBottomPadding,
                                                             onBack = navigateBack,
                                                         )
+
+                                                    AppRoute.PLAYBACK_BEHAVIOR -> PlaybackBehaviorScreen(
+                                                        settings = settings,
+                                                        bottomContentPadding = routeBottomPadding,
+                                                        listState = playbackBehaviorListState,
+                                                        scrollBehavior = playbackBehaviorScrollBehavior,
+                                                        onBack = navigateBack,
+                                                        onAutoPlayOnStartChange = viewModel::setAutoPlayOnStart,
+                                                        onTerminateOnTaskRemovedChange = viewModel::setTerminateOnTaskRemoved,
+                                                    )
 
                                                     AppRoute.ABOUT -> AboutScreen(
                                                         bottomContentPadding = routeBottomPadding,

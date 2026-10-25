@@ -61,6 +61,8 @@ internal const val ACTION_REMOVE_QUEUE_CONTENT_URIS = "com.melox.player.action.R
 internal const val EXTRA_REMOVED_CONTENT_URIS = "removed_content_uris"
 internal const val ACTION_SET_PAUSE_FADE = "com.melox.player.action.SET_PAUSE_FADE"
 internal const val ACTION_SET_PLAYBACK_INTENT = "com.melox.player.action.SET_PLAYBACK_INTENT"
+internal const val ACTION_APPLY_STARTUP_PLAYBACK = "com.melox.player.action.APPLY_STARTUP_PLAYBACK"
+internal const val EXTRA_ALLOW_STARTUP_AUTO_PLAY = "allow_startup_auto_play"
 internal const val ACTION_SET_PLAYBACK_SPEED = "com.melox.player.action.SET_PLAYBACK_SPEED"
 internal const val ACTION_SET_HIGH_PRECISION_OUTPUT = "com.melox.player.action.SET_HIGH_PRECISION_OUTPUT"
 internal const val ACTION_START_SLEEP_TIMER = "com.melox.player.action.START_SLEEP_TIMER"
@@ -102,6 +104,8 @@ class PlaybackService : MediaSessionService() {
     private var artworkLoadJob: Job? = null
     private var requestedArtworkKey: PlaybackArtworkKey? = null
     private var isClosing = false
+    private var startupPlaybackApplied = false
+    private var autoPlayOnStart = false
     private val cyclePlaybackModeCommand = SessionCommand(ACTION_CYCLE_PLAYBACK_MODE, Bundle.EMPTY)
     private val closeApplicationCommand = SessionCommand(ACTION_CLOSE_APPLICATION_COMMAND, Bundle.EMPTY)
     private val pauseFadeCommand = SessionCommand(ACTION_SET_PAUSE_FADE, Bundle.EMPTY)
@@ -221,6 +225,7 @@ class PlaybackService : MediaSessionService() {
                             add(SessionCommand(ACTION_REMOVE_QUEUE_CONTENT_URIS, Bundle.EMPTY))
                             add(pauseFadeCommand)
                             add(playbackIntentCommand)
+                            add(SessionCommand(ACTION_APPLY_STARTUP_PLAYBACK, Bundle.EMPTY))
                             add(playbackSpeedCommand)
                             add(highPrecisionOutputCommand)
                             add(SessionCommand(ACTION_START_SLEEP_TIMER, Bundle.EMPTY))
@@ -239,6 +244,23 @@ class PlaybackService : MediaSessionService() {
             customCommand: SessionCommand,
             args: Bundle,
         ) = when (customCommand.customAction) {
+            ACTION_APPLY_STARTUP_PLAYBACK -> {
+                if (!startupPlaybackApplied && !isClosing) {
+                    startupPlaybackApplied = true
+                    val player = session.player
+                    if (autoPlayOnStart && args.getBoolean(EXTRA_ALLOW_STARTUP_AUTO_PLAY) &&
+                        (snapshotRestorePending || player.mediaItemCount > 0)
+                    ) {
+                        // Restoration carries this intent forward; later pause/queue commands win.
+                        if (!snapshotRestorePending && player.playbackState == Player.STATE_IDLE) {
+                            player.prepare()
+                        }
+                        player.play()
+                    }
+                }
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+
             ACTION_CYCLE_PLAYBACK_MODE -> {
                 cyclePlaybackMode(session.player)
                 Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -329,6 +351,7 @@ class PlaybackService : MediaSessionService() {
         val startupSettings = runBlocking(Dispatchers.IO) { settingsRepository.loadSettings() }
         highPrecisionOutput = startupSettings.highPrecisionOutput
         pauseFadeEnabled = startupSettings.playbackPauseFade
+        autoPlayOnStart = startupSettings.autoPlayOnStart
         sleepTimer.autoExtend = startupSettings.autoExtendSleepTimer
         val startupSnapshot = miniSnapshotStore.load()
             ?.withoutContentUris(startupSettings.hiddenTrackUris)
@@ -392,12 +415,15 @@ class PlaybackService : MediaSessionService() {
     ): MediaSession? = mediaSession
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        val terminate = runBlocking(Dispatchers.IO) {
+            settingsRepository.loadSettings().terminateOnTaskRemoved
+        }
         mediaSession?.player?.let { player ->
             if (player.shouldPersistCurrentSnapshot()) {
                 persistSnapshotBlocking(player)
             }
         }
-        super.onTaskRemoved(rootIntent)
+        if (terminate) closeApplication() else super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
@@ -577,6 +603,7 @@ class PlaybackService : MediaSessionService() {
             if (snapshot == null || snapshot.queue.isEmpty()) {
                 PlaybackModeMemory.set(requestedMode ?: snapshot?.playbackMode ?: PlaybackMode.ORDER)
                 withContext(Dispatchers.IO) { miniSnapshotStore.clear() }
+                player.pause()
                 player.clearMediaItems()
                 completeSnapshotRestore(player)
                 return@launch

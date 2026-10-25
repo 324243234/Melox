@@ -93,6 +93,28 @@ class MeloxInstrumentedTest {
     }
 
     @Test
+    fun playbackBehaviorPreferencesPersistIndependently() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = SettingsRepository(context)
+        val original = repository.loadSettings()
+        try {
+            for (autoPlay in listOf(false, true)) {
+                for (terminate in listOf(false, true)) {
+                    repository.setAutoPlayOnStart(autoPlay)
+                    repository.setTerminateOnTaskRemoved(terminate)
+                    val restored = SettingsRepository(context).loadSettings()
+                    assertEquals(autoPlay, restored.autoPlayOnStart)
+                    assertEquals(terminate, restored.terminateOnTaskRemoved)
+                    assertEquals(original.playbackPauseFade, restored.playbackPauseFade)
+                }
+            }
+        } finally {
+            repository.setAutoPlayOnStart(original.autoPlayOnStart)
+            repository.setTerminateOnTaskRemoved(original.terminateOnTaskRemoved)
+        }
+    }
+
+    @Test
     fun immersiveAndStatusBarPreferencesPersistIndependently() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val repository = SettingsRepository(context)

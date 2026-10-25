@@ -20,6 +20,7 @@ class MainActivity : AppCompatActivity() {
         setContent {
             MeloxApp(viewModel = appViewModel)
         }
+        appViewModel.applyStartupPlayback(allowAutoPlay = intent.externalAudioUri() == null)
         if (savedInstanceState == null) {
             playAudioFrom(intent)
         }

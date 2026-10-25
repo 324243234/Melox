@@ -171,6 +171,8 @@ data class AppSettings(
     val sleepTimerSeconds: Int = 600,
     val autoExtendSleepTimer: Boolean = false,
     val playbackPauseFade: Boolean = false,
+    val autoPlayOnStart: Boolean = false,
+    val terminateOnTaskRemoved: Boolean = false,
     val lyricFontScale: Float = 1f,
     val lyricFontWeight: Int = 400,
     val lyricAnimationMode: LyricAnimationMode = LyricAnimationMode.CURRENT_LINE,

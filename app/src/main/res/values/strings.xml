@@ -229,6 +229,12 @@
     <string name="player_immersive_mode_disable">Disable immersive mode</string>
     <string name="settings_section_personalization">Personalization</string>
     <string name="settings_section_other">Other</string>
+    <string name="settings_section_playback">Playback</string>
+    <string name="settings_playback_behavior_title">Playback behavior</string>
+    <string name="settings_auto_play_title">Auto-play</string>
+    <string name="settings_auto_play_summary">Automatically resume the last song when the app starts</string>
+    <string name="settings_terminate_on_task_removed_title">Terminate app when removed from recents</string>
+    <string name="settings_terminate_on_task_removed_summary">End the app process and stop playback when removed from recent apps. When off, the system may still end the app.</string>
     <string name="settings_section_navigation">Navigation and animation</string>
     <string name="language_title">Language</string>
     <string name="language_follow_system">Follow system</string>

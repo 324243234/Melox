@@ -1317,6 +1317,10 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    fun applyStartupPlayback(allowAutoPlay: Boolean) {
+        playbackController.applyStartupPlayback(allowAutoPlay)
+    }
+
     fun playExternalAudio(uri: Uri) {
         playbackController.playExternal(uri)
     }
@@ -1364,6 +1368,14 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
     fun setPlaybackPauseFade(enabled: Boolean) {
         playbackController.setPlaybackPauseFade(enabled)
         viewModelScope.launch { settingsRepository.setPlaybackPauseFade(enabled) }
+    }
+
+    fun setAutoPlayOnStart(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.setAutoPlayOnStart(enabled) }
+    }
+
+    fun setTerminateOnTaskRemoved(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.setTerminateOnTaskRemoved(enabled) }
     }
 
     fun playNext(track: MusicTrack) {

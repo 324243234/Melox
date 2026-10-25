@@ -162,6 +162,13 @@ class PlaybackController(context: Context) {
         }
     }
 
+    fun applyStartupPlayback(allowAutoPlay: Boolean) = withController { controller ->
+        controller.sendCustomCommand(
+            SessionCommand(ACTION_APPLY_STARTUP_PLAYBACK, Bundle.EMPTY),
+            Bundle().apply { putBoolean(EXTRA_ALLOW_STARTUP_AUTO_PLAY, allowAutoPlay) },
+        )
+    }
+
     /** Replaces playback with the visible result set and starts at [startIndex]. */
     fun playQueue(
         tracks: List<MusicTrack>,
