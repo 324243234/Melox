@@ -1331,6 +1331,7 @@ internal fun FullPlayerScreen(
                 AudioSettingsSheet(
                     show = showAudioSettings,
                     playbackSpeed = playback.playbackSpeed,
+                    audioSessionId = playback.audioSessionId,
                     playbackPauseFade = playbackPauseFade,
                     onPlaybackPauseFadeChange = onPlaybackPauseFadeChange,
                     onDismiss = { showAudioSettings = false },

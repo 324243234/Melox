@@ -2259,6 +2259,7 @@ fun MeloxApp(
                                                             scrollBehavior = audioOutputScrollBehavior,
                                                             onBack = navigateBack,
                                                             playbackSpeed = playback.playbackSpeed,
+                                                            audioSessionId = playback.audioSessionId,
                                                             highPrecisionOutput = highPrecision,
                                                             playbackPauseFade = pauseFade,
                                                             onAudioFocusEnabledChange = viewModel::setAudioFocusEnabled,

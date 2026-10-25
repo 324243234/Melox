@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import com.melox.player.R
 import com.melox.player.model.PLAYBACK_SPEED_VALUES
 import com.melox.player.model.SleepTimerState
+import com.melox.player.ui.component.playback.AudioEffectPreferences
 import com.melox.player.ui.component.bottomSheetCardColor
 import com.melox.player.ui.component.bottomSheetGlassModifier
 import com.melox.player.ui.component.bottomSheetMaterialColor
@@ -371,6 +372,7 @@ internal fun SleepTimerSheet(
 internal fun AudioSettingsSheet(
     show: Boolean,
     playbackSpeed: Float,
+    audioSessionId: Int,
     playbackPauseFade: Boolean,
     onDismiss: () -> Unit,
     onPlaybackSpeedChange: (Float) -> Unit,
@@ -402,6 +404,12 @@ internal fun AudioSettingsSheet(
                 backgroundColor = bottomSheetCardColor(),
                 onPlaybackSpeedChange = onPlaybackSpeedChange,
             )
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.defaultColors(color = bottomSheetCardColor()),
+            ) {
+                AudioEffectPreferences(audioSessionId = audioSessionId)
+            }
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.defaultColors(color = bottomSheetCardColor()),
@@ -453,6 +461,7 @@ internal fun PlaybackSpeedSelector(
 @Composable
 internal fun AudioPlaybackPreferences(
     playbackSpeed: Float,
+    audioSessionId: Int,
     highPrecisionOutput: Boolean,
     speedBackgroundColor: Color,
     onPlaybackSpeedChange: (Float) -> Unit,
@@ -466,6 +475,7 @@ internal fun AudioPlaybackPreferences(
             onPlaybackSpeedChange = onPlaybackSpeedChange,
             modifier = Modifier.padding(12.dp),
         )
+        AudioEffectPreferences(audioSessionId = audioSessionId)
         SwitchPreference(
             title = stringResource(R.string.playback_high_precision_output),
             checked = highPrecisionOutput,

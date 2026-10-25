@@ -5,11 +5,13 @@ import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
+import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
@@ -529,6 +531,7 @@ class PlaybackController(context: Context) {
         }
     }
 
+    @OptIn(UnstableApi::class)
     private fun publish(player: Player) {
         val controller = player as? MediaController
         if (!timerCommandPending) {
@@ -572,6 +575,7 @@ class PlaybackController(context: Context) {
             positionUpdateElapsedRealtimeMs = SystemClock.elapsedRealtime(),
             playbackSpeed = pendingPlaybackSpeed ?: player.playbackParameters.speed,
             floatOutputActive = floatOutputActive,
+            audioSessionId = player.audioSessionId,
             durationMs = duration.coerceAtLeast(0L),
             bufferedPositionMs = player.bufferedPosition.coerceAtLeast(0L),
             playbackMode = playbackMode,

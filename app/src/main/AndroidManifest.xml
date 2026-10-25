@@ -19,6 +19,7 @@
         tools:node="remove" />
 
     <queries>
+        <package android:name="com.miui.misound" />
         <package android:name="com.xjcheng.musictageditor" />
         <package android:name="com.lonx.lyrico" />
         <package android:name="com.example.LyricBox" />

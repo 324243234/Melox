@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.media.audiofx.AudioEffect
 import android.media.AudioAttributes as PlatformAudioAttributes
 import android.os.Handler
 import android.os.Bundle
@@ -157,6 +158,7 @@ class PlaybackService : MediaSessionService() {
     }
     private var highPrecisionOutput = false
     private var floatOutputActive = false
+    private var audioEffectSessionId = C.AUDIO_SESSION_ID_UNSET
     private var outputGeneration = 0
     private var pauseFadeEnabled = false
     private var deferredPlaybackSpeed: Float? = null
@@ -172,6 +174,9 @@ class PlaybackService : MediaSessionService() {
     private val playerListener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
             if (player !== activePlayer) return
+            if (events.contains(Player.EVENT_AUDIO_SESSION_ID)) {
+                updateAudioEffectSession(player.audioSessionId)
+            }
             if (player.playbackState == Player.STATE_ENDED ||
                 (!snapshotRestorePending && player.mediaItemCount == 0)
             ) playbackAudioFocus.onUserPause()
@@ -492,6 +497,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        updateAudioEffectSession(C.AUDIO_SESSION_ID_UNSET)
         playbackAudioFocus.release()
         playbackVolumeFade?.release()
         playbackVolumeFade = null
@@ -595,6 +601,7 @@ class PlaybackService : MediaSessionService() {
         val keepPlaying = oldPlayer.playWhenReady && oldFade?.hasPendingPause != true
         val shouldPrepare = oldPlayer.playbackState != Player.STATE_IDLE && items.isNotEmpty()
         nextPlayer.playWhenReady = keepPlaying
+        updateAudioEffectSession(C.AUDIO_SESSION_ID_UNSET)
         session.setPlayer(nextPlayer)
         activePlayer = nextPlayer
         highPrecisionOutput = enabled
@@ -615,6 +622,24 @@ class PlaybackService : MediaSessionService() {
         }
         scheduleArtworkUpdate(nextPlayer)
         scheduleSnapshotWrite(nextPlayer, immediate = true)
+    }
+
+    private fun updateAudioEffectSession(sessionId: Int) {
+        if (audioEffectSessionId == sessionId) return
+        fun notifyEffect(action: String, id: Int) {
+            if (id <= 0) return
+            try {
+                sendBroadcast(Intent(action)
+                    .putExtra(AudioEffect.EXTRA_AUDIO_SESSION, id)
+                    .putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
+                    .putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC))
+            } catch (_: SecurityException) {
+                // Some vendor effect receivers are restricted to system applications.
+            }
+        }
+        notifyEffect(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION, audioEffectSessionId)
+        audioEffectSessionId = sessionId
+        notifyEffect(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION, sessionId)
     }
 
     private fun setFloatOutputActive(active: Boolean) {

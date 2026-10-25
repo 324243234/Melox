@@ -53,6 +53,7 @@ internal fun AudioOutputScreen(
     scrollBehavior: ScrollBehavior,
     onBack: () -> Unit,
     playbackSpeed: Float,
+    audioSessionId: Int,
     highPrecisionOutput: Boolean,
     playbackPauseFade: Boolean,
     onAudioFocusEnabledChange: (Boolean) -> Unit,
@@ -165,6 +166,7 @@ internal fun AudioOutputScreen(
                     ) {
                         AudioPlaybackPreferences(
                             playbackSpeed = playbackSpeed,
+                            audioSessionId = audioSessionId,
                             highPrecisionOutput = highPrecisionOutput,
                             speedBackgroundColor = MiuixTheme.colorScheme.surface,
                             onPlaybackSpeedChange = onPlaybackSpeedChange,

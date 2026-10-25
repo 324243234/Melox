@@ -362,6 +362,9 @@
     <string name="playback_timer_extension_interrupted">Manually pausing or skipping a song during the extension cancels the sleep timer.</string>
     <string name="playback_pause_fade">Fade in and out on play/pause</string>
     <string name="playback_high_precision_output">High-precision output</string>
+    <string name="playback_system_equalizer">System equalizer</string>
+    <string name="playback_misound">MiSound</string>
+    <string name="playback_audio_effect_unavailable">Unable to open audio effect settings</string>
     <string name="playback_timer_confirm">Confirm</string>
     <string-array name="playback_speed_options">
         <item>×0.25</item><item>×0.50</item><item>×0.75</item><item>×0.90</item>
