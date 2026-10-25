@@ -221,6 +221,14 @@
     <string name="settings_section_personalization">个性化</string>
     <string name="settings_section_other">其他</string>
     <string name="settings_section_playback">播放</string>
+    <string name="settings_audio_output_title">音频输出</string>
+    <string name="settings_audio_focus_title">音频焦点</string>
+    <string name="settings_audio_focus_summary">其他应用获取音频焦点时暂停播放，系统的多声音设置可能影响此功能。</string>
+    <string name="settings_audio_focus_transient_title">短暂失去音频焦点</string>
+    <string name="settings_audio_focus_keep_volume">保持音量</string>
+    <string name="settings_audio_focus_duck">降低音量后自动恢复</string>
+    <string name="settings_audio_focus_pause">暂停后自动恢复</string>
+    <string name="playback_speed_title">播放速度</string>
     <string name="settings_playback_behavior_title">播放行为</string>
     <string name="settings_auto_play_title">自动播放</string>
     <string name="settings_auto_play_summary">启动应用时自动继续播放上次的歌曲</string>
@@ -341,7 +349,6 @@
     <string name="playback_timer_extension_interrupted">在延长定时期间手动暂停、切歌导致关闭定时</string>
     <string name="playback_pause_fade">播放暂停时淡入淡出</string>
     <string name="playback_high_precision_output">高精度输出</string>
-    <string name="playback_high_precision_output_summary">开启后部分歌曲无法调节倍速</string>
     <string name="playback_timer_confirm">确认</string>
     <string-array name="playback_speed_options">
         <item>×0.25</item><item>×0.50</item><item>×0.75</item><item>×0.90</item>

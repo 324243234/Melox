@@ -209,6 +209,24 @@ class PlaybackVolumeFadeTest {
     }
 
     @Test
+    fun duckingMultipliesTheFadeAndFocusPauseCancelsPendingMotion() = withFade {
+        fade.setFocusVolumeMultiplier(0.2f)
+        fade.requestPlaybackIntent(false)
+        awaitFrame()
+        advance(125L)
+        awaitFrame()
+        assertEquals(0.1f, volume, 0.001f)
+        fade.pauseImmediately()
+        advance(1_000L)
+        assertFalse(ready)
+        assertFalse(fade.hasPendingPause)
+        assertEquals(listOf("pause"), actions)
+        assertEquals(0.2f, volume, 0f)
+        fade.setFocusVolumeMultiplier(1f)
+        assertEquals(1f, volume, 0f)
+    }
+
+    @Test
     fun releaseCancelsAnUnfinishedPauseAndRestoresVolume() = withFade {
         fade.requestPlaybackIntent(false)
         awaitFrame()

@@ -230,6 +230,14 @@
     <string name="settings_section_personalization">Personalization</string>
     <string name="settings_section_other">Other</string>
     <string name="settings_section_playback">Playback</string>
+    <string name="settings_audio_output_title">Audio output</string>
+    <string name="settings_audio_focus_title">Audio focus</string>
+    <string name="settings_audio_focus_summary">Pause for other apps that take audio focus. System multi-audio settings may override this behavior.</string>
+    <string name="settings_audio_focus_transient_title">Transient audio focus loss</string>
+    <string name="settings_audio_focus_keep_volume">Keep volume</string>
+    <string name="settings_audio_focus_duck">Lower volume, then restore</string>
+    <string name="settings_audio_focus_pause">Pause, then resume</string>
+    <string name="playback_speed_title">Playback speed</string>
     <string name="settings_playback_behavior_title">Playback behavior</string>
     <string name="settings_auto_play_title">Auto-play</string>
     <string name="settings_auto_play_summary">Automatically resume the last song when the app starts</string>
@@ -354,7 +362,6 @@
     <string name="playback_timer_extension_interrupted">Manually pausing or skipping a song during the extension cancels the sleep timer.</string>
     <string name="playback_pause_fade">Fade in and out on play/pause</string>
     <string name="playback_high_precision_output">High-precision output</string>
-    <string name="playback_high_precision_output_summary">Some songs cannot change speed while this is on</string>
     <string name="playback_timer_confirm">Confirm</string>
     <string-array name="playback_speed_options">
         <item>×0.25</item><item>×0.50</item><item>×0.75</item><item>×0.90</item>

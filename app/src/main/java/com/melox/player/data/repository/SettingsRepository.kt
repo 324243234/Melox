@@ -25,6 +25,7 @@ import com.melox.player.data.library.FolderSortField
 import com.melox.player.data.library.MusicSortConfig
 import com.melox.player.data.library.MusicSortField
 import com.melox.player.model.AppSettings
+import com.melox.player.model.TransientAudioFocusBehavior
 import com.melox.player.data.playlist.PlaylistSortConfig
 import com.melox.player.data.playlist.PlaylistSortField
 import com.melox.player.model.normalizeCustomBackgroundBlurPercent
@@ -126,6 +127,10 @@ class SettingsRepository(context: Context) {
                     ?.coerceIn(0, 86_399) ?: 600,
                 autoExtendSleepTimer = preferences[Keys.AutoExtendSleepTimer] ?: false,
                 playbackPauseFade = preferences[Keys.PlaybackPauseFade] ?: false,
+                audioFocusEnabled = preferences[Keys.AudioFocusEnabled] ?: true,
+                transientAudioFocusBehavior = preferences[Keys.TransientAudioFocusBehavior]
+                    ?.let { enumValueOrDefault(it, TransientAudioFocusBehavior.DUCK) }
+                    ?: TransientAudioFocusBehavior.DUCK,
                 autoPlayOnStart = preferences[Keys.AutoPlayOnStart] ?: false,
                 terminateOnTaskRemoved = preferences[Keys.TerminateOnTaskRemoved] ?: false,
                 lyricFontScale = preferences[Keys.LyricFontScale]
@@ -368,6 +373,14 @@ class SettingsRepository(context: Context) {
 
     suspend fun setAutoPlayOnStart(enabled: Boolean) {
         dataStore.edit { it[Keys.AutoPlayOnStart] = enabled }
+    }
+
+    suspend fun setAudioFocusEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.AudioFocusEnabled] = enabled }
+    }
+
+    suspend fun setTransientAudioFocusBehavior(behavior: TransientAudioFocusBehavior) {
+        dataStore.edit { it[Keys.TransientAudioFocusBehavior] = behavior.name }
     }
 
     suspend fun setTerminateOnTaskRemoved(enabled: Boolean) {
@@ -669,6 +682,8 @@ class SettingsRepository(context: Context) {
         val SleepTimerSeconds = intPreferencesKey("sleep_timer_seconds")
         val AutoExtendSleepTimer = booleanPreferencesKey("auto_extend_sleep_timer")
         val PlaybackPauseFade = booleanPreferencesKey("playback_pause_fade")
+        val AudioFocusEnabled = booleanPreferencesKey("audio_focus_enabled")
+        val TransientAudioFocusBehavior = stringPreferencesKey("transient_audio_focus_behavior")
         val AutoPlayOnStart = booleanPreferencesKey("auto_play_on_start")
         val TerminateOnTaskRemoved = booleanPreferencesKey("terminate_on_task_removed")
         val LyricFontScale = floatPreferencesKey("lyric_font_scale_v2")

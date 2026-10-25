@@ -59,6 +59,7 @@ import com.melox.player.data.playlist.removePlaylistEntries
 import com.melox.player.data.playlist.reorderPlaylistEntries
 import com.melox.player.data.playlist.reorderPlaylists
 import com.melox.player.model.AppSettings
+import com.melox.player.model.TransientAudioFocusBehavior
 import com.melox.player.model.BottomBarStyle
 import com.melox.player.model.DefaultHomePage
 import com.melox.player.model.DynamicColorSource
@@ -1367,6 +1368,14 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
     fun setPlaybackPauseFade(enabled: Boolean) {
         playbackController.setPlaybackPauseFade(enabled)
         viewModelScope.launch { settingsRepository.setPlaybackPauseFade(enabled) }
+    }
+
+    fun setAudioFocusEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.setAudioFocusEnabled(enabled) }
+    }
+
+    fun setTransientAudioFocusBehavior(behavior: TransientAudioFocusBehavior) {
+        viewModelScope.launch { settingsRepository.setTransientAudioFocusBehavior(behavior) }
     }
 
     fun setAutoPlayOnStart(enabled: Boolean) {

@@ -39,6 +39,7 @@ fun SettingsScreen(
     onOpenThemeSettings: () -> Unit,
     onOpenLyricsSettings: () -> Unit,
     onOpenPlaybackBehavior: () -> Unit,
+    onOpenAudioOutput: () -> Unit,
     onOpenAbout: () -> Unit,
     onOpenScanSettings: () -> Unit,
     onOpenStatistics: () -> Unit,
@@ -105,6 +106,10 @@ fun SettingsScreen(
         }
         item(key = "playback") {
             SettingsCard {
+                ArrowPreference(
+                    title = stringResource(R.string.settings_audio_output_title),
+                    onClick = onOpenAudioOutput,
+                )
                 ArrowPreference(
                     title = stringResource(R.string.settings_playback_behavior_title),
                     onClick = onOpenPlaybackBehavior,

@@ -2,6 +2,10 @@
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.media.AudioAttributes as PlatformAudioAttributes
+import android.os.Handler
 import android.os.Bundle
 import android.os.Process
 import androidx.annotation.OptIn
@@ -78,6 +82,7 @@ internal const val EXTRA_PLAYBACK_INTENT = "playback_intent"
 internal const val EXTRA_PLAYBACK_SPEED = "playback_speed"
 internal const val EXTRA_HIGH_PRECISION_OUTPUT = "high_precision_output"
 internal const val EXTRA_FLOAT_OUTPUT_ACTIVE = "float_output_active"
+internal const val EXTRA_AUDIO_FOCUS_PAUSE_REVISION = "audio_focus_pause_revision"
 internal const val EXTRA_SNAPSHOT_RESTORE_PENDING = "snapshot_restore_pending"
 internal const val EXTRA_CLOSE_AFTER_EXTENSION = "close_after_extension"
 internal const val EXTRA_EXTENSION_EXPECTED_INDEX = "extension_expected_index"
@@ -114,6 +119,42 @@ class PlaybackService : MediaSessionService() {
     private val highPrecisionOutputCommand = SessionCommand(ACTION_SET_HIGH_PRECISION_OUTPUT, Bundle.EMPTY)
     private var playbackVolumeFade: PlaybackVolumeFade? = null
     private var activePlayer: ExoPlayer? = null
+    private var platformFocusRequest: AudioFocusRequest? = null
+    private var audioFocusPauseRevision = 0L
+    private val audioManager by lazy { getSystemService(AudioManager::class.java) }
+    private val playbackAudioFocus by lazy {
+        PlaybackAudioFocus(
+            requestFocus = { onChange ->
+                val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(PlatformAudioAttributes.Builder()
+                        .setUsage(PlatformAudioAttributes.USAGE_MEDIA)
+                        .setContentType(PlatformAudioAttributes.CONTENT_TYPE_MUSIC).build())
+                    .setAcceptsDelayedFocusGain(true)
+                    .setWillPauseWhenDucked(true)
+                    .setOnAudioFocusChangeListener({ onChange(it) }, Handler(mainLooper))
+                    .build()
+                platformFocusRequest = request
+                audioManager.requestAudioFocus(request)
+            },
+            abandonFocus = {
+                platformFocusRequest?.let(audioManager::abandonAudioFocusRequest)
+                platformFocusRequest = null
+            },
+            isPlaybackRequested = { activePlayer?.playWhenReady == true },
+            pause = {
+                audioFocusPauseRevision++
+                playbackVolumeFade?.pauseImmediately() ?: activePlayer?.pause()
+                updateSessionExtras()
+            },
+            resume = {
+                activePlayer?.let { player ->
+                    if (!snapshotRestorePending && player.playbackState == Player.STATE_IDLE) player.prepare()
+                    player.play()
+                }
+            },
+            setVolumeMultiplier = { playbackVolumeFade?.setFocusVolumeMultiplier(it) },
+        )
+    }
     private var highPrecisionOutput = false
     private var floatOutputActive = false
     private var outputGeneration = 0
@@ -131,6 +172,9 @@ class PlaybackService : MediaSessionService() {
     private val playerListener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
             if (player !== activePlayer) return
+            if (player.playbackState == Player.STATE_ENDED ||
+                (!snapshotRestorePending && player.mediaItemCount == 0)
+            ) playbackAudioFocus.onUserPause()
             sleepTimer.onPlayerEvents(player)
             if (events.contains(Player.EVENT_REPEAT_MODE_CHANGED)) {
                 refreshMediaButtonPreferences(player.currentPlaybackMode())
@@ -150,12 +194,27 @@ class PlaybackService : MediaSessionService() {
         }
     }
     private val mediaSessionCallback = object : MediaSession.Callback {
+        @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+        override fun onPlayerCommandRequest(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            playerCommand: Int,
+        ): Int {
+            if (playerCommand == Player.COMMAND_PLAY_PAUSE || playerCommand == Player.COMMAND_STOP) {
+                playbackAudioFocus.onUserPause()
+            }
+            return SessionResult.RESULT_SUCCESS
+        }
+
         override fun onPlayerInteractionFinished(
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
             playerCommands: Player.Commands,
         ) {
             if (!isClosing && session.player === activePlayer) {
+                if (playerCommands.contains(Player.COMMAND_PLAY_PAUSE) && session.player.playWhenReady) {
+                    playbackAudioFocus.onPlaybackIntentChanged(true)
+                }
                 if (snapshotRestorePending && (
                         playerCommands.contains(Player.COMMAND_SET_REPEAT_MODE) ||
                             playerCommands.contains(Player.COMMAND_SET_SHUFFLE_MODE)
@@ -285,6 +344,7 @@ class PlaybackService : MediaSessionService() {
             }
 
             ACTION_SET_PLAYBACK_INTENT -> {
+                if (!args.getBoolean(EXTRA_PLAYBACK_INTENT)) playbackAudioFocus.onUserPause()
                 playbackVolumeFade?.requestPlaybackIntent(args.getBoolean(EXTRA_PLAYBACK_INTENT))
                 Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
@@ -362,6 +422,15 @@ class PlaybackService : MediaSessionService() {
         playbackVolumeFade = PlaybackVolumeFade(player, serviceScope).apply {
             setEnabled(pauseFadeEnabled)
         }
+        playbackAudioFocus.updateSettings(
+            startupSettings.audioFocusEnabled, startupSettings.transientAudioFocusBehavior,
+        )
+        serviceScope.launch {
+            settingsRepository.settings
+                .map { it.audioFocusEnabled to it.transientAudioFocusBehavior }
+                .distinctUntilChanged()
+                .collect { (enabled, behavior) -> playbackAudioFocus.updateSettings(enabled, behavior) }
+        }
         startupSnapshot?.let { snapshot ->
             player.setMediaItems(
                 snapshot.queue.map(PlaybackQueueItem::toMediaItem),
@@ -423,6 +492,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        playbackAudioFocus.release()
         playbackVolumeFade?.release()
         playbackVolumeFade = null
         mediaSession?.run {
@@ -479,7 +549,7 @@ class PlaybackService : MediaSessionService() {
                     .setUsage(C.USAGE_MEDIA)
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                     .build(),
-                true,
+                false,
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
@@ -492,6 +562,7 @@ class PlaybackService : MediaSessionService() {
                         if (owner === activePlayer) {
                             if (!playWhenReady) sleepTimer.onPlayerEvents(owner)
                             playbackVolumeFade?.onPlayWhenReadyChanged(playWhenReady, reason)
+                            playbackAudioFocus.onPlaybackIntentChanged(playWhenReady)
                         }
                     }
 
@@ -532,6 +603,7 @@ class PlaybackService : MediaSessionService() {
         oldFade?.release()
         playbackVolumeFade = PlaybackVolumeFade(nextPlayer, serviceScope).apply {
             setEnabled(pauseFadeEnabled)
+            setFocusVolumeMultiplier(playbackAudioFocus.volumeMultiplier)
         }
         oldPlayer.removeListener(playerListener)
         oldPlayer.release()
@@ -553,6 +625,7 @@ class PlaybackService : MediaSessionService() {
 
     private fun sessionExtras(): Bundle = Bundle().apply {
         putBoolean(EXTRA_FLOAT_OUTPUT_ACTIVE, floatOutputActive)
+        putLong(EXTRA_AUDIO_FOCUS_PAUSE_REVISION, audioFocusPauseRevision)
         putBoolean(EXTRA_SNAPSHOT_RESTORE_PENDING, snapshotRestorePending)
         putBundle(EXTRA_SLEEP_TIMER_STATE, sleepTimer.state.toBundle())
     }

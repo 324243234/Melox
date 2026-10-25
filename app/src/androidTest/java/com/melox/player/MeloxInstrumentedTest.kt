@@ -93,6 +93,28 @@ class MeloxInstrumentedTest {
     }
 
     @Test
+    fun audioFocusPreferencesPersistIndependently() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = SettingsRepository(context)
+        val original = repository.loadSettings()
+        try {
+            for (enabled in listOf(false, true)) {
+                for (behavior in com.melox.player.model.TransientAudioFocusBehavior.entries) {
+                    repository.setAudioFocusEnabled(enabled)
+                    repository.setTransientAudioFocusBehavior(behavior)
+                    val restored = SettingsRepository(context).loadSettings()
+                    assertEquals(enabled, restored.audioFocusEnabled)
+                    assertEquals(behavior, restored.transientAudioFocusBehavior)
+                    assertEquals(original.highPrecisionOutput, restored.highPrecisionOutput)
+                }
+            }
+        } finally {
+            repository.setAudioFocusEnabled(original.audioFocusEnabled)
+            repository.setTransientAudioFocusBehavior(original.transientAudioFocusBehavior)
+        }
+    }
+
+    @Test
     fun playbackBehaviorPreferencesPersistIndependently() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val repository = SettingsRepository(context)

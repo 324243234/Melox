@@ -43,6 +43,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -369,28 +371,12 @@ internal fun SleepTimerSheet(
 internal fun AudioSettingsSheet(
     show: Boolean,
     playbackSpeed: Float,
-    floatOutputActive: Boolean,
-    highPrecisionOutput: Boolean,
     playbackPauseFade: Boolean,
     onDismiss: () -> Unit,
     onPlaybackSpeedChange: (Float) -> Unit,
-    onHighPrecisionOutputChange: (Boolean) -> Unit,
     onPlaybackPauseFadeChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val speedLabels = stringArrayResource(R.array.playback_speed_options).toList()
-    val speedBackgroundColor = bottomSheetCardColor().let { color ->
-        // Miuix 0.9.4's squircle-background shader returns an unpremultiplied color.
-        if (isRuntimeShaderSupported() && LocalSquircleEnabled.current) {
-            color.copy(
-                red = color.red * color.alpha,
-                green = color.green * color.alpha,
-                blue = color.blue * color.alpha,
-            )
-        } else {
-            color
-        }
-    }
     val scrollState = rememberScrollState()
     val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     OverlayBottomSheet(
@@ -411,47 +397,79 @@ internal fun AudioSettingsSheet(
                 .padding(bottom = bottomPadding + 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column {
-                AnimatedVisibility(
-                    visible = !floatOutputActive,
-                    enter = fadeIn(animationSpec = tween(200)) +
-                        expandVertically(animationSpec = tween(250)),
-                    exit = fadeOut(animationSpec = tween(150)) +
-                        shrinkVertically(animationSpec = tween(200)),
-                    label = "playbackSpeedVisibility",
-                ) {
-                    Column {
-                        TabRowWithContour(
-                            tabs = speedLabels,
-                            selectedTabIndex = PLAYBACK_SPEED_VALUES.indexOf(playbackSpeed)
-                                .takeIf { it >= 0 } ?: PLAYBACK_SPEED_VALUES.indexOf(1f),
-                            onTabSelected = { index ->
-                                if (!floatOutputActive) {
-                                    onPlaybackSpeedChange(PLAYBACK_SPEED_VALUES[index])
-                                }
-                            },
-                            colors = TabRowDefaults.tabRowColors(backgroundColor = speedBackgroundColor),
-                        )
-                        Spacer(Modifier.height(12.dp))
-                    }
-                }
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.defaultColors(color = bottomSheetCardColor()),
-                ) {
-                    SwitchPreference(
-                        title = stringResource(R.string.playback_high_precision_output),
-                        summary = stringResource(R.string.playback_high_precision_output_summary),
-                        checked = highPrecisionOutput,
-                        onCheckedChange = onHighPrecisionOutputChange,
-                    )
-                    SwitchPreference(
-                        title = stringResource(R.string.playback_pause_fade),
-                        checked = playbackPauseFade,
-                        onCheckedChange = onPlaybackPauseFadeChange,
-                    )
-                }
+            PlaybackSpeedSelector(
+                playbackSpeed = playbackSpeed,
+                backgroundColor = bottomSheetCardColor(),
+                onPlaybackSpeedChange = onPlaybackSpeedChange,
+            )
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.defaultColors(color = bottomSheetCardColor()),
+            ) {
+                SwitchPreference(
+                    title = stringResource(R.string.playback_pause_fade),
+                    checked = playbackPauseFade,
+                    onCheckedChange = onPlaybackPauseFadeChange,
+                )
             }
         }
+    }
+}
+
+@Composable
+internal fun PlaybackSpeedSelector(
+    playbackSpeed: Float,
+    backgroundColor: Color,
+    onPlaybackSpeedChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val speedLabels = stringArrayResource(R.array.playback_speed_options).toList()
+    val speedDescription = stringResource(R.string.playback_speed_title)
+    val speedBackgroundColor = backgroundColor.let { color ->
+        // Miuix 0.9.4's squircle-background shader returns an unpremultiplied color.
+        if (isRuntimeShaderSupported() && LocalSquircleEnabled.current) {
+            color.copy(
+                red = color.red * color.alpha,
+                green = color.green * color.alpha,
+                blue = color.blue * color.alpha,
+            )
+        } else {
+            color
+        }
+    }
+    Box(
+        modifier = modifier.fillMaxWidth().semantics { contentDescription = speedDescription },
+    ) {
+        TabRowWithContour(
+            tabs = speedLabels,
+            selectedTabIndex = PLAYBACK_SPEED_VALUES.indexOf(playbackSpeed)
+                .takeIf { it >= 0 } ?: PLAYBACK_SPEED_VALUES.indexOf(1f),
+            onTabSelected = { index -> onPlaybackSpeedChange(PLAYBACK_SPEED_VALUES[index]) },
+            colors = TabRowDefaults.tabRowColors(backgroundColor = speedBackgroundColor),
+        )
+    }
+}
+
+@Composable
+internal fun AudioPlaybackPreferences(
+    playbackSpeed: Float,
+    highPrecisionOutput: Boolean,
+    speedBackgroundColor: Color,
+    onPlaybackSpeedChange: (Float) -> Unit,
+    onHighPrecisionOutputChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier) {
+        PlaybackSpeedSelector(
+            playbackSpeed = playbackSpeed,
+            backgroundColor = speedBackgroundColor,
+            onPlaybackSpeedChange = onPlaybackSpeedChange,
+            modifier = Modifier.padding(12.dp),
+        )
+        SwitchPreference(
+            title = stringResource(R.string.playback_high_precision_output),
+            checked = highPrecisionOutput,
+            onCheckedChange = onHighPrecisionOutputChange,
+        )
     }
 }

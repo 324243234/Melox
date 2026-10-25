@@ -148,6 +148,12 @@ fun normalizeCustomBackgroundCardBlurPercent(percent: Int): Int = percent.coerce
 fun normalizeCustomBackgroundCardOpacityPercent(percent: Int): Int =
     percent.coerceIn(MIN_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT, MAX_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT)
 
+enum class TransientAudioFocusBehavior {
+    KEEP_VOLUME,
+    DUCK,
+    PAUSE,
+}
+
 /** User-controlled preferences stored by the settings repository. */
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -171,6 +177,8 @@ data class AppSettings(
     val sleepTimerSeconds: Int = 600,
     val autoExtendSleepTimer: Boolean = false,
     val playbackPauseFade: Boolean = false,
+    val audioFocusEnabled: Boolean = true,
+    val transientAudioFocusBehavior: TransientAudioFocusBehavior = TransientAudioFocusBehavior.DUCK,
     val autoPlayOnStart: Boolean = false,
     val terminateOnTaskRemoved: Boolean = false,
     val lyricFontScale: Float = 1f,

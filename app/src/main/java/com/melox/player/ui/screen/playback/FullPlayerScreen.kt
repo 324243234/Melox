@@ -220,8 +220,6 @@ internal fun FullPlayerScreen(
     onSeek: (Long) -> Unit,
     onCyclePlaybackMode: () -> Unit,
     onPlaybackSpeedChange: (Float) -> Unit,
-    highPrecisionOutput: Boolean,
-    onHighPrecisionOutputChange: (Boolean) -> Unit,
     sleepTimerState: SleepTimerState,
     sleepTimerSeconds: Int,
     onSleepTimerSecondsChange: (Int) -> Unit,
@@ -1333,9 +1331,6 @@ internal fun FullPlayerScreen(
                 AudioSettingsSheet(
                     show = showAudioSettings,
                     playbackSpeed = playback.playbackSpeed,
-                    floatOutputActive = playback.floatOutputActive,
-                    highPrecisionOutput = highPrecisionOutput,
-                    onHighPrecisionOutputChange = onHighPrecisionOutputChange,
                     playbackPauseFade = playbackPauseFade,
                     onPlaybackPauseFadeChange = onPlaybackPauseFadeChange,
                     onDismiss = { showAudioSettings = false },

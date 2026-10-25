@@ -14,6 +14,28 @@ internal class PlaybackVolumeFade(
     private val nowMs: () -> Long = SystemClock::elapsedRealtime,
     private val awaitFrame: suspend () -> Unit = { delay(16L) },
 ) {
+    private var focusVolumeMultiplier = 1f
+    private var fadeVolume = 1f
+        set(value) {
+            field = value
+            player.volume = value * focusVolumeMultiplier
+        }
+
+    fun setFocusVolumeMultiplier(multiplier: Float) {
+        focusVolumeMultiplier = multiplier
+        player.volume = fadeVolume * multiplier
+    }
+
+    fun pauseImmediately() {
+        volumeJob?.cancel()
+        volumeJob = null
+        pauseFadeOutPending = false
+        resumingForFade = false
+        internalPause = player.playWhenReady
+        player.pause()
+        fadeVolume = 1f
+    }
+
     private var enabled = false
     private var volumeJob: Job? = null
     private var pauseFadeOutPending = false
@@ -34,7 +56,7 @@ internal class PlaybackVolumeFade(
                 internalPause = true
                 player.pause()
             }
-            player.volume = 1f
+            fadeVolume = 1f
         }
     }
 
@@ -45,24 +67,24 @@ internal class PlaybackVolumeFade(
         if (play) {
             if (player.playbackState == Player.STATE_IDLE) player.prepare()
             if (!player.playWhenReady) {
-                player.volume = if (enabled) 0f else 1f
+                fadeVolume = if (enabled) 0f else 1f
                 if (enabled) resumingForFade = true
                 player.play()
             }
             if (enabled) {
-                volumeJob = scope.launch { rampVolume(player.volume, 1f, 250L) }
+                volumeJob = scope.launch { rampVolume(fadeVolume, 1f, 250L) }
             } else {
-                player.volume = 1f
+                fadeVolume = 1f
             }
         } else if (player.playWhenReady) {
             if (enabled && player.playbackState == Player.STATE_READY) {
                 pauseFadeOutPending = true
                 volumeJob = scope.launch {
-                    rampVolume(player.volume, 0f, 250L)
+                    rampVolume(fadeVolume, 0f, 250L)
                     pauseFadeOutPending = false
                     internalPause = true
                     player.pause()
-                    player.volume = 1f
+                    fadeVolume = 1f
                 }
             } else {
                 player.pause()
@@ -79,7 +101,7 @@ internal class PlaybackVolumeFade(
             pauseFadeOutPending = false
             internalPause = false
             resumingForFade = false
-            player.volume = 1f
+            fadeVolume = 1f
             return
         }
         if (!changed) return
@@ -94,18 +116,18 @@ internal class PlaybackVolumeFade(
         if (!enabled) return
         volumeJob?.cancel()
         if (playWhenReady) {
-            player.volume = 0f
+            fadeVolume = 0f
             volumeJob = scope.launch { rampVolume(0f, 1f, 250L) }
         } else if (player.playbackState == Player.STATE_READY) {
             pauseFadeOutPending = true
             resumingForFade = true
             player.play()
             volumeJob = scope.launch {
-                rampVolume(player.volume, 0f, 250L)
+                rampVolume(fadeVolume, 0f, 250L)
                 pauseFadeOutPending = false
                 internalPause = true
                 player.pause()
-                player.volume = 1f
+                fadeVolume = 1f
             }
         }
     }
@@ -115,7 +137,7 @@ internal class PlaybackVolumeFade(
         while (true) {
             val fraction = ((nowMs() - startMs).toFloat() / durationMs)
                 .coerceIn(0f, 1f)
-            player.volume = start + (end - start) * fraction
+            fadeVolume = start + (end - start) * fraction
             if (fraction >= 1f) break
             awaitFrame()
         }
@@ -123,7 +145,7 @@ internal class PlaybackVolumeFade(
 
     fun release() {
         volumeJob?.cancel()
-        player.volume = 1f
+        fadeVolume = 1f
     }
 }
 

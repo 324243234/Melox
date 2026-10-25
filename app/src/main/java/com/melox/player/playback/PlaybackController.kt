@@ -54,6 +54,7 @@ class PlaybackController(context: Context) {
     private var playbackModeChangeTimeoutJob: Job? = null
     private var homeRecommendationPlaybackJob: Job? = null
     private var pendingPlaybackIntent: Boolean? = null
+    private var audioFocusPauseRevision = 0L
     private var playbackIntentTimeoutJob: Job? = null
     private val mutableSleepTimerState = MutableStateFlow(SleepTimerState())
     val sleepTimerState: StateFlow<SleepTimerState> = mutableSleepTimerState.asStateFlow()
@@ -541,7 +542,9 @@ class PlaybackController(context: Context) {
             pendingPlaybackSpeed = null
             pendingSpeedTimeoutJob?.cancel()
         }
-        if (pendingPlaybackIntent == player.playWhenReady) {
+        val focusPauseRevision = controller?.sessionExtras?.getLong(EXTRA_AUDIO_FOCUS_PAUSE_REVISION) ?: 0L
+        if (focusPauseRevision != audioFocusPauseRevision || pendingPlaybackIntent == player.playWhenReady) {
+            audioFocusPauseRevision = focusPauseRevision
             pendingPlaybackIntent = null
             playbackIntentTimeoutJob?.cancel()
             playbackIntentTimeoutJob = null

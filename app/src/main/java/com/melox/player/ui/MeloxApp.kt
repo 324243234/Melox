@@ -238,6 +238,7 @@ import com.melox.player.ui.screen.settings.ScanMusicScreen
 import com.melox.player.ui.screen.settings.MusicStatisticsScreen
 import com.melox.player.ui.screen.settings.AboutScreen
 import com.melox.player.ui.screen.settings.PlaybackBehaviorScreen
+import com.melox.player.ui.screen.settings.AudioOutputScreen
 import com.melox.player.ui.screen.settings.SponsorScreen
 import com.melox.player.ui.screen.settings.InterfaceStyleSettingsScreen
 import com.melox.player.ui.screen.settings.ThemeSettingsScreen
@@ -315,6 +316,7 @@ private enum class AppRoute {
     SCAN_SETTINGS,
     MUSIC_STATISTICS,
     PLAYBACK_BEHAVIOR,
+    AUDIO_OUTPUT,
     THEME_SETTINGS,
     INTERFACE_STYLE,
     MAIN_BACKGROUND,
@@ -871,6 +873,7 @@ fun MeloxApp(
         val lyricsSettingsListState = rememberLazyListState()
         val lyricsInterfaceListState = rememberLazyListState()
         val playbackBehaviorListState = rememberLazyListState()
+        val audioOutputListState = rememberLazyListState()
         var renderedBottomBarStyle by remember {
             mutableStateOf(settings.bottomBarStyle)
         }
@@ -908,6 +911,7 @@ fun MeloxApp(
         val lyricsSettingsScrollBehavior = MiuixScrollBehavior()
         val lyricsInterfaceScrollBehavior = MiuixScrollBehavior()
         val playbackBehaviorScrollBehavior = MiuixScrollBehavior()
+        val audioOutputScrollBehavior = MiuixScrollBehavior()
         LaunchedEffect(
             pendingAlbumGridReset,
             albumSortConfig.gridStyle,
@@ -1564,6 +1568,7 @@ fun MeloxApp(
                             },
                             onOpenAbout = { currentRoute = AppRoute.ABOUT },
                             onOpenPlaybackBehavior = { currentRoute = AppRoute.PLAYBACK_BEHAVIOR },
+                            onOpenAudioOutput = { currentRoute = AppRoute.AUDIO_OUTPUT },
                             onOpenScanSettings = {
                                 currentRoute = AppRoute.SCAN_SETTINGS
                             },
@@ -2242,6 +2247,27 @@ fun MeloxApp(
                                                                 routeBottomPadding,
                                                             onBack = navigateBack,
                                                         )
+
+                                                    AppRoute.AUDIO_OUTPUT -> {
+                                                        val playback by viewModel.playbackState.collectAsStateWithLifecycle()
+                                                        val highPrecision by viewModel.highPrecisionOutput.collectAsStateWithLifecycle()
+                                                        val pauseFade by viewModel.playbackPauseFade.collectAsStateWithLifecycle()
+                                                        AudioOutputScreen(
+                                                            settings = settings,
+                                                            bottomContentPadding = routeBottomPadding,
+                                                            listState = audioOutputListState,
+                                                            scrollBehavior = audioOutputScrollBehavior,
+                                                            onBack = navigateBack,
+                                                            playbackSpeed = playback.playbackSpeed,
+                                                            highPrecisionOutput = highPrecision,
+                                                            playbackPauseFade = pauseFade,
+                                                            onAudioFocusEnabledChange = viewModel::setAudioFocusEnabled,
+                                                            onTransientAudioFocusBehaviorChange = viewModel::setTransientAudioFocusBehavior,
+                                                            onPlaybackSpeedChange = viewModel::setPlaybackSpeed,
+                                                            onHighPrecisionOutputChange = viewModel::setHighPrecisionOutput,
+                                                            onPlaybackPauseFadeChange = viewModel::setPlaybackPauseFade,
+                                                        )
+                                                    }
 
                                                     AppRoute.PLAYBACK_BEHAVIOR -> PlaybackBehaviorScreen(
                                                         settings = settings,
@@ -2939,7 +2965,6 @@ private fun FullPlayerHost(
     val sleepTimerSelectionSeconds by viewModel.sleepTimerSelectionSeconds.collectAsStateWithLifecycle()
     val autoExtendSleepTimer by viewModel.autoExtendSleepTimer.collectAsStateWithLifecycle()
     val playbackPauseFade by viewModel.playbackPauseFade.collectAsStateWithLifecycle()
-    val highPrecisionOutput by viewModel.highPrecisionOutput.collectAsStateWithLifecycle()
     val currentTrack = remember(tracks, playback.currentItem?.trackId) {
         val trackId = playback.currentItem?.trackId
         tracks.firstOrNull { it.id == trackId }
@@ -2986,8 +3011,6 @@ private fun FullPlayerHost(
         onSeek = viewModel::seekTo,
         onCyclePlaybackMode = viewModel::cyclePlaybackMode,
         onPlaybackSpeedChange = viewModel::setPlaybackSpeed,
-        highPrecisionOutput = highPrecisionOutput,
-        onHighPrecisionOutputChange = viewModel::setHighPrecisionOutput,
         sleepTimerState = sleepTimerState,
         sleepTimerSeconds = sleepTimerSelectionSeconds,
         onSleepTimerSecondsChange = viewModel::setSleepTimerSelectionSeconds,
