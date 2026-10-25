@@ -4,6 +4,7 @@ import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,14 +13,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -33,6 +38,7 @@ import com.melox.player.ui.screen.playback.PLAYER_PROGRESS_IDLE_HEIGHT
 import com.melox.player.ui.screen.playback.PLAYER_PROGRESS_TOUCH_HEIGHT
 import com.melox.player.ui.screen.playback.PLAYER_PROGRESS_TIME_SPACING
 import com.melox.player.ui.screen.playback.PlayerLyricActionsRow
+import com.melox.player.ui.screen.playback.CompactLandscapePlayerLayout
 import com.melox.player.ui.screen.playback.PlayerDetails
 import com.melox.player.ui.screen.playback.PlayerVerticalSpacing
 import com.melox.player.ui.screen.playback.PortraitPlayerLayout
@@ -51,6 +57,130 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @RunWith(AndroidJUnit4::class)
 class ImmersivePlayerLayoutTest {
+    @Test
+    fun compactLandscapeHeaderToggleExpandsLyricsOnOneContinuousPage() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val ready = CountDownLatch(1)
+        val cover = AtomicReference(Rect.Zero)
+        val header = AtomicReference(Rect.Zero)
+        val toggle = AtomicReference(Rect.Zero)
+        val pane = AtomicReference(Rect.Zero)
+        val controls = AtomicReference(Rect.Zero)
+        val lyrics = AtomicReference(Rect.Zero)
+        val selectedPage = AtomicInteger()
+        val immersive = mutableStateOf(false)
+        val controlClicks = AtomicInteger()
+        var density = 1f
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var view: ComposeView
+            scenario.onActivity { activity ->
+                density = activity.resources.displayMetrics.density
+                view = ComposeView(activity).apply {
+                    setContent {
+                        MiuixTheme {
+                            val pager = rememberPagerState(pageCount = { 2 })
+                            SideEffect { selectedPage.set(pager.currentPage) }
+                            CompactLandscapePlayerLayout(
+                                pagerState = pager,
+                                lyricsPagingEnabled = true,
+                                immersiveMode = immersive.value,
+                                artworkContent = {
+                                    Box(Modifier.size(96.dp).onGloballyPositioned {
+                                        cover.set(it.boundsInRoot())
+                                        ready.countDown()
+                                    })
+                                },
+                                headerContent = { width ->
+                                    Box(Modifier.width(width).height(52.dp).onGloballyPositioned {
+                                        header.set(it.boundsInRoot())
+                                    })
+                                },
+                                lyricsToggleContent = { _, enabled, onToggle ->
+                                    Box(Modifier.size(40.dp).clickable(enabled = enabled, onClick = onToggle)
+                                        .semantics { contentDescription = "Compact lyrics toggle" }
+                                        .onGloballyPositioned { toggle.set(it.boundsInRoot()) })
+                                },
+                                controlsContent = { width, _ ->
+                                    Box(Modifier.width(width).height(128.dp)
+                                        .onGloballyPositioned { controls.set(Rect(it.positionInRoot(), Size(it.size.width.toFloat(), it.size.height.toFloat()))) }
+                                        .clickable { controlClicks.incrementAndGet() }
+                                        .semantics { contentDescription = "Compact controls" })
+                                },
+                                lyricsContent = { width, _, height, _ ->
+                                    Box(Modifier.width(width).height(height)
+                                        .onGloballyPositioned { lyrics.set(Rect(it.positionInRoot(), Size(it.size.width.toFloat(), it.size.height.toFloat()))) }
+                                        .semantics { contentDescription = "Compact lyrics" })
+                                },
+                                modifier = Modifier.fillMaxWidth().height(300.dp)
+                                    .onGloballyPositioned { pane.set(it.boundsInRoot()) },
+                            )
+                        }
+                    }
+                }
+                activity.setContentView(view)
+            }
+            assertTrue(ready.await(5, TimeUnit.SECONDS))
+            instrumentation.waitForIdleSync()
+            val originalHeader = header.get()
+            val originalControls = controls.get()
+            val originalPageGap = controls.get().top - lyrics.get().bottom
+            fun tap(point: Offset) {
+                instrumentation.runOnMainSync {
+                    val time = SystemClock.uptimeMillis()
+                    for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+                        MotionEvent.obtain(time, time + action, action, point.x, point.y, 0).also {
+                            view.dispatchTouchEvent(it)
+                            it.recycle()
+                        }
+                    }
+                }
+                SystemClock.sleep(400)
+                instrumentation.waitForIdleSync()
+            }
+            tap(controls.get().center)
+            assertEquals(1, controlClicks.get())
+            tap(cover.get().center)
+            assertEquals(0, selectedPage.get())
+            tap(toggle.get().center)
+            assertEquals(1, selectedPage.get())
+            assertEquals(originalHeader.top - 12f * density, header.get().top, 1f)
+            assertEquals(header.get().bottom, lyrics.get().top, 1f)
+            assertEquals(pane.get().bottom + 12f * density, lyrics.get().bottom, 1f)
+            assertEquals(originalPageGap, controls.get().top - lyrics.get().bottom, 1f)
+            assertEquals(controls.get().width, lyrics.get().width, 1f)
+            assertFalse(hasDescription(instrumentation.uiAutomation.rootInActiveWindow, "Compact controls"))
+            assertTrue(hasDescription(instrumentation.uiAutomation.rootInActiveWindow, "Compact lyrics"))
+            tap(toggle.get().center)
+            assertEquals(0, selectedPage.get())
+            assertEquals(originalPageGap, controls.get().top - lyrics.get().bottom, 1f)
+            assertEquals(originalHeader, header.get())
+            assertFalse(hasDescription(instrumentation.uiAutomation.rootInActiveWindow, "Compact lyrics"))
+            tap(controls.get().center)
+            assertEquals(2, controlClicks.get())
+            instrumentation.runOnMainSync { immersive.value = true }
+            SystemClock.sleep(250)
+            instrumentation.waitForIdleSync()
+            assertFalse(hasDescription(instrumentation.uiAutomation.rootInActiveWindow, "Compact lyrics toggle"))
+            assertEquals(originalControls, controls.get())
+            tap(toggle.get().center)
+            assertEquals(0, selectedPage.get())
+            tap(cover.get().center)
+            assertEquals(1, selectedPage.get())
+            assertEquals(header.get().top, lyrics.get().top, 1f)
+            assertEquals(pane.get().bottom + 12f * density, lyrics.get().bottom, 1f)
+            tap(cover.get().center)
+            assertEquals(0, selectedPage.get())
+            instrumentation.runOnMainSync { immersive.value = false }
+            SystemClock.sleep(250)
+            instrumentation.waitForIdleSync()
+            assertTrue(hasDescription(instrumentation.uiAutomation.rootInActiveWindow, "Compact lyrics toggle"))
+            tap(cover.get().center)
+            assertEquals(0, selectedPage.get())
+            tap(toggle.get().center)
+            assertEquals(1, selectedPage.get())
+        }
+    }
+
     @Test
     fun fadingChromeKeepsBoundsAndDisablesHiddenActionsWhileTransportWorks() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()

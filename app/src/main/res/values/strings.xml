@@ -338,6 +338,8 @@
     <string name="lyrics_unavailable">No lyrics</string>
     <string name="player_settings">Lyrics settings</string>
     <string name="player_settings_open">Open lyrics settings</string>
+    <string name="player_show_lyrics">Show lyrics</string>
+    <string name="player_show_controls">Show playback controls</string>
     <string name="playback_sleep_timer">Sleep timer</string>
     <string name="playback_sleep_timer_start">Start</string>
     <string name="playback_sleep_timer_stop">Stop</string>

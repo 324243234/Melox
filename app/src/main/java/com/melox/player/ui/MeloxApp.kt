@@ -31,6 +31,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -224,6 +228,8 @@ import com.melox.player.ui.screen.home.rememberHomeRecommendations
 import com.melox.player.ui.screen.playback.MiniPlayerLyrics
 import com.melox.player.ui.screen.playback.compactLyricsDocument
 import com.melox.player.ui.screen.playback.FullPlayerScreen
+import com.melox.player.ui.screen.playback.playerLayout
+import com.melox.player.ui.screen.playback.playerHidesSystemNavigation
 import com.melox.player.ui.screen.playback.QueueSheet
 import com.melox.player.ui.screen.playlist.PlaylistDetailScreen
 import com.melox.player.ui.screen.playlist.PlaylistLibraryScreen
@@ -365,6 +371,7 @@ private data class PlaylistCreateRequest(
 )
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun MeloxApp(
     viewModel: MeloxViewModel = viewModel(),
 ) {
@@ -649,7 +656,23 @@ fun MeloxApp(
     val playerUsesFullPlayerStatusBar = playerSheetUsesFullPlayerStatusBar(
         progress = playerTransition.progress,
     )
-    StatusBarVisibilityEffect(activity = activity, hidden = settings.statusBarHidden)
+    val playerLayoutDirection = LocalLayoutDirection.current
+    val stablePlayerInsets = WindowInsets.systemBarsIgnoringVisibility
+        .union(WindowInsets.displayCutout).asPaddingValues()
+    val systemChromePlayerLayout = playerLayout(
+        windowWidth = (windowWidth - stablePlayerInsets.calculateStartPadding(playerLayoutDirection) -
+            stablePlayerInsets.calculateEndPadding(playerLayoutDirection)).coerceAtLeast(0.dp),
+        windowHeight = (windowHeight - stablePlayerInsets.calculateTopPadding() -
+            stablePlayerInsets.calculateBottomPadding()).coerceAtLeast(0.dp),
+    )
+    StatusBarVisibilityEffect(
+        activity = activity,
+        hidden = settings.statusBarHidden,
+        navigationBarHidden = playerHidesSystemNavigation(
+            layout = systemChromePlayerLayout,
+            fullPlayerVisible = playerTransition.isMounted && playerUsesFullPlayerStatusBar,
+        ),
+    )
     val statusBarUsesDarkMode = if (playerUsesFullPlayerStatusBar) playerBackgroundDark else isDark
     val navigationBarUsesDarkMode = if (
         playerUsesFullPlayerStatusBar &&

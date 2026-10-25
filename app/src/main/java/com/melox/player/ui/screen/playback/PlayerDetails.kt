@@ -535,16 +535,18 @@ internal fun formatPlayerProgressTime(durationMs: Long): String {
 }
 
 @Composable
-private fun PlayerIconButton(
+internal fun PlayerIconButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     description: String,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     size: Dp = 26.dp,
     tint: Color = MiuixTheme.colorScheme.onSurface,
     enabled: Boolean = true,
 ) {
     PlayerFunctionButton(
         onClick = onClick,
+        modifier = modifier,
         enabled = enabled,
     ) {
         Icon(

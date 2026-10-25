@@ -325,6 +325,8 @@
     <string name="lyrics_unavailable">暂无歌词</string>
     <string name="player_settings">歌词设置</string>
     <string name="player_settings_open">打开歌词设置</string>
+    <string name="player_show_lyrics">显示歌词</string>
+    <string name="player_show_controls">显示播放控制</string>
     <string name="playback_sleep_timer">睡眠定时</string>
     <string name="playback_sleep_timer_start">开始</string>
     <string name="playback_sleep_timer_stop">停止</string>
