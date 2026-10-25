@@ -6,6 +6,7 @@ import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,6 +23,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -33,6 +35,14 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.melox.player.model.PlaybackQueueItem
+import com.melox.player.model.LyricLine
+import com.melox.player.model.LyricsDocument
+import com.melox.player.model.LyricsFormat
+import com.melox.player.model.LyricsSource
+import com.melox.player.model.LyricAnimationMode
+import com.melox.player.ui.screen.playback.LyricsView
+import com.melox.player.ui.screen.playback.playerChromeAlpha
+import com.melox.player.ui.screen.playback.portraitLyricViewport
 import com.melox.player.model.PlaybackUiState
 import com.melox.player.ui.screen.playback.PLAYER_PROGRESS_IDLE_HEIGHT
 import com.melox.player.ui.screen.playback.PLAYER_PROGRESS_TOUCH_HEIGHT
@@ -57,6 +67,169 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @RunWith(AndroidJUnit4::class)
 class ImmersivePlayerLayoutTest {
+    @Test
+    fun portraitImmersionExtendsViewportWithoutMovingContent() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val ready = CountDownLatch(1)
+        val immersive = mutableStateOf(false)
+        val page = AtomicReference(Rect.Zero)
+        val header = AtomicReference(Rect.Zero)
+        val lyrics = AtomicReference(Rect.Zero)
+        val artwork = AtomicReference(Rect.Zero)
+        val details = AtomicReference(Rect.Zero)
+        val fadeSamples = java.util.Collections.synchronizedList(mutableListOf<Float>())
+        val document = LyricsDocument(
+            List(12) { index -> LyricLine("", index * 10_000L, (index + 1) * 10_000L,
+                "Stable immersion lyric $index", emptyList(), null) },
+            LyricsFormat.LRC, LyricsSource.SIDECAR,
+        )
+        val topClicks = AtomicInteger()
+        val headerHeight = 88.dp
+        lateinit var view: ComposeView
+        val spacing = PlayerVerticalSpacing(artworkToProgress = 0.dp, panelBottom = 32.dp)
+        val overlap = (PLAYER_PROGRESS_TOUCH_HEIGHT - PLAYER_PROGRESS_IDLE_HEIGHT) / 2f
+        var density = 1f
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                density = activity.resources.displayMetrics.density
+                view = ComposeView(activity).apply {
+                    setContent {
+                        MiuixTheme {
+                            Box(Modifier.width(320.dp).height(600.dp).onGloballyPositioned {
+                                page.set(it.boundsInRoot())
+                            }) {
+                                Box(Modifier.onGloballyPositioned { header.set(it.boundsInRoot()) }
+                                    .playerChromeVisibility(!immersive.value)
+                                    .padding(top = 24.dp).height(64.dp).fillMaxWidth())
+                                BoxWithConstraints(Modifier.fillMaxSize()) {
+                                    val pageHeight = maxHeight
+                                    PortraitPlayerLayout(
+                                        spacing = spacing,
+                                        artworkBottomOverlap = overlap,
+                                        artworkTopPadding = headerHeight,
+                                        overlayDetails = true,
+                                        modifier = Modifier.fillMaxSize(),
+                                        artworkContent = { artworkHeight ->
+                                            val focusOffset = headerHeight + (artworkHeight - pageHeight) / 2f
+                                            val alpha = playerChromeAlpha(immersive.value)
+                                            Box(Modifier.fillMaxSize()
+                                                .onGloballyPositioned { lyrics.set(it.boundsInRoot()) }
+                                                .portraitLyricViewport(
+                                                    topInset = headerHeight,
+                                                    bottomInset = (pageHeight - headerHeight - artworkHeight).coerceAtLeast(0.dp),
+                                                    showBottomFade = true,
+                                                    immersiveMode = immersive.value,
+                                                    immersiveAlpha = alpha,
+                                                )
+                                                .drawWithContent {
+                                                    fadeSamples.add(alpha.value)
+                                                    drawContent()
+                                                }
+                                                .clickable { topClicks.incrementAndGet() }) {
+                                                LyricsView(
+                                                    document = document, positionMs = 35_000L,
+                                                    positionUpdateElapsedRealtimeMs = 0L,
+                                                    playbackIteration = 0L, playbackSpeed = 1f,
+                                                    previewPositionMs = null, isPlaying = false, onSeek = {},
+                                                    contentWidth = 280.dp, lyricFontScale = 1f, lyricFontWeight = 400,
+                                                    lyricAnimationMode = LyricAnimationMode.NEVER, lyricBlurEnabled = false,
+                                                    centerLyrics = false, centerOffsetY = focusOffset,
+                                                    showLyricsTranslation = false, showBottomFade = true,
+                                                    resumeFollowRequestKey = 0, seekRequestKey = 0, seekPositionMs = 0L,
+                                                    emphasisColor = Color.White, applyEdgeFade = false,
+                                                    modifier = Modifier.fillMaxSize(),
+                                                )
+                                                Box(Modifier
+                                                    .padding(top = headerHeight)
+                                                    .fillMaxWidth().height(artworkHeight)
+                                                    .onGloballyPositioned { artwork.set(it.boundsInRoot()) })
+                                            }
+                                        },
+                                        detailsContent = {
+                                            PlayerDetails(
+                                                contentWidth = 320.dp,
+                                                playback = PlaybackUiState(),
+                                                emphasisControlColor = Color.White,
+                                                immersiveMode = immersive.value,
+                                                onToggleImmersiveMode = {}, onTogglePlayPause = {},
+                                                onPrevious = { true }, onNext = { true }, onSeek = {},
+                                                onPreviewPositionChange = {}, onCyclePlaybackMode = {},
+                                                onOpenAudioSettings = {}, onOpenSleepTimer = {},
+                                                onOpenQueue = {}, onOpenTrackActions = {},
+                                                spacing = spacing,
+                                                modifier = Modifier.fillMaxWidth().onGloballyPositioned {
+                                                    details.set(it.boundsInRoot())
+                                                    ready.countDown()
+                                                },
+                                            )
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                activity.setContentView(view)
+            }
+
+            assertTrue(ready.await(5, TimeUnit.SECONDS))
+            instrumentation.waitForIdleSync()
+            val originalHeader = header.get()
+            fun focusedRowBounds(): android.graphics.Rect {
+                val node = requireNotNull(findNode(instrumentation.uiAutomation.rootInActiveWindow) {
+                    it.text?.toString() == "Stable immersion lyric 3"
+                })
+                return android.graphics.Rect().also(node::getBoundsInScreen)
+            }
+            SystemClock.sleep(900)
+            instrumentation.waitForIdleSync()
+            val originalFocus = focusedRowBounds()
+            val originalLyrics = lyrics.get()
+            val originalArtwork = artwork.get()
+            val originalDetails = details.get()
+            val originalFadeSampleCount = fadeSamples.size
+            assertEquals(page.get(), originalLyrics)
+            assertEquals(88f * density, header.get().height, 1f)
+            instrumentation.runOnMainSync { immersive.value = true }
+            repeat(16) {
+                SystemClock.sleep(20)
+                instrumentation.waitForIdleSync()
+                assertEquals(originalFocus, focusedRowBounds())
+                assertEquals(originalLyrics, lyrics.get())
+            }
+            assertTrue(fadeSamples.drop(originalFadeSampleCount).any { it > 0f && it < 1f })
+            assertEquals(page.get().top, lyrics.get().top, 1f)
+            assertEquals(originalHeader, header.get())
+            assertEquals(originalFocus, focusedRowBounds())
+            assertEquals(page.get().bottom, lyrics.get().bottom, 1f)
+            assertEquals(originalDetails, details.get())
+            assertEquals(originalArtwork.bottom, artwork.get().bottom, 1f)
+            instrumentation.runOnMainSync {
+                val time = SystemClock.uptimeMillis()
+                val point = Offset(page.get().center.x, page.get().top + 8f * density)
+                for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+                    MotionEvent.obtain(time, time + action, action, point.x, point.y, 0).also {
+                        view.dispatchTouchEvent(it)
+                        it.recycle()
+                    }
+                }
+            }
+            instrumentation.waitForIdleSync()
+            assertEquals(1, topClicks.get())
+            val reverseFadeSampleCount = fadeSamples.size
+            instrumentation.runOnMainSync { immersive.value = false }
+            repeat(16) {
+                SystemClock.sleep(20)
+                instrumentation.waitForIdleSync()
+                assertEquals(originalFocus, focusedRowBounds())
+            }
+            assertTrue(fadeSamples.drop(reverseFadeSampleCount).any { it > 0f && it < 1f })
+            assertEquals(originalLyrics, lyrics.get())
+            assertEquals(originalArtwork, artwork.get())
+            assertEquals(originalDetails, details.get())
+        }
+    }
+
     @Test
     fun compactLandscapeHeaderToggleExpandsLyricsOnOneContinuousPage() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()

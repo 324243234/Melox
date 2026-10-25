@@ -173,6 +173,7 @@ internal fun LyricsSettingsScreen(
                 )
                 SwitchPreference(
                     title = stringResource(R.string.lyrics_artwork_page),
+                    summary = stringResource(R.string.lyrics_artwork_page_summary),
                     checked = showArtworkLyrics,
                     onCheckedChange = {
                         showArtworkLyrics = it

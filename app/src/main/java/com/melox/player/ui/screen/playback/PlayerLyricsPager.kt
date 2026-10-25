@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -61,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -68,6 +70,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.layout
@@ -133,6 +136,7 @@ import kotlin.math.abs
 import kotlin.math.roundToLong
 import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.blur.Backdrop
+import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.basic.Card
@@ -190,7 +194,13 @@ internal fun PlayerContentPager(
     positionDiscontinuityRevision: Long = 0L,
     lyricsBottomContent: (@Composable (Backdrop?) -> Unit)? = null,
     lyricsBackground: Backdrop? = null,
+    lyricsBackdrop: LayerBackdrop? = null,
+    artworkAlignment: Alignment = Alignment.Center,
+    lyricsViewportTopInset: Dp = 0.dp,
+    lyricsViewportBottomInset: Dp = 0.dp,
+    immersiveMode: Boolean = false,
 ) {
+    val immersiveAlpha = playerChromeAlpha(immersiveMode)
     val overscrollEffect = rememberOverscrollEffect()
     val pagerOverscroll = remember(overscrollEffect) {
         overscrollEffect?.let(::PlayerPagerOverscroll)
@@ -212,12 +222,12 @@ internal fun PlayerContentPager(
         } ?: Modifier
         Box(
             modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center,
+            contentAlignment = if (page == 0) artworkAlignment else Alignment.Center,
         ) {
             if (page == 0) {
                 artworkContent(overscrollModifier)
             } else {
-                val lyricBackdrop = if (lyricsBackground != null && lyricsBottomContent != null) {
+                val lyricBackdrop = lyricsBackdrop ?: if (lyricsBackground != null && lyricsBottomContent != null) {
                     rememberLayerBackdrop()
                 } else null
                 val actionBackdrop = if (lyricsBackground != null && lyricBackdrop != null) {
@@ -249,24 +259,90 @@ internal fun PlayerContentPager(
                     showLyricsRomanization = showLyricsRomanization,
                     lyricsTranslationLanguage = lyricsTranslationLanguage,
                     showBottomFade = showBottomFade,
+                    applyEdgeFade = lyricsViewportTopInset == 0.dp && lyricsViewportBottomInset == 0.dp,
                     resumeFollowRequestKey = resumeFollowRequestKey,
                     seekRequestKey = seekRequestKey,
                     seekPositionMs = seekPositionMs,
                     modifier = Modifier.fillMaxSize().then(overscrollModifier).then(
                         if (lyricBackdrop != null) Modifier.layerBackdrop(lyricBackdrop)
                         else Modifier,
+                    ).then(
+                        if (lyricsViewportTopInset > 0.dp || lyricsViewportBottomInset > 0.dp) {
+                            Modifier.portraitLyricViewport(
+                                topInset = lyricsViewportTopInset,
+                                bottomInset = lyricsViewportBottomInset,
+                                showBottomFade = showBottomFade,
+                                immersiveMode = immersiveMode,
+                                immersiveAlpha = immersiveAlpha,
+                            )
+                        } else Modifier,
                     ),
                 )
                 lyricsBottomContent?.let { content ->
                     Box(
                         modifier = Modifier.align(Alignment.BottomCenter)
-                            .fillMaxWidth(),
+                            .fillMaxWidth().padding(bottom = lyricsViewportBottomInset),
                     ) { content(actionBackdrop) }
                 }
             }
         }
     }
 }
+
+internal fun Modifier.portraitLyricViewport(
+    topInset: Dp,
+    bottomInset: Dp,
+    showBottomFade: Boolean,
+    immersiveMode: Boolean,
+    immersiveAlpha: State<Float>,
+): Modifier = graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithCache {
+        val top = topInset.toPx().coerceIn(0f, size.height)
+        val bottom = (size.height - bottomInset.toPx()).coerceIn(top, size.height)
+        val fade = lyricEdgeFadeHeights(showBottomFade).first.dp.toPx()
+        fun edgeAlpha(y: Float, start: Float, end: Float): Float {
+            val extent = (end - start).coerceAtLeast(0f)
+            if (extent == 0f || y < start || y > end) return 0f
+            val band = minOf(fade, extent / 2f).coerceAtLeast(1f)
+            val enter = ((y - start) / band).coerceIn(0f, 1f)
+            val exit = if (showBottomFade) ((end - y) / band).coerceIn(0f, 1f) else 1f
+            return minOf(enter, exit)
+        }
+        val normalBand = minOf(fade, (bottom - top) / 2f)
+        val fullBand = minOf(fade, size.height / 2f)
+        val stops = listOf(0f, top, top + normalBand, bottom - normalBand, bottom,
+            fullBand, size.height - fullBand, size.height).distinct().sorted()
+        val normal = stops.map { edgeAlpha(it, top, bottom) }
+        val full = stops.map { edgeAlpha(it, 0f, size.height) }
+        onDrawWithContent {
+            drawContent()
+            val alpha = immersiveAlpha.value
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colorStops = stops.mapIndexed { index, y ->
+                        y / size.height.coerceAtLeast(1f) to
+                            Color.Black.copy(alpha = normal[index] * (1f - alpha) + full[index] * alpha)
+                    }.toTypedArray(),
+                ),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+    }
+    .pointerInput(topInset, bottomInset, immersiveMode) {
+        if (immersiveMode) return@pointerInput
+        val top = topInset.toPx()
+        val bottom = size.height - bottomInset.toPx()
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            if (down.position.y < top || down.position.y >= bottom) {
+                down.consume()
+                do {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    event.changes.forEach { it.consume() }
+                } while (event.changes.any { it.pressed })
+            }
+        }
+    }
 
 @Composable
 internal fun rememberLyricDocumentTransition(
@@ -329,6 +405,7 @@ internal fun SyncedLyrics(
     lyricsTranslationLanguage: LyricsTranslationLanguage = LyricsTranslationLanguage.AUTO,
     playerActive: Boolean = true,
     positionDiscontinuityRevision: Long = 0L,
+    applyEdgeFade: Boolean = true,
 ) {
     val (displayedLyrics, lyricsAlpha) = rememberLyricDocumentTransition(lyrics)
     val displayedDocument = displayedLyrics?.document
@@ -374,6 +451,7 @@ internal fun SyncedLyrics(
                         showLyricsRomanization = showLyricsRomanization,
                         lyricsTranslationLanguage = lyricsTranslationLanguage,
                         showBottomFade = showBottomFade,
+                        applyEdgeFade = applyEdgeFade,
                         resumeFollowRequestKey = resumeFollowRequestKey,
                         seekRequestKey = seekRequestKey,
                         seekPositionMs = seekPositionMs,

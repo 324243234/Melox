@@ -396,6 +396,7 @@
     <string name="lyrics_priority_section">Lyrics priority</string>
     <string name="lyrics_display_section">Lyrics display</string>
     <string name="lyrics_artwork_page">Artwork page lyrics</string>
+    <string name="lyrics_artwork_page_summary">Only shown in portrait</string>
     <string name="lyrics_editor_menu">Lyrics editing menu</string>
     <string name="lyrics_editor_music_tag">Music Tag Editor</string>
     <string name="lyrics_editor_lyrico">Lyrico</string>

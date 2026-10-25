@@ -497,6 +497,7 @@ internal fun LyricsView(
     positionDiscontinuityRevision: Long = 0L,
     showLyricsRomanization: Boolean = true,
     lyricsTranslationLanguage: LyricsTranslationLanguage = LyricsTranslationLanguage.AUTO,
+    applyEdgeFade: Boolean = true,
 ) {
     val appLanguageTag = LocalConfiguration.current.locales[0].toLanguageTag()
     val selectedTranslations = remember(document, lyricsTranslationLanguage, appLanguageTag) {
@@ -990,6 +991,7 @@ internal fun LyricsView(
                         compositingStrategy = CompositingStrategy.Offscreen
                     }
                     .drawWithCache {
+                        if (!applyEdgeFade) return@drawWithCache onDrawWithContent { drawContent() }
                         val (topFadeDp, bottomFadeDp) = lyricEdgeFadeHeights(showBottomFade)
                         val topFade = (topFadeDp.dp.toPx() / size.height.coerceAtLeast(1f))
                             .coerceAtMost(0.5f)

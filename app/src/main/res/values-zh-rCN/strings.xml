@@ -383,6 +383,7 @@
     <string name="lyrics_priority_section">歌词优先级</string>
     <string name="lyrics_display_section">歌词显示</string>
     <string name="lyrics_artwork_page">封面页歌词</string>
+    <string name="lyrics_artwork_page_summary">仅竖屏显示</string>
     <string name="lyrics_editor_menu">歌词编辑菜单</string>
     <string name="lyrics_editor_music_tag">音乐标签</string>
     <string name="lyrics_editor_lyrico">Lyrico</string>

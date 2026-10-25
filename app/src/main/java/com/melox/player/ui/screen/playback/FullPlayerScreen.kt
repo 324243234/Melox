@@ -585,57 +585,29 @@ internal fun FullPlayerScreen(
                         preferredArtworkSize = portraitArtworkSize,
                     ).headerToArtwork
                     val pageHeight = maxHeight
-                    Column(
+                    val portraitHeaderHeight = headerTopPadding + playerHeaderContentHeight + headerSpacing
+                    val portraitChromeAlpha = playerChromeAlpha(!immersiveMode)
+                    Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(
                                 start = playerSafeStart,
                                 end = playerSafeEnd,
                             ),
-                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                     val lyricsCenterOffsetY = if (hideLyricsControls) {
                         hiddenLyricsCenterOffsetY(
                             pageHeight = pageHeight,
-                            headerTopPadding = headerTopPadding,
-                            headerContentHeight = playerHeaderContentHeight,
-                            headerSpacing = headerSpacing,
+                            headerTopPadding = 0.dp,
+                            headerContentHeight = 0.dp,
+                            headerSpacing = 0.dp,
                         )
                     } else {
                         0.dp
                     }
-                    if (playerLayout == PlayerLayout.PORTRAIT) {
-                        PlayerHeader(
-                            item = item,
-                            trackChangeDirection = playback.trackChangeDirection,
-                            titleColor = emphasisControlColor,
-                            artistColor = artistControlColor,
-                            leftAligned = displayedLeftAlignPlayerTitle,
-                            titleSlotHeight = playerHeaderTitleSlotHeight,
-                            artistSlotHeight = playerHeaderArtistSlotHeight,
-                            modifier = Modifier
-                                .width(portraitArtworkContentWidth)
-                                .padding(top = headerTopPadding)
-                                .playerChromeVisibility(!immersiveMode)
-                                .then(
-                                    rememberPlayerHeaderGestureModifier(
-                                        enabled = !immersiveMode && hideLyricsControls &&
-                                            lyricsPagingEnabled && item != null &&
-                                            pagerState.settledPage == 1 &&
-                                            !pagerState.isScrollInProgress,
-                                        playWhenReady = playback.playWhenReady,
-                                        onTogglePlayPause = onTogglePlayPause,
-                                        onPrevious = { onPrevious() },
-                                        onNext = { onNext() },
-                                    ),
-                                ),
-                        )
-                        Spacer(Modifier.height(headerSpacing))
-                    }
                     BoxWithConstraints(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
+                            .fillMaxSize(),
                         contentAlignment = Alignment.Center,
                     ) {
                         if (playerLayout == PlayerLayout.WIDE_TWO_PANE) {
@@ -979,6 +951,8 @@ internal fun FullPlayerScreen(
                                     seekPositionMs = lyricsSeekPositionMs,
                                     modifier = Modifier.fillMaxSize(),
                                     lyricsBackground = lyricActionsBackground,
+                                    lyricsViewportTopInset = portraitHeaderHeight,
+                                    immersiveMode = immersiveMode,
                                     lyricsBottomContent = { blurBackdrop ->
                                         PlayerLyricActionsRow(
                                             showLyricsTranslation = displayedShowLyricsTranslation,
@@ -996,6 +970,7 @@ internal fun FullPlayerScreen(
                                     artworkContent = { overscrollModifier ->
                                         PortraitPlayerLayout(
                                             spacing = spacing,
+                                            artworkTopPadding = portraitHeaderHeight,
                                             artworkModifier = overscrollModifier,
                                             artworkContent = { _ ->
                                                 PortraitArtworkWithLyrics(
@@ -1074,10 +1049,18 @@ internal fun FullPlayerScreen(
                             } else {
                                 val progressTrackInset =
                                     (PLAYER_PROGRESS_TOUCH_HEIGHT - PLAYER_PROGRESS_IDLE_HEIGHT) / 2f
+                                val lyricBackdrop = if (lyricActionsBackground != null) {
+                                    rememberLayerBackdrop()
+                                } else null
+                                val controlsBackdrop = if (lyricActionsBackground != null && lyricBackdrop != null) {
+                                    rememberCombinedBackdrop(lyricActionsBackground, lyricBackdrop)
+                                } else null
                                 PortraitPlayerLayout(
                                     spacing = spacing.copy(artworkToProgress = 0.dp),
                                     artworkBottomOverlap = progressTrackInset,
-                                    artworkContent = { _ ->
+                                    artworkTopPadding = portraitHeaderHeight,
+                                    overlayDetails = true,
+                                    artworkContent = { artworkHeight ->
                                         PlayerContentPager(
                                             activeLyricAlpha = activeLyricAlpha,
                                             pagerState = pagerState,
@@ -1103,7 +1086,8 @@ internal fun FullPlayerScreen(
                                                 displayedLyricAnimationMode,
                                             lyricBlurEnabled = displayedLyricBlurEnabled,
                                             centerLyrics = displayedCenterLyrics,
-                                            lyricCenterOffsetY = lyricsCenterOffsetY,
+                                            lyricCenterOffsetY =
+                                                portraitHeaderHeight + (artworkHeight - maxHeight) / 2f,
                                             showLyricsTranslation =
                                                 displayedShowLyricsTranslation,
                                             showLyricsRomanization =
@@ -1115,6 +1099,12 @@ internal fun FullPlayerScreen(
                                             seekPositionMs = lyricsSeekPositionMs,
                                             modifier = Modifier.fillMaxSize(),
                                             lyricsBackground = lyricActionsBackground,
+                                            lyricsBackdrop = lyricBackdrop,
+                                            lyricsViewportTopInset = portraitHeaderHeight,
+                                            lyricsViewportBottomInset =
+                                                (maxHeight - portraitHeaderHeight - artworkHeight).coerceAtLeast(0.dp),
+                                            immersiveMode = immersiveMode,
+                                            artworkAlignment = Alignment.TopCenter,
                                             lyricsBottomContent = { blurBackdrop ->
                                                 PlayerLyricActionsRow(
                                                     showLyricsTranslation = displayedShowLyricsTranslation,
@@ -1151,7 +1141,9 @@ internal fun FullPlayerScreen(
                                                     color = emphasisControlColor,
                                                     previewPositionMs = lyricsPreviewPositionMs
                                                         ?: lyricsSeekPositionMs.takeIf { lyricsSeekRequestKey != 0 },
-                                                    modifier = Modifier.fillMaxSize()
+                                                    modifier = Modifier
+                                                        .padding(top = portraitHeaderHeight)
+                                                        .fillMaxWidth().height(artworkHeight)
                                                         .padding(bottom = spacing.artworkToProgress + progressTrackInset)
                                                         .then(overscrollModifier),
                                                     artworkContent = { captionArtworkHeight ->
@@ -1179,6 +1171,13 @@ internal fun FullPlayerScreen(
                                     detailsContent = {
                                         PlayerDetails(
                                             primaryControlAlpha = primaryControlAlpha,
+                                            primaryControlsBackdrop = controlsBackdrop,
+                                            primaryControlsBackdropAlpha = {
+                                                if (immersiveMode || portraitChromeAlpha.value < 1f) {
+                                                    (pagerState.currentPage + pagerState.currentPageOffsetFraction)
+                                                        .coerceIn(0f, 1f)
+                                                } else 0f
+                                            },
                                             immersiveMode = immersiveMode,
                                             onToggleImmersiveMode = onToggleImmersiveMode,
                                             modifier = Modifier.fillMaxWidth(),
@@ -1206,6 +1205,38 @@ internal fun FullPlayerScreen(
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }
+                        }
+                    }
+                    if (playerLayout == PlayerLayout.PORTRAIT) {
+                        Column(
+                            modifier = Modifier.align(Alignment.TopCenter).playerChromeVisibility(!immersiveMode)
+                                .padding(top = headerTopPadding),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            PlayerHeader(
+                                item = item,
+                                trackChangeDirection = playback.trackChangeDirection,
+                                titleColor = emphasisControlColor,
+                                artistColor = artistControlColor,
+                                leftAligned = displayedLeftAlignPlayerTitle,
+                                titleSlotHeight = playerHeaderTitleSlotHeight,
+                                artistSlotHeight = playerHeaderArtistSlotHeight,
+                                modifier = Modifier
+                                    .width(portraitArtworkContentWidth)
+                                    .then(
+                                        rememberPlayerHeaderGestureModifier(
+                                            enabled = !immersiveMode && hideLyricsControls &&
+                                                lyricsPagingEnabled && item != null &&
+                                                pagerState.settledPage == 1 &&
+                                                !pagerState.isScrollInProgress,
+                                            playWhenReady = playback.playWhenReady,
+                                            onTogglePlayPause = onTogglePlayPause,
+                                            onPrevious = { onPrevious() },
+                                            onNext = { onNext() },
+                                        ),
+                                    ),
+                            )
+                            Spacer(Modifier.height(headerSpacing))
                         }
                     }
                     }

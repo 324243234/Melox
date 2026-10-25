@@ -183,6 +183,8 @@ internal fun PlayerDetails(
     onOpenTrackActions: () -> Unit,
     modifier: Modifier = Modifier,
     primaryControlAlpha: Float? = null,
+    primaryControlsBackdrop: Backdrop? = null,
+    primaryControlsBackdropAlpha: () -> Float = { 1f },
     primaryControlsWidth: Dp = contentWidth,
     secondaryControlsWidth: Dp = contentWidth,
     spacing: PlayerVerticalSpacing = PlayerVerticalSpacing(),
@@ -224,41 +226,53 @@ internal fun PlayerDetails(
                     .height(PLAYER_PLAY_PAUSE_TOUCH_SIZE),
             ) {
                 val layout = playerPrimaryControlLayout(maxWidth)
-                PlayerTrackSkipButton(
-                    direction = -1,
-                    tint = primaryControlColor,
-                    iconSize = PLAYER_SIDE_CONTROL_ICON_SIZE,
+                PlayerPrimaryControlSurface(
                     touchSize = PLAYER_SIDE_CONTROL_TOUCH_SIZE,
-                    onClick = { playback.currentItem != null && onPrevious() },
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .offset(x = layout.previousTouchOffset),
-                )
-                AnimatedPlayPauseButton(
-                    playWhenReady = playback.playWhenReady,
-                    tint = primaryControlColor,
-                    onClick = {
-                        if (playback.currentItem != null) onTogglePlayPause()
-                    },
-                    onLongClick = onToggleImmersiveMode,
-                    onLongClickLabel = stringResource(
-                        if (immersiveMode) R.string.player_immersive_mode_disable
-                        else R.string.player_immersive_mode_enable,
-                    ),
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .offset(x = layout.playPauseTouchOffset),
-                )
-                PlayerTrackSkipButton(
-                    direction = 1,
-                    tint = primaryControlColor,
-                    iconSize = PLAYER_SIDE_CONTROL_ICON_SIZE,
+                    backdrop = primaryControlsBackdrop,
+                    backdropAlpha = primaryControlsBackdropAlpha,
+                    modifier = Modifier.align(Alignment.CenterStart).offset(x = layout.previousTouchOffset),
+                ) {
+                    PlayerTrackSkipButton(
+                        direction = -1,
+                        tint = primaryControlColor,
+                        iconSize = PLAYER_SIDE_CONTROL_ICON_SIZE,
+                        touchSize = PLAYER_SIDE_CONTROL_TOUCH_SIZE,
+                        onClick = { playback.currentItem != null && onPrevious() },
+                    )
+                }
+                PlayerPrimaryControlSurface(
+                    touchSize = PLAYER_PLAY_PAUSE_TOUCH_SIZE,
+                    backdrop = primaryControlsBackdrop,
+                    backdropAlpha = primaryControlsBackdropAlpha,
+                    modifier = Modifier.align(Alignment.CenterStart).offset(x = layout.playPauseTouchOffset),
+                ) {
+                    AnimatedPlayPauseButton(
+                        playWhenReady = playback.playWhenReady,
+                        tint = primaryControlColor,
+                        onClick = {
+                            if (playback.currentItem != null) onTogglePlayPause()
+                        },
+                        onLongClick = onToggleImmersiveMode,
+                        onLongClickLabel = stringResource(
+                            if (immersiveMode) R.string.player_immersive_mode_disable
+                            else R.string.player_immersive_mode_enable,
+                        ),
+                    )
+                }
+                PlayerPrimaryControlSurface(
                     touchSize = PLAYER_SIDE_CONTROL_TOUCH_SIZE,
-                    onClick = { playback.currentItem != null && onNext() },
-                    modifier = Modifier
-                        .align(Alignment.CenterStart)
-                        .offset(x = layout.nextTouchOffset),
-                )
+                    backdrop = primaryControlsBackdrop,
+                    backdropAlpha = primaryControlsBackdropAlpha,
+                    modifier = Modifier.align(Alignment.CenterStart).offset(x = layout.nextTouchOffset),
+                ) {
+                    PlayerTrackSkipButton(
+                        direction = 1,
+                        tint = primaryControlColor,
+                        iconSize = PLAYER_SIDE_CONTROL_ICON_SIZE,
+                        touchSize = PLAYER_SIDE_CONTROL_TOUCH_SIZE,
+                        onClick = { playback.currentItem != null && onNext() },
+                    )
+                }
             }
             Spacer(Modifier.height(spacing.controlGroup))
             Row(
@@ -315,6 +329,52 @@ internal fun PlayerDetails(
             }
         }
     }
+}
+
+@Composable
+private fun PlayerPrimaryControlSurface(
+    touchSize: Dp,
+    backdrop: Backdrop?,
+    backdropAlpha: () -> Float,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Box(modifier = modifier.size(touchSize), contentAlignment = Alignment.Center) {
+        if (backdrop != null) {
+            PlayerRadialControlBackdrop(
+                backdrop = backdrop,
+                modifier = Modifier.matchParentSize()
+                    .requiredSize(touchSize + 48.dp)
+                    .graphicsLayer { alpha = backdropAlpha() },
+            )
+        }
+        content()
+    }
+}
+
+@Composable
+private fun PlayerRadialControlBackdrop(backdrop: Backdrop, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithCache {
+                val mask = Brush.radialGradient(
+                    0f to Color.White,
+                    0.45f to Color.White,
+                    1f to Color.Transparent,
+                    radius = size.minDimension / 2f,
+                )
+                onDrawWithContent {
+                    drawContent()
+                    drawRect(mask, blendMode = BlendMode.DstIn)
+                }
+            }
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { RectangleShape },
+                effects = { blur(12.dp.toPx()) },
+            ),
+    )
 }
 @Composable
 private fun AnimatedPlayPauseButton(
@@ -640,27 +700,10 @@ private fun PlayerFunctionButton(
         contentAlignment = Alignment.Center,
     ) {
         if (blurBackdrop != null) {
-            Box(
+            PlayerRadialControlBackdrop(
+                backdrop = blurBackdrop,
                 modifier = Modifier.matchParentSize()
-                    .requiredSize(64.dp)
-                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                    .drawWithCache {
-                        val mask = Brush.radialGradient(
-                            0f to Color.White,
-                            0.45f to Color.White,
-                            1f to Color.Transparent,
-                            radius = size.minDimension / 2f,
-                        )
-                        onDrawWithContent {
-                            drawContent()
-                            drawRect(mask, blendMode = BlendMode.DstIn)
-                        }
-                    }
-                    .drawBackdrop(
-                        backdrop = blurBackdrop,
-                        shape = { RectangleShape },
-                        effects = { blur(12.dp.toPx()) },
-                    ),
+                    .requiredSize(64.dp),
             )
         }
         IconButton(onClick = onClick, enabled = false, content = content)
