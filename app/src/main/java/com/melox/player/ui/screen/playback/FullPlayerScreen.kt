@@ -963,6 +963,7 @@ internal fun FullPlayerScreen(
                                             enabled = !immersiveMode,
                                             blurBackdrop = blurBackdrop,
                                             modifier = Modifier.fillMaxWidth()
+                                                .then(if (!immersiveMode) dismissGestureModifier else Modifier)
                                                 .padding(bottom = spacing.panelBottom)
                                                 .playerChromeVisibility(!immersiveMode),
                                         )
@@ -1060,6 +1061,7 @@ internal fun FullPlayerScreen(
                                     artworkBottomOverlap = progressTrackInset,
                                     artworkTopPadding = portraitHeaderHeight,
                                     overlayDetails = true,
+                                    detailsModifier = if (!immersiveMode) dismissGestureModifier else Modifier,
                                     artworkContent = { artworkHeight ->
                                         PlayerContentPager(
                                             activeLyricAlpha = activeLyricAlpha,
@@ -1115,6 +1117,7 @@ internal fun FullPlayerScreen(
                                                     enabled = !immersiveMode,
                                                     blurBackdrop = blurBackdrop,
                                                     modifier = Modifier.fillMaxWidth()
+                                                        .then(if (!immersiveMode) dismissGestureModifier else Modifier)
                                                         .padding(bottom = PLAYER_PROGRESS_TIME_SPACING + 12.dp)
                                                         .playerChromeVisibility(!immersiveMode),
                                                 )
@@ -1209,7 +1212,9 @@ internal fun FullPlayerScreen(
                     }
                     if (playerLayout == PlayerLayout.PORTRAIT) {
                         Column(
-                            modifier = Modifier.align(Alignment.TopCenter).playerChromeVisibility(!immersiveMode)
+                            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                                .then(if (!immersiveMode) dismissGestureModifier else Modifier)
+                                .playerChromeVisibility(!immersiveMode)
                                 .padding(top = headerTopPadding),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {

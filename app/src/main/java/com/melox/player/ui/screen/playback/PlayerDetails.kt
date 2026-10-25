@@ -681,22 +681,21 @@ private fun PlayerFunctionButton(
     val interactionSource = remember { MutableInteractionSource() }
     val feedback = remember { SinkFeedback() }
     Box(
-        modifier = modifier
-            .pressable(
+        modifier = modifier.then(if (enabled) {
+            Modifier.pressable(
                 interactionSource = interactionSource,
                 indication = feedback,
-                enabled = enabled,
                 delay = null,
             )
             .combinedClickable(
-                enabled = enabled,
                 role = Role.Button,
                 interactionSource = null,
                 indication = null,
                 onLongClick = onLongClick,
                 onLongClickLabel = onLongClickLabel,
                 onClick = onClick,
-            ),
+            )
+        } else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         if (blurBackdrop != null) {

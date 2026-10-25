@@ -1,6 +1,7 @@
 package com.melox.player.ui.screen.playback
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -14,6 +15,7 @@ internal fun PortraitPlayerLayout(
     spacing: PlayerVerticalSpacing,
     modifier: Modifier = Modifier,
     artworkModifier: Modifier = Modifier,
+    detailsModifier: Modifier = Modifier,
     artworkBottomOverlap: Dp = 0.dp,
     artworkTopPadding: Dp = 0.dp,
     overlayDetails: Boolean = false,
@@ -23,12 +25,14 @@ internal fun PortraitPlayerLayout(
     SubcomposeLayout(modifier) { constraints ->
         val width = constraints.maxWidth
         val height = constraints.maxHeight
-        val bottom = spacing.panelBottom.roundToPx().coerceIn(0, height)
         val top = artworkTopPadding.roundToPx().coerceIn(0, height)
         val details = subcompose("details") {
-            Box(contentAlignment = Alignment.Center) { detailsContent() }
-        }.single().measure(Constraints.fixedWidth(width).copy(maxHeight = height - bottom))
-        val artworkHeight = (height - top - bottom - details.height -
+            Box(
+                modifier = detailsModifier.padding(bottom = spacing.panelBottom),
+                contentAlignment = Alignment.TopCenter,
+            ) { detailsContent() }
+        }.single().measure(Constraints.fixedWidth(width).copy(maxHeight = height))
+        val artworkHeight = (height - top - details.height -
             spacing.artworkToProgress.roundToPx()).coerceAtLeast(0) + artworkBottomOverlap.roundToPx()
         val viewportHeight = if (overlayDetails) height else artworkHeight
         val artwork = subcompose("artwork") {
@@ -39,7 +43,7 @@ internal fun PortraitPlayerLayout(
         }.single().measure(Constraints.fixed(width, viewportHeight))
         layout(width, height) {
             artwork.place(0, if (overlayDetails) 0 else top)
-            details.place(0, height - bottom - details.height)
+            details.place(0, height - details.height)
         }
     }
 }

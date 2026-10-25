@@ -5,6 +5,8 @@ import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -54,6 +56,7 @@ import com.melox.player.ui.screen.playback.PlayerVerticalSpacing
 import com.melox.player.ui.screen.playback.PortraitPlayerLayout
 import com.melox.player.ui.screen.playback.playerChromeVisibility
 import com.melox.player.ui.screen.playback.rememberPlayerHeaderGestureModifier
+import com.melox.player.ui.component.playback.rememberPlayerSheetVerticalDragModifier
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -67,6 +70,180 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @RunWith(AndroidJUnit4::class)
 class ImmersivePlayerLayoutTest {
+    @Test
+    fun hiddenLyricActionsLetBothButtonRegionsScrollTheLyrics() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val ready = CountDownLatch(1)
+        val hidden = mutableStateOf(false)
+        val row = AtomicReference(Rect.Zero)
+        val scrollPosition = AtomicInteger()
+        val actions = AtomicInteger()
+        lateinit var view: ComposeView
+        var density = 1f
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                density = activity.resources.displayMetrics.density
+                view = ComposeView(activity).apply {
+                    setContent {
+                        MiuixTheme {
+                            val scroll = rememberScrollState()
+                            val offset = scroll.value
+                            SideEffect { scrollPosition.set(offset) }
+                            Box(Modifier.width(320.dp).height(480.dp)) {
+                                Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
+                                    Box(Modifier.fillMaxWidth().height(2000.dp))
+                                }
+                                PlayerLyricActionsRow(
+                                    showLyricsTranslation = true,
+                                    emphasisControlColor = Color.White,
+                                    onOpenLyricsSettings = { actions.incrementAndGet() },
+                                    onToggleLyricsTranslation = { actions.incrementAndGet() },
+                                    onOpenTranslationSettings = { actions.incrementAndGet() },
+                                    enabled = !hidden.value,
+                                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                                        .playerChromeVisibility(!hidden.value)
+                                        .onGloballyPositioned { row.set(it.boundsInRoot()); ready.countDown() },
+                                )
+                            }
+                        }
+                    }
+                }
+                activity.setContentView(view)
+            }
+            assertTrue(ready.await(5, TimeUnit.SECONDS))
+            instrumentation.waitForIdleSync()
+            val originalRow = row.get()
+            val points = listOf(R.string.player_settings_open, R.string.lyrics_translation).map { resource ->
+                val node = requireNotNull(findNode(instrumentation.uiAutomation.rootInActiveWindow) {
+                    it.contentDescription?.toString() == view.context.getString(resource)
+                })
+                val bounds = android.graphics.Rect().also(node::getBoundsInScreen)
+                val origin = IntArray(2)
+                instrumentation.runOnMainSync { view.getLocationOnScreen(origin) }
+                Offset(bounds.exactCenterX() - origin[0], bounds.exactCenterY() - origin[1])
+            }
+            instrumentation.runOnMainSync { hidden.value = true }
+            SystemClock.sleep(350)
+            instrumentation.waitForIdleSync()
+            assertEquals("Fading must preserve the action row's measured size", originalRow, row.get())
+            for (point in points) {
+                val before = scrollPosition.get()
+                val downTime = SystemClock.uptimeMillis()
+                fun event(action: Int, fraction: Float) = instrumentation.runOnMainSync {
+                    MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action,
+                        point.x, point.y - 64f * density * fraction, 0).also {
+                        view.dispatchTouchEvent(it)
+                        it.recycle()
+                    }
+                }
+                event(MotionEvent.ACTION_DOWN, 0f)
+                for (step in 1..6) {
+                    SystemClock.sleep(16)
+                    event(MotionEvent.ACTION_MOVE, step / 6f)
+                }
+                event(MotionEvent.ACTION_UP, 1f)
+                instrumentation.waitForIdleSync()
+                assertTrue("A faded button must not block the scrollable lyrics", scrollPosition.get() > before)
+                assertEquals("Hidden buttons must not perform actions", 0, actions.get())
+            }
+            instrumentation.runOnMainSync { hidden.value = false }
+            SystemClock.sleep(350)
+            instrumentation.waitForIdleSync()
+            assertEquals(originalRow, row.get())
+            for (resource in listOf(R.string.player_settings_open, R.string.lyrics_translation)) {
+                assertTrue(hasDescription(instrumentation.uiAutomation.rootInActiveWindow,
+                    view.context.getString(resource)))
+            }
+        }
+    }
+
+    @Test
+    fun normalPortraitChromeDragsDismissWhileTheLyricViewportStillScrolls() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val ready = CountDownLatch(1)
+        val page = AtomicReference(Rect.Zero)
+        val starts = AtomicInteger()
+        val ends = AtomicInteger()
+        val scrollPosition = AtomicInteger()
+        lateinit var view: ComposeView
+        var density = 1f
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                density = activity.resources.displayMetrics.density
+                view = ComposeView(activity).apply {
+                    setContent {
+                        MiuixTheme {
+                            val dismiss = rememberPlayerSheetVerticalDragModifier(
+                                enabled = true, hasItem = true,
+                                onDragStart = { starts.incrementAndGet() }, onDrag = {},
+                                onDragEnd = { ends.incrementAndGet() }, onDragCancel = {},
+                            )
+                            val scroll = rememberScrollState()
+                            val scrollOffset = scroll.value
+                            val viewportAlpha = playerChromeAlpha(false)
+                            SideEffect { scrollPosition.set(scrollOffset) }
+                            Box(Modifier.width(320.dp).height(600.dp).then(dismiss)
+                                .onGloballyPositioned { page.set(it.boundsInRoot()); ready.countDown() }) {
+                                PortraitPlayerLayout(
+                                    spacing = PlayerVerticalSpacing(artworkToProgress = 0.dp, panelBottom = 32.dp),
+                                    artworkTopPadding = 80.dp,
+                                    overlayDetails = true,
+                                    detailsModifier = dismiss,
+                                    modifier = Modifier.fillMaxSize(),
+                                    artworkContent = { artworkHeight ->
+                                        Box(Modifier.fillMaxSize().portraitLyricViewport(
+                                            topInset = 80.dp,
+                                            bottomInset = 600.dp - 80.dp - artworkHeight,
+                                            showBottomFade = true, immersiveMode = false,
+                                            immersiveAlpha = viewportAlpha,
+                                        )) {
+                                            Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
+                                                Box(Modifier.fillMaxWidth().height(2000.dp))
+                                            }
+                                        }
+                                    },
+                                    detailsContent = { Box(Modifier.fillMaxWidth().height(160.dp)) },
+                                )
+                                Box(Modifier.fillMaxWidth().height(80.dp).then(dismiss))
+                            }
+                        }
+                    }
+                }
+                activity.setContentView(view)
+            }
+            assertTrue(ready.await(5, TimeUnit.SECONDS))
+            instrumentation.waitForIdleSync()
+            fun swipe(point: Offset, deltaY: Float) {
+                val downTime = SystemClock.uptimeMillis()
+                fun event(action: Int, fraction: Float) = instrumentation.runOnMainSync {
+                    MotionEvent.obtain(downTime, SystemClock.uptimeMillis(), action,
+                        point.x, point.y + deltaY * fraction, 0).also {
+                        view.dispatchTouchEvent(it)
+                        it.recycle()
+                    }
+                }
+                event(MotionEvent.ACTION_DOWN, 0f)
+                for (step in 1..6) {
+                    SystemClock.sleep(16)
+                    event(MotionEvent.ACTION_MOVE, step / 6f)
+                }
+                event(MotionEvent.ACTION_UP, 1f)
+                instrumentation.waitForIdleSync()
+            }
+            for (y in listOf(8f, 40f, 440f, 580f)) {
+                val before = starts.get()
+                swipe(Offset(page.get().center.x, page.get().top + y * density), 64f * density)
+                assertEquals("Header, panel and footer must retain sheet drag ownership", before + 1, starts.get())
+                assertEquals(starts.get(), ends.get())
+                assertEquals("Chrome drags must not scroll the masked lyrics", 0, scrollPosition.get())
+            }
+            val before = starts.get()
+            swipe(Offset(page.get().center.x, page.get().top + 280f * density), -64f * density)
+            assertEquals("Lyric scrolling must not start a sheet drag", before, starts.get())
+            assertTrue("The lyric viewport must still scroll", scrollPosition.get() > 0)
+        }
+    }
+
     @Test
     fun portraitImmersionExtendsViewportWithoutMovingContent() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
