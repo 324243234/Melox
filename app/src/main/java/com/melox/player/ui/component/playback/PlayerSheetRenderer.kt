@@ -529,6 +529,7 @@ internal fun PlayerSheetArtworkOverlay(
     enabled: Boolean,
     modifier: Modifier = Modifier,
     circularArtwork: Boolean = false,
+    squareArtwork: Boolean = false,
 ) {
     if (playback.currentItem == null) return
     val progress = transition.progress
@@ -541,16 +542,18 @@ internal fun PlayerSheetArtworkOverlay(
         frame.alpha * if (frame.isPlaceholder) placeholderArtworkAlpha else 1f
     })
     val density = LocalDensity.current
+    // 方形裁剪：圆形或"圆角矩形"都按正方形铺满封面。
+    val squareClip = circularArtwork || squareArtwork
     if (!enabled || !transition.separateArtworkOverlayReady || !transition.isTransitionActive) return
     val sourceArtworkBounds = bitmap?.let {
-        playbackArtworkBounds(source, it.width, it.height, circularArtwork)
+        playbackArtworkBounds(source, it.width, it.height, squareClip)
     }
     val sourceBounds = sourceArtworkBounds ?: source
     if (!sharedArtworkTargetIsOnscreen(
         artworkBounds = target,
         viewportBounds = transition.fullPlayerBounds,
     )) return
-    val collapsedArtworkCornerRadius = bitmap?.takeUnless { circularArtwork }?.let {
+    val collapsedArtworkCornerRadius = bitmap?.takeUnless { squareClip }?.let {
         playbackArtworkCornerRadius(
             cornerRadius = collapsedCornerRadius,
             bitmapWidth = it.width,
@@ -603,7 +606,7 @@ internal fun PlayerSheetArtworkOverlay(
                 size = with(density) { source.width.coerceAtLeast(1f).toDp() },
                 cornerRadius = localCornerRadius,
                 modifier = Modifier,
-                contentScale = ContentScale.Fit,
+                contentScale = if (squareClip) ContentScale.Crop else ContentScale.Fit,
                 useSquircleClip = true,
                 drawArtworkShadow = true,
                 artworkAlpha = if (artworkBlend.isPlaceholder) placeholderArtworkAlpha else 1f,
@@ -646,7 +649,7 @@ internal fun PlayerSheetArtworkOverlay(
         ) {
             if (artworkBlend.flipState != null) {
                 ArtworkFlipLayer(artworkBlend.flipState, Modifier.fillMaxSize(),
-                    contentScale = if (circularArtwork) ContentScale.Crop else ContentScale.Fit) { face, blur ->
+                    contentScale = if (squareClip) ContentScale.Crop else ContentScale.Fit) { face, blur ->
                     Image(
                         bitmap = face.asImageBitmap(),
                         contentDescription = null,
@@ -661,7 +664,7 @@ internal fun PlayerSheetArtworkOverlay(
                                 }
                             }
                             .then(blur),
-                        contentScale = if (circularArtwork) ContentScale.Crop else ContentScale.Fit,
+                        contentScale = if (squareClip) ContentScale.Crop else ContentScale.Fit,
                         filterQuality = FilterQuality.High,
                     )
                 }
@@ -684,7 +687,7 @@ internal fun PlayerSheetArtworkOverlay(
                         .graphicsLayer {
                             alpha = artworkLayerAlphas[index]
                         },
-                    contentScale = if (circularArtwork) ContentScale.Crop else ContentScale.Fit,
+                    contentScale = if (squareClip) ContentScale.Crop else ContentScale.Fit,
                     filterQuality = FilterQuality.High,
                 )
             }

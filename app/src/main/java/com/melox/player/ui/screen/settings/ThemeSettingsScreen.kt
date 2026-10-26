@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.melox.player.R
 import com.melox.player.model.AppSettings
+import com.melox.player.model.CoverShape
 import com.melox.player.model.DynamicColorSource
 import com.melox.player.model.DynamicFlowStyle
 import com.melox.player.model.NavigationTransitionStyle
@@ -70,7 +71,7 @@ fun ThemeSettingsScreen(
     onDynamicColorSourceChange: (DynamicColorSource) -> Unit,
     onPlaybackBackgroundStyleChange: (PlaybackBackgroundStyle) -> Unit,
     onDynamicFlowStyleChange: (DynamicFlowStyle) -> Unit,
-    onCircularArtworkChange: (Boolean) -> Unit,
+    onCoverShapeChange: (CoverShape) -> Unit,
     onArtworkFlipAnimationChange: (Boolean) -> Unit,
     onShowSongListArtworkChange: (Boolean) -> Unit,
     onShowSongListFileNameChange: (Boolean) -> Unit,
@@ -103,8 +104,8 @@ fun ThemeSettingsScreen(
     var songListArtworkChecked by remember(settings.showSongListArtwork) {
         mutableStateOf(settings.showSongListArtwork)
     }
-    var circularArtworkChecked by remember(settings.circularArtwork) {
-        mutableStateOf(settings.circularArtwork)
+    var coverShape by remember(settings.coverShape) {
+        mutableStateOf(settings.coverShape)
     }
     var artworkFlipAnimationChecked by remember(settings.artworkFlipAnimation) {
         mutableStateOf(settings.artworkFlipAnimation)
@@ -135,6 +136,11 @@ fun ThemeSettingsScreen(
         DynamicFlowStyle.SYSTEM to stringResource(R.string.theme_mode_system),
         DynamicFlowStyle.LIGHT to stringResource(R.string.settings_dynamic_flow_light),
         DynamicFlowStyle.DARK to stringResource(R.string.settings_dynamic_flow_dark),
+    )
+    val coverShapes = listOf(
+        CoverShape.DEFAULT to stringResource(R.string.settings_cover_shape_default),
+        CoverShape.ROUNDED_RECT to stringResource(R.string.settings_cover_shape_rounded),
+        CoverShape.CIRCLE to stringResource(R.string.settings_cover_shape_circle),
     )
     var topBarBackdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val topBarBackdrop = rememberBlurBackdrop(captureCoordinates = { topBarBackdropCaptureCoordinates })
@@ -332,12 +338,19 @@ fun ThemeSettingsScreen(
                                 },
                             )
                         }
-                        SwitchPreference(
-                            title = stringResource(R.string.settings_circular_artwork_title),
-                            checked = circularArtworkChecked,
-                            onCheckedChange = { checked ->
-                                circularArtworkChecked = checked
-                                onCircularArtworkChange(checked)
+                        OverlayDropdownPreference(
+                            items = coverShapes.map { it.second },
+                            selectedIndex = coverShapes.indexOfFirst {
+                                it.first == coverShape
+                            }.coerceAtLeast(0),
+                            title = stringResource(R.string.settings_cover_shape_title),
+                            onSelectedIndexChange = { index ->
+                                coverShapes.getOrNull(index)?.first?.let { shape ->
+                                    if (shape != coverShape) {
+                                        coverShape = shape
+                                        onCoverShapeChange(shape)
+                                    }
+                                }
                             },
                         )
                         SwitchPreference(
