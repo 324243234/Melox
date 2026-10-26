@@ -8,6 +8,7 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.melox.player.model.CoverShape
 import com.melox.player.model.LyricsTranslationLanguage
 import com.melox.player.model.LyricAnimationMode
 import com.melox.player.data.library.AlbumGroup
@@ -740,6 +741,12 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
     fun setCircularArtwork(enabled: Boolean) {
         viewModelScope.launch {
             settingsRepository.setCircularArtwork(enabled)
+        }
+    }
+
+    fun setCoverShape(shape: CoverShape) {
+        viewModelScope.launch {
+            settingsRepository.setCoverShape(shape)
         }
     }
 

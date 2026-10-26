@@ -259,6 +259,10 @@
     <string name="settings_playback_background_title">Playback background</string>
     <string name="settings_section_playback_interface">Playback interface</string>
     <string name="settings_circular_artwork_title">Circular artwork</string>
+    <string name="settings_cover_shape_title">Cover shape</string>
+    <string name="settings_cover_shape_default">Default</string>
+    <string name="settings_cover_shape_rounded">Rounded rectangle</string>
+    <string name="settings_cover_shape_circle">Circle</string>
     <string name="settings_artwork_flip_animation_title">Artwork flip animation</string>
     <string name="settings_section_song_list">Song list</string>
     <string name="settings_song_list_artwork_title">Show song artwork in lists</string>

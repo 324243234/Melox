@@ -264,6 +264,7 @@ internal fun FullPlayerScreen(
     onArtworkPageSelectedChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     circularArtwork: Boolean = false,
+    squareArtwork: Boolean = false,
 ) {
     val item = playback.currentItem?.let { queueItem ->
         currentTrack?.let(queueItem::withTrackMetadata) ?: queueItem
@@ -645,7 +646,7 @@ internal fun FullPlayerScreen(
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         PlayerArtwork(
-                                            circularArtwork = circularArtwork,
+                                            circularArtwork = circularArtwork, squareArtwork = squareArtwork,
                                             showArtwork = item != null,
                                             size = fitPlayerArtworkSize(
                                                 preferredSize = artworkSize,
@@ -753,7 +754,7 @@ internal fun FullPlayerScreen(
                                 immersiveMode = immersiveMode,
                                 artworkContent = { artworkSize ->
                                     PlayerArtwork(
-                                        circularArtwork = circularArtwork,
+                                        circularArtwork = circularArtwork, squareArtwork = squareArtwork,
                                         showArtwork = item != null,
                                         size = artworkSize,
                                         artworkPadding = artworkPadding,
@@ -996,7 +997,7 @@ internal fun FullPlayerScreen(
                                                     modifier = Modifier.fillMaxSize(),
                                                     artworkContent = { captionArtworkHeight ->
                                                         PlayerArtwork(
-                                                            circularArtwork = circularArtwork,
+                                                            circularArtwork = circularArtwork, squareArtwork = squareArtwork,
                                                             showArtwork = item != null,
                                                             size = fitPlayerArtworkSize(
                                                                 artworkSize,
@@ -1149,7 +1150,7 @@ internal fun FullPlayerScreen(
                                                         .then(overscrollModifier),
                                                     artworkContent = { captionArtworkHeight ->
                                                         PlayerArtwork(
-                                                            circularArtwork = circularArtwork,
+                                                            circularArtwork = circularArtwork, squareArtwork = squareArtwork,
                                                             showArtwork = item != null,
                                                             size = fitPlayerArtworkSize(
                                                                 artworkSize,

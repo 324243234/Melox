@@ -30,6 +30,13 @@ enum class PlaybackBackgroundStyle {
     DYNAMIC_FLOW,
 }
 
+/** Selects the clip shape used for playback artwork. */
+enum class CoverShape {
+    DEFAULT,
+    ROUNDED_RECT,
+    CIRCLE,
+}
+
 /** Selects the dynamic-flow appearance independently of the app theme. */
 enum class DynamicFlowStyle {
     SYSTEM,
@@ -168,7 +175,7 @@ data class AppSettings(
         PlaybackBackgroundStyle.BLURRED_ARTWORK,
     val dynamicFlowStyle: DynamicFlowStyle = DynamicFlowStyle.SYSTEM,
     val showSongListArtwork: Boolean = true,
-    val circularArtwork: Boolean = false,
+    val coverShape: CoverShape = CoverShape.DEFAULT,
     val artworkFlipAnimation: Boolean = false,
     val showSongListFileName: Boolean = false,
     val showSongListDuration: Boolean = true,
@@ -231,6 +238,10 @@ data class AppSettings(
     val playlistSortConfigs: Map<String, PlaylistSortConfig> = emptyMap(),
     val defaultHomePage: DefaultHomePage = DefaultHomePage.HOME,
 ) {
+    /** Backwards-compatible derived flag; only the circular shape crops playback artwork. */
+    val circularArtwork: Boolean
+        get() = coverShape == CoverShape.CIRCLE
+
     val statusBarHidden: Boolean
         get() = immersiveMode || hideStatusBar
 

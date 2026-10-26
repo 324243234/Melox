@@ -222,8 +222,12 @@ internal fun PlayerArtwork(
     onArtworkBoundsChanged: (Rect) -> Unit,
     onArtworkDisplaySizeChanged: (Int) -> Unit = {},
     circularArtwork: Boolean = false,
+    squareArtwork: Boolean = false,
     showArtwork: Boolean = true,
 ) {
+    // 方形裁剪：圆形或"圆角矩形"都裁成正方形；默认形状保留等比边长条。
+    val squareClip = circularArtwork || squareArtwork
+    val resolvedContentScale = if (squareClip) ContentScale.Crop else ContentScale.Fit
     val artworkContainerSize = size + PLAYER_ARTWORK_CONTAINER_EXPANSION
     val placeholderArtworkAlpha = playerSheetPlaceholderArtworkAlpha(1f)
     val artworkContentSize =
@@ -249,7 +253,7 @@ internal fun PlayerArtwork(
                     bounds = insetArtworkBounds,
                     bitmapWidth = bitmap.width,
                     bitmapHeight = bitmap.height,
-                    circular = circularArtwork,
+                    circular = squareClip,
                 )
             } ?: insetArtworkBounds
             onArtworkBoundsChanged(visibleArtworkBounds)
@@ -279,12 +283,12 @@ internal fun PlayerArtwork(
             // Keep the measured slot for the player layout, but omit the cover and shadow.
         } else if (artworkBlend.flipState != null) {
             ArtworkFlipLayer(artworkBlend.flipState,
-                contentScale = if (circularArtwork) ContentScale.Crop else ContentScale.Fit) { face, blur ->
+                contentScale = resolvedContentScale) { face, blur ->
                 PlaybackArtworkFrame(
                     bitmap = face,
                     size = artworkContentSize,
                     cornerRadius = cornerRadius,
-                    contentScale = ContentScale.Fit,
+                    contentScale = resolvedContentScale,
                     useSquircleClip = true,
                     circular = circularArtwork,
                     drawArtworkShadow = true,
@@ -298,7 +302,7 @@ internal fun PlayerArtwork(
                 size = artworkContentSize,
                 cornerRadius = cornerRadius,
                 modifier = Modifier,
-                contentScale = ContentScale.Fit,
+                contentScale = resolvedContentScale,
                 useSquircleClip = true,
                 circular = circularArtwork,
                 drawArtworkShadow = true,
@@ -311,7 +315,7 @@ internal fun PlayerArtwork(
                     size = artworkContentSize,
                     cornerRadius = cornerRadius,
                     modifier = Modifier,
-                    contentScale = ContentScale.Fit,
+                    contentScale = resolvedContentScale,
                     useSquircleClip = true,
                     circular = circularArtwork,
                     drawArtworkShadow = true,

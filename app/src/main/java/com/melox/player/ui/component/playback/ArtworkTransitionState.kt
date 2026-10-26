@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.channels.Channel
 import kotlin.math.roundToInt
 
 internal data class ArtworkTarget<T>(val value: T?, val contentKey: Any?)
@@ -145,6 +146,17 @@ internal class ArtworkCrossfadeState<T>(
     }
 }
 
+private data class ArtworkTransitionRequest<T>(
+    val target: ArtworkTarget<T>,
+    val targetReady: Boolean,
+    val targetIsPlaceholder: Boolean,
+    val animate: Boolean,
+    val direction: Int,
+    val durationMillis: Int,
+    val sameContentDurationMillis: Int?,
+    val easing: Easing,
+)
+
 @Composable
 internal fun <T> rememberArtworkTransitionState(
     target: ArtworkTarget<T>,
@@ -164,14 +176,40 @@ internal fun <T> rememberArtworkTransitionState(
     }
     val activeFlip = state.flipAnimationEnabled
     SideEffect { state.requestMode(flipAnimationEnabled) }
+    // ── 请求队列（conflated）驱动动画 ──
+    // 旧实现 LaunchedEffect 直接 suspend 运行 transitionTo：切歌时 target/targetReady/
+    // requestedContentKey 的多次变化会取消进行中的 animateTo —— 翻转半路被打断、反复重来，
+    // 快速连切时观感就是"来不及转，抖两下就不转了"。
+    // 现在 key 变化只投递一个最新请求（未处理的旧请求被覆盖），动画由独立协程按序执行：
+    // 当前这一圈一定完整播完（含结尾过冲回弹），再立刻转向最新目标，从而连贯。
+    val requests = remember(state) { Channel<ArtworkTransitionRequest<T>>(Channel.CONFLATED) }
+    LaunchedEffect(state) {
+        for (request in requests) {
+            state.transitionTo(
+                request.target, request.targetReady, request.targetIsPlaceholder,
+                request.animate, request.direction, request.durationMillis,
+                request.sameContentDurationMillis, request.easing,
+            )
+        }
+    }
     LaunchedEffect(
         target, targetIsPlaceholder, activeFlip, animate, durationMillis, sameContentDurationMillis, easing,
         if (activeFlip) requestedContentKey else null,
         if (activeFlip) targetReady else true,
         if (activeFlip) direction else 0,
     ) {
-        state.transitionTo(target, targetReady, targetIsPlaceholder, animate, direction, durationMillis,
-            sameContentDurationMillis, easing)
+        requests.trySend(
+            ArtworkTransitionRequest(
+                target = target,
+                targetReady = targetReady,
+                targetIsPlaceholder = targetIsPlaceholder,
+                animate = animate,
+                direction = direction,
+                durationMillis = durationMillis,
+                sameContentDurationMillis = sameContentDurationMillis,
+                easing = easing,
+            ),
+        )
     }
     return state
 }

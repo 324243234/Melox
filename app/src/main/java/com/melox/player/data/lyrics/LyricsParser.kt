@@ -180,11 +180,13 @@ internal object LyricsParser {
                 lineTimestamps.forEach { timestamp ->
                     val startTimeMs = timestamp.toTimeMs() ?: return@forEach
                     val words = parseTimedWords(payload, startTimeMs, splInlineTimestamp)
-                    val text = payload
+                    val rawText = payload
                         .replace(splInlineTimestamp, "")
                         .trim()
                         .takeIf(String::isNotEmpty)
                         ?: return@forEach
+                    // 同一行内用窄间隔 U+2009 分隔原文/译文（不靠重复时间戳表达翻译）。
+                    val (text, inlineTranslation) = splitInlineTranslation(rawText)
                     addedIndices += entries.size
                     entries += RawLine(
                         agent = DEFAULT_AGENT,
@@ -198,7 +200,7 @@ internal object LyricsParser {
                                     ?.let { (it + offsetMs).coerceAtLeast(0L) },
                             )
                         },
-                        translation = null,
+                        translation = inlineTranslation,
                     )
                 }
                 lastPhysicalEntryIndices = addedIndices
@@ -237,6 +239,22 @@ internal object LyricsParser {
         return tokens.size >= 3 && tokens.all { token ->
             token.length <= 64 && JAPANESE_ROMAN_SYLLABLES.matches(token)
         }
+    }
+
+    /** 单行内翻译的最小分隔符：窄间隔 U+2009（thin space）。 */
+    private const val INLINE_TRANSLATION_SEPARATOR = '\u2009'
+
+    /**
+     * 单行歌词内的翻译拆分：只认窄间隔 U+2009 作为原文/译文分界，
+     * 左侧原文、右侧译文；半角/全角空格是行内停顿，不拆。
+     */
+    private fun splitInlineTranslation(text: String): Pair<String, String?> {
+        val index = text.indexOf(INLINE_TRANSLATION_SEPARATOR)
+        if (index <= 0 || index >= text.length - 1) return text to null
+        val main = text.substring(0, index).trim()
+        val sub = text.substring(index + 1).trim()
+        if (main.isEmpty() || sub.isEmpty()) return text to null
+        return main to sub
     }
 
     private fun parseTimedWords(

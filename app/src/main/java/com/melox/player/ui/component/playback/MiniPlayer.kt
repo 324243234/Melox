@@ -119,6 +119,7 @@ internal fun MiniPlayer(
     onArtworkBoundsChanged: (Rect) -> Unit,
     modifier: Modifier = Modifier,
     circularArtwork: Boolean = false,
+    squareArtwork: Boolean = false,
     subtitleContent: (@Composable (String?, String, TextStyle, Color, Dp) -> Unit)? = null,
 ) {
     val item = playback.currentItem
@@ -356,6 +357,7 @@ internal fun MiniPlayer(
                         cornerRadius = artworkCornerRadius,
                         modifier = Modifier.fillMaxSize(),
                         circular = circularArtwork,
+                        square = squareArtwork,
                     )
                 }
                 Spacer(modifier = Modifier.width(metadataSpacing))
@@ -450,14 +452,20 @@ private fun MiniPlayerArtwork(
     cornerRadius: Dp,
     modifier: Modifier = Modifier,
     circular: Boolean = false,
+    square: Boolean = false,
 ) {
+    val squareClip = circular || square
     PlaybackArtworkBlend(
         blend = state.toArtworkBlend(),
         size = size,
         cornerRadius = cornerRadius,
         modifier = modifier,
-        contentScale = ContentScale.Fit,
-        rectangularCornerRadiusReduction = MINI_PLAYER_RECTANGULAR_ARTWORK_CORNER_REDUCTION,
+        contentScale = if (squareClip) ContentScale.Crop else ContentScale.Fit,
+        rectangularCornerRadiusReduction = if (squareClip) {
+            0.dp
+        } else {
+            MINI_PLAYER_RECTANGULAR_ARTWORK_CORNER_REDUCTION
+        },
         circular = circular,
         placeholderAlpha = playerSheetPlaceholderArtworkAlpha(playerSheetProgress()),
     )

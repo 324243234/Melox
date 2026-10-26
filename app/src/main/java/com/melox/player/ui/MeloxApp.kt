@@ -181,6 +181,7 @@ import com.melox.player.ui.component.library.TrackSelectionActions
 import com.melox.player.ui.component.library.extractArtworkColor
 import com.melox.player.ui.component.library.rememberArtworkBitmap
 import com.melox.player.ui.component.library.normalizeArtworkTargetSize
+import com.melox.player.model.CoverShape
 import com.melox.player.model.withTrackMetadata
 import com.melox.player.ui.component.playback.ArtworkTransitionState
 import com.melox.player.ui.component.playback.rememberPlaybackArtworkTransition
@@ -1874,6 +1875,7 @@ fun MeloxApp(
                                     viewModel = viewModel,
                                     artworkState = artworkState,
                                     circularArtwork = settings.circularArtwork,
+                                    squareArtwork = settings.coverShape != CoverShape.DEFAULT,
                                     showMiniPlayerLyrics = settings.showMiniPlayerLyrics,
                                     lyricAnimationMode = settings.lyricAnimationMode,
                                     chrome = chrome,
@@ -2039,8 +2041,8 @@ fun MeloxApp(
                                                                 viewModel::setPlaybackBackgroundStyle,
                                                             onDynamicFlowStyleChange =
                                                                 viewModel::setDynamicFlowStyle,
-                                                            onCircularArtworkChange =
-                                                                viewModel::setCircularArtwork,
+                                                            onCoverShapeChange =
+                                                                viewModel::setCoverShape,
                                                             onArtworkFlipAnimationChange =
                                                                 viewModel::setArtworkFlipAnimation,
                                                             onShowSongListArtworkChange =
@@ -2680,6 +2682,7 @@ fun MeloxApp(
                             artworkState = artworkState,
                             onArtworkDisplaySizeChanged = { artworkDisplaySizePx = it },
                             circularArtwork = settings.circularArtwork,
+                            squareArtwork = settings.coverShape != CoverShape.DEFAULT,
                             tracks = uiState.tracks,
                             artistGroups = uiState.artists,
                             playbackBackgroundStyle =
@@ -2824,6 +2827,7 @@ fun MeloxApp(
                         ),
                         enabled = sharedPlayerArtworkEnabled,
                         circularArtwork = settings.circularArtwork,
+                        squareArtwork = settings.coverShape != CoverShape.DEFAULT,
                     )
                 QueueSheetHost(
                     viewModel = viewModel,
@@ -2911,6 +2915,7 @@ private fun FullPlayerHost(
     artworkState: ArtworkTransitionState<Bitmap>,
     onArtworkDisplaySizeChanged: (Int) -> Unit,
     circularArtwork: Boolean,
+    squareArtwork: Boolean,
     tracks: List<MusicTrack>,
     artistGroups: List<ArtistGroup>,
     playbackBackgroundStyle: PlaybackBackgroundStyle,
@@ -2975,6 +2980,7 @@ private fun FullPlayerHost(
         artworkState = artworkState,
         onArtworkDisplaySizeChanged = onArtworkDisplaySizeChanged,
         circularArtwork = circularArtwork,
+        squareArtwork = squareArtwork,
         currentTrack = currentTrack,
         lyrics = lyrics,
         playbackBackgroundStyle = playbackBackgroundStyle,
@@ -3062,6 +3068,7 @@ private fun MiniPlayerHost(
     viewModel: MeloxViewModel,
     artworkState: ArtworkTransitionState<Bitmap>,
     circularArtwork: Boolean,
+    squareArtwork: Boolean,
     showMiniPlayerLyrics: Boolean,
     lyricAnimationMode: LyricAnimationMode,
     chrome: MiniPlayerChrome,
@@ -3097,6 +3104,7 @@ private fun MiniPlayerHost(
         playback = playback,
         artworkState = artworkState,
         circularArtwork = circularArtwork,
+        squareArtwork = squareArtwork,
         chrome = chrome,
         interactiveHighlight = interactiveHighlight,
         onOpen = { scale, offsetX ->

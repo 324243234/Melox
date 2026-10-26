@@ -38,6 +38,7 @@ import com.melox.player.model.normalizeCustomBackgroundCardOpacityPercent
 import com.melox.player.model.BottomBarStyle
 import com.melox.player.model.DefaultHomePage
 import com.melox.player.model.DynamicColorSource
+import com.melox.player.model.CoverShape
 import com.melox.player.model.DynamicFlowStyle
 import com.melox.player.model.LyricsSidecarFormatPriority
 import com.melox.player.model.LyricsSourcePriority
@@ -116,7 +117,13 @@ class SettingsRepository(context: Context) {
                     ?.let { enumValueOrDefault(it, DynamicFlowStyle.SYSTEM) }
                     ?: DynamicFlowStyle.SYSTEM,
                 showSongListArtwork = preferences[Keys.ShowSongListArtwork] ?: true,
-                circularArtwork = preferences[Keys.CircularArtwork] ?: false,
+                coverShape = preferences[Keys.CoverShape]
+                    ?.let { enumValueOrDefault(it, CoverShape.DEFAULT) }
+                    ?: if (preferences[Keys.CircularArtwork] == true) {
+                        CoverShape.CIRCLE
+                    } else {
+                        CoverShape.DEFAULT
+                    },
                 artworkFlipAnimation = preferences[Keys.ArtworkFlipAnimation] ?: false,
                 showSongListFileName = preferences[Keys.ShowSongListFileName] ?: false,
                 showSongListDuration = preferences[Keys.ShowSongListDuration] ?: true,
@@ -336,7 +343,13 @@ class SettingsRepository(context: Context) {
     }
 
     suspend fun setCircularArtwork(enabled: Boolean) {
-        dataStore.edit { it[Keys.CircularArtwork] = enabled }
+        setCoverShape(if (enabled) CoverShape.CIRCLE else CoverShape.DEFAULT)
+    }
+
+    suspend fun setCoverShape(shape: CoverShape) {
+        dataStore.edit { preferences ->
+            preferences[Keys.CoverShape] = shape.name
+        }
     }
 
     suspend fun setArtworkFlipAnimation(enabled: Boolean) {
@@ -674,6 +687,7 @@ class SettingsRepository(context: Context) {
         val DynamicFlowStyle = stringPreferencesKey("dynamic_flow_style")
         val ShowSongListArtwork = booleanPreferencesKey("show_song_list_artwork")
         val CircularArtwork = booleanPreferencesKey("circular_artwork")
+        val CoverShape = stringPreferencesKey("cover_shape")
         val ArtworkFlipAnimation = booleanPreferencesKey("artwork_flip_animation")
         val ShowSongListFileName = booleanPreferencesKey("show_song_list_file_name")
         val ShowSongListDuration = booleanPreferencesKey("show_song_list_duration")

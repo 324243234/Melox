@@ -250,6 +250,10 @@
     <string name="settings_playback_background_title">播放页背景</string>
     <string name="settings_section_playback_interface">播放界面</string>
     <string name="settings_circular_artwork_title">圆形封面</string>
+    <string name="settings_cover_shape_title">封面形状</string>
+    <string name="settings_cover_shape_default">默认</string>
+    <string name="settings_cover_shape_rounded">圆角矩形</string>
+    <string name="settings_cover_shape_circle">圆形封面</string>
     <string name="settings_artwork_flip_animation_title">封面翻转动画</string>
     <string name="settings_section_song_list">歌曲列表</string>
     <string name="settings_song_list_artwork_title">列表显示歌曲封面</string>
