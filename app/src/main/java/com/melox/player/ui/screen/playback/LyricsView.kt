@@ -104,9 +104,11 @@ import com.melox.player.model.LyricLine
 import com.melox.player.model.LyricAlignment
 import com.melox.player.model.LyricsDocument
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
@@ -165,6 +167,22 @@ internal fun lyricTargetScrollOffset(
         centerOffsetPx -
         itemSize / 2f
     ).roundToInt()
+
+internal fun lyricFocusCenterOffset(
+    targetIndex: Int,
+    rows: List<LyricVisualRow>,
+    focusLineIndices: List<Int>,
+    viewportHeightPx: Int,
+    centerOffsetPx: Float,
+): Float {
+    val target = rows.firstOrNull { it.index == targetIndex } ?: return centerOffsetPx
+    val focusRows = rows.filter { it.index in focusLineIndices }
+    if (focusRows.size <= 1 || focusRows.size != focusLineIndices.size) return centerOffsetPx
+    val groupTop = focusRows.minOf { it.top }
+    val groupBottom = focusRows.maxOf { it.top + it.height }
+    if (groupBottom - groupTop > viewportHeightPx - 2f * abs(centerOffsetPx)) return centerOffsetPx
+    return centerOffsetPx + target.top + target.height / 2f - (groupTop + groupBottom) / 2f
+}
 
 internal fun lyricBlurRadiusTarget(
     lyricBlurEnabled: Boolean,
@@ -563,7 +581,6 @@ internal fun LyricsView(
     val rowMotion = remember(document) { LyricRowMotion() }
     val translationMotion = remember(document) { LyricTranslationMotion(showLyricsTranslation) }
     val romanizationMotion = remember(document) { LyricTranslationMotion(showLyricsRomanization) }
-    var translationRevision by remember(document) { mutableIntStateOf(0) }
     var lyricTapRevision by remember(document) { mutableIntStateOf(0) }
     var retainedTravelPx by remember(document) { mutableFloatStateOf(0f) }
     var viewportHeightPx by remember(document) { mutableIntStateOf(0) }
@@ -692,15 +709,11 @@ internal fun LyricsView(
     }
     LaunchedEffect(document, showLyricsTranslation) {
         if (document.lines.none { it.translation != null }) return@LaunchedEffect
-        translationMotion.transitionTo(showLyricsTranslation) {
-            translationRevision++
-        }
+        translationMotion.transitionTo(showLyricsTranslation)
     }
     LaunchedEffect(document, showLyricsRomanization) {
         if (document.lines.none { it.romanization != null }) return@LaunchedEffect
-        romanizationMotion.transitionTo(showLyricsRomanization) {
-            translationRevision++
-        }
+        romanizationMotion.transitionTo(showLyricsRomanization)
     }
     val centeringEvent = LyricCenteringEvent(
         focusIndex = visualFocusRenderIndex,
@@ -709,7 +722,6 @@ internal fun LyricsView(
         browsing = isUserBrowsingLyrics,
         previewing = isPreviewing,
         geometry = centeringGeometry,
-        translationRevision = translationRevision,
         active = active,
         focusLineIndices = playbackFrame.anchorLineIndices,
     )
@@ -752,16 +764,13 @@ internal fun LyricsView(
                     it.index == visualFocusRenderIndex
                 }
                 val focusItems = layoutInfo.visibleItemsInfo.filter { it.index in centeringEvent.focusLineIndices }
-                if (targetItem != null && focusItems.size > 1 &&
-                    focusItems.size == centeringEvent.focusLineIndices.size
-                ) {
-                    val groupTop = focusItems.minOf { it.offset }
-                    val groupBottom = focusItems.maxOf { it.offset + it.size }
-                    if (groupBottom - groupTop <= viewportHeightPx - 2f * abs(centerOffsetPx)) {
-                        centeringOffsetPx += targetItem.offset + targetItem.size / 2f -
-                            (groupTop + groupBottom) / 2f
-                    }
-                }
+                centeringOffsetPx = lyricFocusCenterOffset(
+                    targetIndex = visualFocusRenderIndex,
+                    rows = layoutInfo.visibleItemsInfo.map { LyricVisualRow(it.index, it.offset.toFloat(), it.size) },
+                    focusLineIndices = centeringEvent.focusLineIndices,
+                    viewportHeightPx = viewportHeightPx,
+                    centerOffsetPx = centerOffsetPx,
+                )
                 animateCentering = lyricSeekUsesAnimatedCentering(
                     hasPositionedInitialFocus = hasPositionedInitialFocus,
                     centerOffsetUnchanged = lastCenteringGeometry == centeringGeometry,
@@ -927,13 +936,54 @@ internal fun LyricsView(
             pendingSeekCenteringDeltaPx = null
         }
         lastVisualFocusRenderIndex = visualFocusRenderIndex
-        if (animateCentering) {
-            rowMotion.settle(
-                stiffness = centeringSpringStiffness,
-                visibleOrder = visibleRowOrder,
-                cascade = true,
+        fun measuredCenteringDelta(): Float? {
+            val measured = listState.layoutInfo
+            val target = measured.visibleItemsInfo.firstOrNull {
+                it.index == visualFocusRenderIndex
+            } ?: return null
+            val focusOffset = lyricFocusCenterOffset(
+                targetIndex = visualFocusRenderIndex,
+                rows = measured.visibleItemsInfo.map {
+                    LyricVisualRow(it.index, it.offset.toFloat(), it.size)
+                },
+                focusLineIndices = centeringEvent.focusLineIndices,
+                viewportHeightPx = viewportHeightPx,
+                centerOffsetPx = centerOffsetPx,
             )
-            retainedTravelPx = 0f
+            return lyricCenterScrollDelta(
+                itemOffset = target.offset,
+                itemSize = target.size,
+                viewportStartOffset = measured.viewportStartOffset,
+                viewportEndOffset = measured.viewportEndOffset,
+                centerOffsetPx = focusOffset,
+            )
+        }
+        coroutineScope {
+            launch {
+                if (animateCentering) {
+                    rowMotion.settle(
+                        stiffness = centeringSpringStiffness,
+                        visibleOrder = visibleRowOrder,
+                        cascade = true,
+                    )
+                    retainedTravelPx = 0f
+                }
+            }
+            // Follow measured caption height without restarting the independent row spring.
+            // Keep observing the last measurement too, including animation scale zero.
+            snapshotFlow {
+                if (isUserBrowsingLyrics || isManualScrolling) null else measuredCenteringDelta()
+            }.collect { delta ->
+                if (delta == null || abs(delta) <= 0.5f) return@collect
+                scrollInCode.value = true
+                try {
+                    listState.scroll {
+                        measuredCenteringDelta()?.let { if (abs(it) > 0.5f) scrollBy(it) }
+                    }
+                } finally {
+                    scrollInCode.value = false
+                }
+            }
         }
     }
 

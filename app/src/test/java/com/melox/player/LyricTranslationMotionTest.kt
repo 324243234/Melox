@@ -38,15 +38,13 @@ class LyricTranslationMotionTest {
     @Test
     fun closingFadesWhileTheSpaceCollapses() = runBlocking(clock) {
         val motion = LyricTranslationMotion(true)
-        var aligned = false
-        val job = launch { motion.transitionTo(false) { aligned = true } }
+        val job = launch { motion.transitionTo(false) }
         repeat(6) { frame() }
         assertTrue(motion.opacity.value in 0f..1f && motion.opacity.value < 1f)
         assertTrue(motion.expansion.value in 0f..1f && motion.expansion.value < 1f)
         assertTrue(motion.opacity.value > 0f)
         assertTrue(motion.expansion.value > 0f)
         finish(job)
-        assertTrue(aligned)
         assertEquals(0f, motion.expansion.value, 0f)
         assertEquals(0f, motion.opacity.value, 0f)
     }
@@ -54,13 +52,11 @@ class LyricTranslationMotionTest {
     @Test
     fun openingFadesInWhileTheSpaceExpands() = runBlocking(clock) {
         val motion = LyricTranslationMotion(false)
-        var aligned = false
-        val job = launch { motion.transitionTo(true) { aligned = true } }
+        val job = launch { motion.transitionTo(true) }
         repeat(6) { frame() }
         assertTrue(motion.opacity.value > 0f && motion.opacity.value < 1f)
         assertTrue(motion.expansion.value > 0f && motion.expansion.value < 1f)
         finish(job)
-        assertTrue(aligned)
         assertEquals(1f, motion.expansion.value, 0f)
         assertEquals(1f, motion.opacity.value, 0f)
     }

@@ -20,6 +20,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.melox.player.model.AppSettings
 import com.melox.player.model.LyricAnimationMode
+import com.melox.player.model.LyricAuxiliaryText
 import com.melox.player.model.LyricLine
 import com.melox.player.model.LyricsDocument
 import com.melox.player.model.LyricsFormat
@@ -42,6 +43,8 @@ class LyricTapContinuityTest {
         val revision: Int = 1,
         val iteration: Long = 0,
         val playing: Boolean = false,
+        val translated: Boolean = false,
+        val romanized: Boolean = false,
     )
     private var sampledFrames = 15
     private val cachedRows = mutableMapOf<Int, AccessibilityNodeInfo>()
@@ -61,6 +64,14 @@ class LyricTapContinuityTest {
     fun wordLyricTapsKeepIntermediatePositionsContinuous() = checkTapContinuity(LyricAnimationMode.ALWAYS)
 
     @Test
+    fun plainLyricCaptionsStayCenteredThroughoutTogglesAndReversals() =
+        checkTapContinuity(LyricAnimationMode.NEVER, toggleCaptions = true)
+
+    @Test
+    fun wordLyricCaptionsStayCenteredThroughoutTogglesAndReversals() =
+        checkTapContinuity(LyricAnimationMode.ALWAYS, toggleCaptions = true)
+
+    @Test
     fun shortWordLinePlaybackAndAcknowledgedTapsKeepPlacementContinuous() =
         checkTapContinuity(LyricAnimationMode.ALWAYS, shortLine = true)
 
@@ -70,7 +81,12 @@ class LyricTapContinuityTest {
         checkTapContinuity(LyricAnimationMode.ALWAYS, shortLine = true)
     }
 
-    private fun checkTapContinuity(mode: LyricAnimationMode, shortLine: Boolean = false) {
+    private fun checkTapContinuity(
+        mode: LyricAnimationMode,
+        shortLine: Boolean = false,
+        toggleCaptions: Boolean = false,
+    ) {
+        if (toggleCaptions) texts = List(12) { "ROW $it original lyric" }
         if (shortLine) {
             texts = listOf("总不舍得分开 (yay yay yay yay)", "不知道", "该用哪种方式回应你的温柔",
                 "该怎么", "将我所有模糊的心动说出口") + texts.drop(5)
@@ -84,7 +100,10 @@ class LyricTapContinuityTest {
         }
         val document = LyricsDocument(texts.mapIndexed { index, text ->
             val end = if (shortLine && index == 1) 10_464L else starts.getOrElse(index + 1) { starts[index] + 10_000L }
-            LyricLine("", starts[index], end, text, emptyList(), null)
+            LyricLine("", starts[index], end, text, emptyList(),
+                if (toggleCaptions) "Translation $index\nSecond caption line\nThird caption line" else null,
+                romanizations = if (toggleCaptions) listOf(LyricAuxiliaryText("Romanization $index\nSecond line"))
+                    else emptyList())
         }, LyricsFormat.LRC, LyricsSource.SIDECAR)
         lateinit var recomposer: Recomposer
         lateinit var recomposition: Job
@@ -105,7 +124,8 @@ class LyricTapContinuityTest {
                                     onSeek = { position -> playback.value = state.copy(position = position, revision = state.revision + 1) },
                                     contentWidth = 240.dp, lyricFontScale = 1f, lyricFontWeight = 400,
                                     lyricAnimationMode = mode, lyricBlurEnabled = false,
-                                    centerLyrics = false, showLyricsTranslation = false, showBottomFade = false,
+                                    centerLyrics = false, showLyricsTranslation = state.translated,
+                                    showLyricsRomanization = state.romanized, showBottomFade = false,
                                     resumeFollowRequestKey = 0, seekRequestKey = state.revision,
                                     seekPositionMs = state.position, emphasisColor = Color.White,
                                     modifier = Modifier.fillMaxSize())
@@ -123,6 +143,37 @@ class LyricTapContinuityTest {
             }
             repeat(90) { frame() }
             assertCentered(0)
+            if (toggleCaptions) {
+                fun toggle(translated: Boolean, romanized: Boolean, frames: Int = 90) {
+                    scenario.onActivity {
+                        playback.value = playback.value.copy(translated = translated, romanized = romanized)
+                    }
+                    var settledTop: Int? = null
+                    repeat(frames) { sample ->
+                        frame()
+                        var target = row(0)
+                        while (!target.isClickable && target.parent != null) target = target.parent
+                        val bounds = Rect().also { target.getBoundsInScreen(it) }
+                        assertTrue("Caption toggle drifted at frame $sample: $bounds, center=$centerY",
+                            abs(bounds.centerY() - centerY) <= 3)
+                        if (frames == 90 && sample >= 70) {
+                            settledTop?.let { assertTrue("Caption toggle moved after settling",
+                                abs(bounds.top - it) <= 1) }
+                            settledTop = bounds.top
+                        }
+                    }
+                }
+                toggle(true, false, 6)
+                toggle(false, false, 6)
+                toggle(true, false)
+                toggle(false, false)
+                toggle(false, true)
+                toggle(true, true)
+                toggle(false, false, 6)
+                toggle(true, true)
+                toggle(false, false)
+                assertCentered(0)
+            }
             val gestureBounds = Rect().also { row(0).getBoundsInScreen(it) }
             val downTime = SystemClock.uptimeMillis()
             fun pointer(action: Int, y: Float) {

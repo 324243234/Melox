@@ -3,6 +3,8 @@ package com.melox.player
 import androidx.compose.ui.geometry.Offset
 import com.melox.player.ui.screen.playback.characterMotion
 import com.melox.player.ui.screen.playback.lyricCenterScrollDelta
+import com.melox.player.ui.screen.playback.lyricFocusCenterOffset
+import com.melox.player.ui.screen.playback.LyricVisualRow
 import com.melox.player.ui.screen.playback.lyricCharacterPivot
 import com.melox.player.ui.screen.playback.lyricGlyphOutsetPx
 import com.melox.player.ui.screen.playback.lyricRetainedTravelPx
@@ -20,6 +22,24 @@ import kotlin.math.exp
 import kotlin.math.sqrt
 
 class LyricRenderingGeometryTest {
+    @Test
+    fun duetCenterTracksUnequalCaptionHeightsAndFallsBackWhenTheGroupCannotFit() {
+        for (captionHeight in listOf(0, 1, 24, 73, 120, 73, 24, 1, 0)) {
+            val rows = listOf(
+                LyricVisualRow(3, 120f, 48 + captionHeight),
+                LyricVisualRow(4, 168f + captionHeight, 72 + captionHeight * 2),
+            )
+            val offset = lyricFocusCenterOffset(3, rows, listOf(3, 4), 600, -30f)
+            val delta = lyricCenterScrollDelta(120, rows[0].height, 0, 600, offset)
+            val groupCenter = (rows.first().top + rows.last().top + rows.last().height) / 2f
+            assertEquals(270f, groupCenter - delta, 0.0001f)
+        }
+        val rows = listOf(LyricVisualRow(3, 120f, 200), LyricVisualRow(4, 320f, 400))
+        assertEquals(-30f, lyricFocusCenterOffset(3, rows, listOf(3, 4), 600, -30f), 0f)
+        assertEquals(-30f, lyricFocusCenterOffset(3, rows.take(1), listOf(3, 4), 600, -30f), 0f)
+        assertEquals(-30f, lyricFocusCenterOffset(3, rows, listOf(3), 600, -30f), 0f)
+    }
+
     @Test
     fun completedVisualRowsStayRaisedUntilTheLogicalSentenceReleases() {
         val firstRowAtItsEnd = characterMotion(2_000L, 1_000L, 2_000L, 2, 3)

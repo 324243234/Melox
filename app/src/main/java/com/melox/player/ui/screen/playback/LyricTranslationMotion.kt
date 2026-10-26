@@ -14,7 +14,7 @@ internal class LyricTranslationMotion(initiallyVisible: Boolean) {
     val opacity = Animatable(if (initiallyVisible) 1f else 0f)
     private var expansionVelocity = 0f
 
-    suspend fun transitionTo(visible: Boolean, onGeometrySettled: () -> Unit = {}) = coroutineScope {
+    suspend fun transitionTo(visible: Boolean) = coroutineScope {
         val target = if (visible) 1f else 0f
         launch { fadeTo(target) }
         launch {
@@ -25,7 +25,6 @@ internal class LyricTranslationMotion(initiallyVisible: Boolean) {
                     initialVelocity = expansionVelocity,
                 ) { expansionVelocity = velocity }
                 expansionVelocity = 0f
-                onGeometrySettled()
             }
         }
     }
