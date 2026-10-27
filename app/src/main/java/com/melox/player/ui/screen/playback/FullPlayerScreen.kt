@@ -1645,9 +1645,10 @@ private fun PlayerHeader(
     artistSlotHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
+    val direction = remember(item?.contentUri) { trackChangeDirection }
     val header = PlayerHeaderContent(
         trackKey = item?.contentUri,
-        direction = trackChangeDirection,
+        direction = direction,
         title = item?.title ?: stringResource(R.string.mini_player_title),
         artist = displayArtistName(item?.artist)
             ?: stringResource(if (item == null) R.string.mini_player_empty else R.string.music_unknown_artist),

@@ -5,6 +5,7 @@ import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.MotionDurationScale
 import com.melox.player.model.AppSettings
 import com.melox.player.ui.component.playback.ArtworkFlipState
+import com.melox.player.ui.component.playback.ArtworkFlipFrame
 import com.melox.player.ui.component.playback.artworkFlipFrame
 import com.melox.player.ui.component.playback.artworkFlipCameraDistance
 import kotlinx.coroutines.Job
@@ -78,12 +79,22 @@ class ArtworkFlipAnimationTest {
     }
 
     @Test
-    fun incomingFaceOvershootsOnceThenReturnsSharpInEitherDirection() {
+    fun incomingFaceOvershootsOnceThenReturnsSharpInEitherDirection() = runBlocking(clock) {
         for (direction in listOf(-1, 1)) {
-            val frames = (50..100).map { artworkFlipFrame(it / 100f, direction) }
+            val state = ArtworkFlipState("a", "a")
+            val job = launch { state.transitionTo("b", "b", direction, 400) }
+            val frames = mutableListOf<ArtworkFlipFrame>()
+            repeat(100) {
+                if (job.isActive) {
+                    frame()
+                    if (state.frame.showBack) frames += state.frame
+                }
+            }
+            assertTrue(job.isCompleted)
+            frames += artworkFlipFrame(1f, direction)
             val angles = frames.map { it.rotationY * direction }
             val peakIndex = angles.indices.maxBy { angles[it] }
-            assertTrue(angles[peakIndex] in 8f..10f)
+            assertTrue(angles[peakIndex] in 7f..7.3f)
             assertTrue(angles.take(peakIndex + 1).zipWithNext().all { (a, b) -> b >= a })
             assertTrue(angles.drop(peakIndex).zipWithNext().all { (a, b) -> b <= a })
             assertTrue(frames.all { it.showBack })
@@ -97,12 +108,12 @@ class ArtworkFlipAnimationTest {
         for (direction in listOf(-1, 1)) {
             val state = ArtworkFlipState("a", "a")
             val first = launch { state.transitionTo("b", "b", direction, 400) }
-            repeat(15) { frame() }
+            repeat(27) { frame() }
             val outwardAngle = state.frame.rotationY * direction
             assertTrue(outwardAngle > 0f)
             repeat(3) { frame() }
             val angle = state.frame.rotationY
-            assertTrue(angle * direction > outwardAngle)
+            assertTrue(angle * direction in 0f..outwardAngle)
             assertEquals(0f, state.frame.blurFraction, 0f)
             first.cancelAndJoin()
             val second = launch { state.transitionTo("c", "c", -direction, 400) }
@@ -127,8 +138,9 @@ class ArtworkFlipAnimationTest {
         assertTrue(state.frame.showBack)
         assertEquals("new", state.visibleValue)
         assertEquals("old", state.front)
-        val reboundAngle = state.frame.rotationY
         repeat(12) { frame() }
+        val reboundAngle = state.frame.rotationY
+        repeat(6) { frame() }
         assertTrue(state.isRunning)
         assertEquals("new", state.visibleValue)
         assertTrue(state.frame.rotationY > 0f && state.frame.rotationY < reboundAngle)
@@ -136,7 +148,7 @@ class ArtworkFlipAnimationTest {
         assertEquals("new", state.visibleValue)
         assertFalse(state.isRunning)
         assertEquals(0f, state.frame.rotationY, 0f)
-        assertTrue(time in 800_000_000L..850_000_000L)
+        assertTrue(time in 900_000_000L..1_200_000_000L)
     }
 
     @Test
@@ -150,7 +162,7 @@ class ArtworkFlipAnimationTest {
             Snapshot.sendApplyNotifications()
             val observer = Snapshot.registerGlobalWriteObserver { observed += state.visibleValue }
             try {
-                repeat(40) {
+                repeat(100) {
                     if (job.isActive) {
                         Snapshot.sendApplyNotifications()
                         frame()

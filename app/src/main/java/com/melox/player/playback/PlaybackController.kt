@@ -75,8 +75,7 @@ class PlaybackController(context: Context) {
     private var timerCommandSerial = 0L
     private var timerCommandPending = false
 
-    private var pendingTrackSkip: PendingTrackSkip? = null
-    private var trackChangeDirection = 1
+    private val trackDirection = TrackChangeDirectionState()
     private var playbackIteration = 0L
     private var positionDiscontinuityRevision = 0L
 
@@ -104,20 +103,21 @@ class PlaybackController(context: Context) {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             // Preserve playback identity even when collectors conflate a rapid A/B/A transition.
             playbackIteration += 1L
+            val player = if (controllerFuture.isDone) runCatching(controllerFuture::get).getOrNull() else null
             val previous = mutableState.value
-            val requestedDirection = pendingTrackSkip
-                ?.takeIf {
-                    reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK &&
-                        it.mediaId == mediaItem?.mediaId
-                }
-                ?.direction
-            pendingTrackSkip = null
-            trackChangeDirection = resolveTrackChangeDirection(
-                requestedDirection = requestedDirection,
+            val nextIndex = when {
+                player == null -> previous.queue.indexOfFirst { it.mediaId == mediaItem?.mediaId }
+                player.currentMediaItem?.mediaId == mediaItem?.mediaId -> player.currentMediaItemIndex
+                else -> (0 until player.mediaItemCount).firstOrNull {
+                    player.getMediaItemAt(it).mediaId == mediaItem?.mediaId
+                } ?: -1
+            }
+            trackDirection.onTransition(
+                mediaId = mediaItem?.mediaId,
+                seek = reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK,
                 automatic = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO,
-                previousIndex = previous.currentIndex,
-                nextIndex = previous.queue.indexOfFirst { it.mediaId == mediaItem?.mediaId },
-                queueSize = previous.queue.size,
+                nextIndex = nextIndex,
+                queueSize = player?.mediaItemCount ?: previous.queue.size,
             )
         }
 
@@ -409,11 +409,10 @@ class PlaybackController(context: Context) {
         var dispatched = false
         withController { controller ->
             val targetIndex = controller.adjacentMediaItemIndex(direction) ?: return@withController
-            pendingTrackSkip = if (targetIndex == controller.currentMediaItemIndex) null else {
-                PendingTrackSkip(
-                    mediaId = controller.getMediaItemAt(targetIndex).mediaId,
-                    direction = direction,
-                )
+            trackDirection.observeCurrentItem(controller.currentMediaItem?.mediaId, controller.currentMediaItemIndex)
+            if (targetIndex != controller.currentMediaItemIndex) {
+                // Set the accepted intent before MediaController can publish its optimistic target.
+                trackDirection.request(controller.getMediaItemAt(targetIndex).mediaId, direction)
             }
             controller.seekToDefaultPosition(targetIndex)
             controller.play()
@@ -563,6 +562,7 @@ class PlaybackController(context: Context) {
             ?: queue.getOrNull(player.currentMediaItemIndex)?.durationMs
             ?: 0L
         val positionMs = player.currentPosition.coerceAtLeast(0L)
+        trackDirection.observeCurrentItem(player.currentMediaItem?.mediaId, player.currentMediaItemIndex)
         val liveState = PlaybackUiState(
             queue = queue,
             currentIndex = player.currentMediaItemIndex.takeIf { queue.isNotEmpty() } ?: -1,
@@ -571,7 +571,7 @@ class PlaybackController(context: Context) {
             positionMs = positionMs,
             playbackIteration = playbackIteration,
             positionDiscontinuityRevision = positionDiscontinuityRevision,
-            trackChangeDirection = trackChangeDirection,
+            trackChangeDirection = trackDirection.direction,
             positionUpdateElapsedRealtimeMs = SystemClock.elapsedRealtime(),
             playbackSpeed = pendingPlaybackSpeed ?: player.playbackParameters.speed,
             floatOutputActive = floatOutputActive,
@@ -674,7 +674,40 @@ internal fun acceptTrackSkip(
     return previous == Long.MIN_VALUE || nowElapsedRealtimeMs - previous > 300L
 }
 
-private data class PendingTrackSkip(val mediaId: String, val direction: Int)
+/** Keep direction attached to a media transition, not to repeated metadata/timeline callbacks. */
+internal class TrackChangeDirectionState {
+    var direction: Int = 1
+        private set
+    private var mediaId: String? = null
+    private var index = -1
+    private var initialized = false
+    private var pending: Pair<String, Int>? = null
+
+    fun observeCurrentItem(mediaId: String?, index: Int) {
+        if (!initialized || this.mediaId == mediaId) {
+            this.mediaId = mediaId
+            this.index = index
+            initialized = true
+        }
+    }
+
+    fun request(mediaId: String, direction: Int) {
+        pending = mediaId to direction
+        this.direction = direction
+    }
+
+    fun onTransition(mediaId: String?, seek: Boolean, automatic: Boolean, nextIndex: Int, queueSize: Int) {
+        val requested = pending?.takeIf { seek && it.first == mediaId }?.second
+        if (requested != null || automatic || !initialized || this.mediaId != mediaId) {
+            direction = resolveTrackChangeDirection(requested, automatic, index, nextIndex, queueSize)
+        }
+        // A duplicate or unrelated callback must not consume a later accepted skip.
+        if (requested != null || automatic || mediaId == null) pending = null
+        this.mediaId = mediaId
+        index = nextIndex
+        initialized = true
+    }
+}
 
 internal fun PlaybackSnapshot?.toInitialPlaybackState(): PlaybackUiState {
     val snapshot = this ?: return PlaybackUiState()
