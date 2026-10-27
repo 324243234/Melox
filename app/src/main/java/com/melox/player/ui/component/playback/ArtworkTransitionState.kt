@@ -11,7 +11,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 import kotlin.math.roundToInt
 
 internal data class ArtworkTarget<T>(val value: T?, val contentKey: Any?)
@@ -176,20 +181,36 @@ internal fun <T> rememberArtworkTransitionState(
     }
     val activeFlip = state.flipAnimationEnabled
     SideEffect { state.requestMode(flipAnimationEnabled) }
-    // ── 请求队列（conflated）驱动动画 ──
-    // 旧实现 LaunchedEffect 直接 suspend 运行 transitionTo：切歌时 target/targetReady/
-    // requestedContentKey 的多次变化会取消进行中的 animateTo —— 翻转半路被打断、反复重来，
-    // 快速连切时观感就是"来不及转，抖两下就不转了"。
-    // 现在 key 变化只投递一个最新请求（未处理的旧请求被覆盖），动画由独立协程按序执行：
-    // 当前这一圈一定完整播完（含结尾过冲回弹），再立刻转向最新目标，从而连贯。
+    // Finish an active turn before taking the newest song, without delaying image upgrades or fades.
     val requests = remember(state) { Channel<ArtworkTransitionRequest<T>>(Channel.CONFLATED) }
     LaunchedEffect(state) {
-        for (request in requests) {
-            state.transitionTo(
-                request.target, request.targetReady, request.targetIsPlaceholder,
+        var running: Job? = null
+        var pending: ArtworkTransitionRequest<T>? = null
+        fun start(request: ArtworkTransitionRequest<T>): Job = launch {
+            state.transitionTo(request.target, request.targetReady, request.targetIsPlaceholder,
                 request.animate, request.direction, request.durationMillis,
-                request.sameContentDurationMillis, request.easing,
-            )
+                request.sameContentDurationMillis, request.easing)
+        }
+        while (isActive) {
+            select<Unit> {
+                requests.onReceive { request ->
+                    if (running?.isActive == true && state.flipAnimationEnabled && state.isRunning &&
+                        request.animate && request.targetReady && request.target.value != null
+                    ) {
+                        pending = if (state.updateActiveFlipImage(request.target, request.targetIsPlaceholder)) {
+                            null
+                        } else request
+                    } else {
+                        pending = null
+                        running?.cancelAndJoin()
+                        running = start(request)
+                    }
+                }
+                running?.onJoin {
+                    running = pending?.let(::start)
+                    pending = null
+                }
+            }
         }
     }
     LaunchedEffect(
@@ -241,6 +262,9 @@ internal class ArtworkTransitionState<T>(
         requestedFlipAnimationEnabled = enabled
         applyModeIfSettled()
     }
+
+    fun updateActiveFlipImage(target: ArtworkTarget<T>, isPlaceholder: Boolean): Boolean =
+        flipAnimationEnabled && flip.updateIncomingImage(target.value, target.contentKey, isPlaceholder)
 
     suspend fun transitionTo(
         target: ArtworkTarget<T>,

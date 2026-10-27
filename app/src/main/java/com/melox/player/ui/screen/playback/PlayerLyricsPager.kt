@@ -5,6 +5,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
@@ -187,6 +189,7 @@ internal fun PlayerContentPager(
     seekPositionMs: Long,
     artworkContent: @Composable (overscrollModifier: Modifier) -> Unit,
     modifier: Modifier = Modifier,
+    currentMediaId: String? = (lyrics as? LyricsUiState.Available)?.mediaId,
     activeLyricAlpha: Float = 1f,
     showLyricsRomanization: Boolean = true,
     lyricsTranslationLanguage: LyricsTranslationLanguage = LyricsTranslationLanguage.AUTO,
@@ -236,6 +239,7 @@ internal fun PlayerContentPager(
                 SyncedLyrics(
                     activeLyricAlpha = activeLyricAlpha,
                     lyrics = lyrics,
+                    currentMediaId = currentMediaId,
                     positionMs = positionMs,
                     positionUpdateElapsedRealtimeMs = positionUpdateElapsedRealtimeMs,
                     playbackIteration = playbackIteration,
@@ -345,33 +349,41 @@ internal fun Modifier.portraitLyricViewport(
     }
 
 @Composable
-internal fun rememberLyricDocumentTransition(
-    lyrics: LyricsUiState,
-): Pair<LyricsUiState.Available?, State<Float>> {
-    var displayedLyrics by remember { mutableStateOf<LyricsUiState.Available?>(null) }
-    val alpha = remember { Animatable(0f) }
-    LaunchedEffect(lyrics) {
-        when (lyrics) {
-            LyricsUiState.Loading -> {
-                if (displayedLyrics != null && alpha.value > 0f) alpha.animateTo(0f, tween(180))
-            }
-            LyricsUiState.Unavailable -> {
-                if (displayedLyrics != null) {
-                    if (alpha.value > 0f) alpha.animateTo(0f, tween(180))
-                    displayedLyrics = null
-                }
-            }
-            is LyricsUiState.Available -> {
-                if (displayedLyrics != lyrics) {
-                    if (displayedLyrics != null && alpha.value > 0f) alpha.animateTo(0f, tween(180))
-                    displayedLyrics = lyrics
-                    alpha.snapTo(0f)
-                }
-                alpha.animateTo(1f, tween(240))
-            }
-        }
+internal fun rememberRetainedLyricDocument(lyrics: LyricsUiState): LyricsUiState.Available? {
+    var retained by remember { mutableStateOf<LyricsUiState.Available?>(null) }
+    val available = when (lyrics) {
+        is LyricsUiState.Available -> lyrics
+        LyricsUiState.Loading -> retained
+        LyricsUiState.Unavailable -> null
     }
-    return displayedLyrics to alpha.asState()
+    SideEffect { retained = available }
+    return available
+}
+
+// Identity intentionally distinguishes a fresh entrance after a rapid reversal.
+private class LyricContentFrame(val lyrics: LyricsUiState.Available?, val annotationsVisible: Boolean)
+
+@Composable
+internal fun LyricContentTransition(
+    lyrics: LyricsUiState.Available?,
+    modifier: Modifier = Modifier,
+    annotationsVisible: Boolean = false,
+    contentAlignment: Alignment = Alignment.TopStart,
+    content: @Composable (LyricsUiState.Available?, Boolean, Boolean) -> Unit,
+) {
+    val target = remember(lyrics, annotationsVisible) { LyricContentFrame(lyrics, annotationsVisible) }
+    AnimatedContent(
+        targetState = target,
+        modifier = modifier,
+        contentAlignment = contentAlignment,
+        transitionSpec = {
+            val enter = lyricContentEnterSpec(fromEmpty = initialState.lyrics == null)
+            ((fadeIn(enter) + scaleIn(enter, LYRIC_CONTENT_MIN_SCALE))
+                togetherWith (fadeOut(lyricContentExitSpec()) +
+                    scaleOut(lyricContentExitSpec(), LYRIC_CONTENT_MIN_SCALE))).using(null)
+        },
+        label = "lyricContent",
+    ) { frame -> content(frame.lyrics, frame.annotationsVisible, frame === target) }
 }
 
 @Composable
@@ -400,6 +412,7 @@ internal fun SyncedLyrics(
     seekRequestKey: Int,
     seekPositionMs: Long,
     modifier: Modifier = Modifier,
+    currentMediaId: String? = (lyrics as? LyricsUiState.Available)?.mediaId,
     activeLyricAlpha: Float = 1f,
     showLyricsRomanization: Boolean = true,
     lyricsTranslationLanguage: LyricsTranslationLanguage = LyricsTranslationLanguage.AUTO,
@@ -407,8 +420,11 @@ internal fun SyncedLyrics(
     positionDiscontinuityRevision: Long = 0L,
     applyEdgeFade: Boolean = true,
 ) {
-    val (displayedLyrics, lyricsAlpha) = rememberLyricDocumentTransition(lyrics)
-    val displayedDocument = displayedLyrics?.document
+    val displayedLyrics = rememberRetainedLyricDocument(lyrics)
+    val hasAnnotations = remember(displayedLyrics?.document) {
+        displayedLyrics?.document?.lines?.any { lyricPhonetics(it).hasAnnotations } == true
+    }
+    var browseAnchor by remember(displayedLyrics?.document) { mutableStateOf<LyricBrowseAnchor?>(null) }
     var unavailableTextLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val alignmentProgress = animateFloatAsState(
         targetValue = if (centerLyrics) 1f else 0f,
@@ -416,28 +432,34 @@ internal fun SyncedLyrics(
         label = "unavailableLyricsAlignment",
     )
 
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center,
-    ) {
-        if (displayedDocument != null) {
-            displayedDocument.let { document ->
+    LyricContentTransition(displayedLyrics, modifier, hasAnnotations && showLyricsRomanization,
+        contentAlignment = Alignment.Center) { frame, annotated, target ->
+        val document = frame?.document
+        val current = target && frame == lyrics && currentMediaId != null && frame?.mediaId == currentMediaId
+        var retainedPosition by remember(frame) { mutableLongStateOf(positionMs) }
+        // Seed each entering layout once; ongoing drag samples must not recompose the viewport.
+        val initialBrowseAnchor = remember(frame) { browseAnchor }
+        if (current) SideEffect { retainedPosition = positionMs }
+        if (document != null) {
+            document.let { document ->
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { alpha = lyricsAlpha.value },
+                    modifier = Modifier.fillMaxSize(),
                 ) {
                     LyricsView(
                         activeLyricAlpha = activeLyricAlpha,
                         document = document,
-                        positionMs = positionMs,
+                        annotationLayout = annotated,
+                        annotationFrameTarget = target,
+                        initialBrowseAnchor = initialBrowseAnchor,
+                        onBrowseAnchorChange = { if (target) browseAnchor = it },
+                        positionMs = if (current) positionMs else retainedPosition,
                         positionUpdateElapsedRealtimeMs = positionUpdateElapsedRealtimeMs,
                         playbackIteration = playbackIteration,
                         playbackSpeed = playbackSpeed,
                         previewPositionMs = previewPositionMs,
-                        isPlaying = isPlaying,
-                        active = active,
-                        playerActive = playerActive,
+                        isPlaying = isPlaying && current,
+                        active = active && current,
+                        playerActive = playerActive && current,
                         positionDiscontinuityRevision = positionDiscontinuityRevision,
                         onSeek = onSeek,
                         contentWidth = contentWidth,
@@ -448,12 +470,13 @@ internal fun SyncedLyrics(
                         centerLyrics = centerLyrics,
                         centerOffsetY = lyricCenterOffsetY,
                         showLyricsTranslation = showLyricsTranslation,
-                        showLyricsRomanization = showLyricsRomanization,
+                        showLyricsRomanization = if (!target && frame == displayedLyrics) annotated && showLyricsRomanization
+                            else showLyricsRomanization,
                         lyricsTranslationLanguage = lyricsTranslationLanguage,
                         showBottomFade = showBottomFade,
                         applyEdgeFade = applyEdgeFade,
-                        resumeFollowRequestKey = resumeFollowRequestKey,
-                        seekRequestKey = seekRequestKey,
+                        resumeFollowRequestKey = if (current) resumeFollowRequestKey else 0,
+                        seekRequestKey = if (current) seekRequestKey else 0,
                         seekPositionMs = seekPositionMs,
                         emphasisColor = emphasisControlColor,
                         modifier = Modifier.fillMaxSize(),

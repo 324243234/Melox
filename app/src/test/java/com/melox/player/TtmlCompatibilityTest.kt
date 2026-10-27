@@ -7,12 +7,129 @@ import com.melox.player.model.LyricsSource
 import com.melox.player.model.LyricsTranslationLanguage
 import com.melox.player.model.LyricAuxiliaryText
 import com.melox.player.model.LyricAlignment
+import com.melox.player.model.LyricLine
+import com.melox.player.model.LyricWord
 import com.melox.player.model.LyricsUiState
 import com.melox.player.model.isDuetForMedia
+import com.melox.player.ui.screen.playback.lyricPhonetics
+import com.melox.player.ui.screen.playback.lyricMergePhoneticTracks
+import com.melox.player.ui.screen.playback.lyricPhoneticTimings
+import com.melox.player.ui.screen.playback.LyricParagraphClock
+import com.melox.player.ui.screen.playback.lyricStableRenderPositionMs
 import org.junit.Assert.*
 import org.junit.Test
 
 class TtmlCompatibilityTest {
+    @Test
+    fun pronunciationRetainsItsOwnGapsEndpointsAndRowTimesAcrossFocusAndReverseSeeks() {
+        val original = LyricWord(0, 4_000, "今日", false)
+        val readings = listOf(LyricWord(1_000, 1_500, "to", true), LyricWord(3_000, 3_500, "day", false))
+        val line = LyricLine("main", 0, 4_000, null, listOf(original), null,
+            romanizations = listOf(LyricAuxiliaryText("to day", words = readings)))
+        val phonetics = lyricPhonetics(line)
+        val track = phonetics.wordAnnotations.single().single()
+        val clock = LyricParagraphClock(lyricPhoneticTimings(track) { it * 10f })
+        for ((time, distance) in listOf(500L to 0f, 1_250L to 10f, 2_000L to 30f,
+            2_750L to 30f, 3_250L to 45f, 4_000L to 60f, 1_250L to 10f)) {
+            assertEquals(distance, clock.distanceAt(time), 0.0001f)
+        }
+        assertEquals(clock.distanceAt(lyricStableRenderPositionMs(false, false, 0)),
+            clock.distanceAt(lyricStableRenderPositionMs(true, false, 0)), 0f)
+        assertEquals(60f, clock.distanceAt(lyricStableRenderPositionMs(false, true, 0)), 0f)
+        val rows = phonetics.wordAnnotationRows(0, listOf("今", "日"))
+        assertEquals(listOf("to day", ""), rows.map { it.single().text })
+        assertEquals(readings.map { it.startTimeMs to it.endTimeMs }, rows.flatMap { it.single().words }.map { it.startTimeMs to it.endTimeMs })
+        assertEquals(listOf(original), line.words)
+        assertEquals(readings, line.romanizations.single().words)
+
+        val splitTrack = LyricAuxiliaryText("kyou", words = listOf(LyricWord(1_000, 3_000, "kyou", false)))
+        val split = lyricPhonetics(line.copy(romanizations = listOf(splitTrack)))
+            .wordAnnotationRows(0, listOf("今", "日", "本")).map { it.single() }
+        assertEquals("kyou", split.joinToString("") { it.text })
+        val splitWords = split.flatMap { it.words }
+        assertEquals(1_000L, splitWords.first().startTimeMs)
+        assertEquals(3_000L, splitWords.last().endTimeMs)
+        assertTrue(splitWords.zipWithNext().all { (first, second) -> first.endTimeMs == second.startTimeMs })
+
+        val rubyWord = original.copy(ruby = listOf(
+            com.melox.player.model.LyricRuby("ky", 200, 400), com.melox.player.model.LyricRuby("ou", 600, 900)))
+        val ruby = lyricPhonetics(line.copy(words = listOf(rubyWord), romanizations = emptyList()))
+        assertEquals(listOf(200L to 400L, 600L to 900L), ruby.wordAnnotations.single().single().words.map {
+            it.startTimeMs to it.endTimeMs
+        })
+    }
+
+    @Test
+    fun multipleTimedPronunciationTracksRemainStackedOnEveryWrappedOriginalRow() {
+        val original = LyricWord(0, 2_000, "今日", false)
+        val line = LyricLine("main", 0, 2_000, null, listOf(original), null,
+            romanizations = listOf(
+                LyricAuxiliaryText("to day", words = listOf(original.copy(text = "to day"))),
+                LyricAuxiliaryText("kyou ima", words = listOf(original.copy(text = "kyou ima"))),
+            ))
+        val phonetics = lyricPhonetics(line)
+        assertEquals(listOf(listOf("to day", "kyou ima")), phonetics.wordTracks)
+        assertEquals(listOf("to day\nkyou ima", ""), phonetics.wordRows(0, listOf("今", "日")))
+        assertEquals(listOf("to day\nkyou ima"), phonetics.wordRows(0, listOf("今日")))
+        assertEquals(listOf(original), line.words)
+    }
+
+    @Test
+    fun duplicatePronunciationPrefersReliableWordTimingRegardlessOfTrackOrder() {
+        val originals = listOf(LyricWord(0, 1_000, "君", false), LyricWord(1_000, 2_000, "を", false))
+        val untimed = LyricAuxiliaryText("kimi wo")
+        val timed = untimed.copy(words = listOf(
+            originals[0].copy(text = "kimi", hasTrailingSpace = true), originals[1].copy(text = "wo")))
+        for (tracks in listOf(listOf(untimed, timed), listOf(timed, untimed))) {
+            val line = LyricLine("main", 0, 2_000, null, originals, null, romanizations = tracks)
+            val phonetics = lyricPhonetics(line)
+            assertEquals(listOf("kimi", "wo"), phonetics.words)
+            assertTrue(phonetics.captions.isEmpty())
+            assertEquals(tracks, line.romanizations)
+        }
+    }
+
+    @Test
+    fun sparsePronunciationTracksKeepTheirSlotsAcrossSharedShapingClusters() {
+        val originals = listOf(LyricWord(0, 1_000, "f", false), LyricWord(1_000, 2_000, "i", false))
+        val line = LyricLine("main", 0, 2_000, null, originals, null,
+            romanizations = listOf(
+                LyricAuxiliaryText("eff eye", words = listOf(
+                    originals[0].copy(text = "eff", hasTrailingSpace = true), originals[1].copy(text = "eye"))),
+                LyricAuxiliaryText("ee", words = listOf(originals[1].copy(text = "ee"))),
+            ))
+        val phonetics = lyricPhonetics(line)
+        assertEquals(listOf(listOf("eff", ""), listOf("eye", "ee")), phonetics.wordTracks)
+        assertEquals(listOf(listOf("eff", "")), phonetics.wordTrackRows(0, listOf("f")))
+        assertEquals(listOf(listOf("eye", "ee")), phonetics.wordTrackRows(1, listOf("i")))
+        assertEquals(listOf("eff eye", "ee"),
+            lyricMergePhoneticTracks(phonetics.wordAnnotations[0], phonetics.wordAnnotations[1]).map { it.text })
+        val merged = lyricMergePhoneticTracks(phonetics.wordAnnotations[0], phonetics.wordAnnotations[1])
+        assertEquals(listOf(0L to 1_000L, 1_000L to 2_000L), merged[0].words.map { it.startTimeMs to it.endTimeMs })
+        assertEquals(listOf(1_000L to 2_000L), merged[1].words.map { it.startTimeMs to it.endTimeMs })
+        assertEquals(listOf("eff", "eye\nee"), phonetics.words)
+        assertEquals(listOf("eff"), phonetics.wordRows(0, listOf("f")))
+    }
+
+    @Test
+    fun suppliedHiirogekkaBuildsPronunciationForEveryVoiceAndNarrowRow() {
+        val raw = requireNotNull(javaClass.getResource("/lyrics/hiirogekka-anniversary.ttml")).readText()
+        val doc = requireNotNull(LyricsParser.parse(raw, LyricsSource.SIDECAR))
+        for (line in doc.lines) {
+            val phonetics = com.melox.player.ui.screen.playback.lyricPhonetics(line)
+            assertTrue(phonetics.hasText)
+            assertEquals(line.words.size, phonetics.words.size)
+            for (caption in phonetics.captions) {
+                for (length in listOf(1, 5, 12)) {
+                    val rows = com.melox.player.ui.screen.playback.lyricGraphemeRanges(line.displayText)
+                        .chunked(length).map { ranges -> line.displayText.substring(ranges.first().first, ranges.last().last + 1) }
+                    val projected = com.melox.player.ui.screen.playback.lyricPhoneticRows(caption, rows)
+                    assertEquals(caption.filterNot(Char::isWhitespace), projected.joinToString("").filterNot(Char::isWhitespace))
+                }
+            }
+        }
+    }
+
     @Test
     fun suppliedHiirogekkaPreservesCompleteTracksWordTimesAndSingerAlignment() {
         val raw = requireNotNull(javaClass.getResource("/lyrics/hiirogekka-anniversary.ttml")).readText()
@@ -107,6 +224,18 @@ class TtmlCompatibilityTest {
     }
 
     @Test
+    fun chineseAutoSelectionDoesNotShowAnEnglishTrackThatWasNotRecognizedAsRomanization() {
+        val line = document("""<p begin="1" end="5">だけ</p>""").lines.single().copy(
+            translation = "da ke\n仅此而已",
+            translations = listOf(LyricAuxiliaryText("da ke", "en"),
+                LyricAuxiliaryText("仅此而已", "zh-Hans")),
+        )
+        assertEquals("仅此而已", line.translationFor(LyricsTranslationLanguage.AUTO, "zh-CN"))
+        assertEquals("da ke", line.translationFor(LyricsTranslationLanguage.AUTO, "en-US"))
+        assertEquals("da ke\n仅此而已", line.translationFor(LyricsTranslationLanguage.ALL, "zh-CN"))
+    }
+
+    @Test
     fun translationLanguageFallbackAndVariantsAreIndependentOfTrackOrder() {
         val line = document("""<p begin="1" end="5">Main</p>""").lines.single().copy(
             translations = listOf(LyricAuxiliaryText("Traditional", "zh-Hant"),
@@ -135,14 +264,22 @@ class TtmlCompatibilityTest {
         assertEquals("First\nSecond\nEnglish", tagged.translationFor(LyricsTranslationLanguage.ALL, "zh"))
         val untagged = line.copy(translations = listOf(LyricAuxiliaryText("First\nSecond"),
             LyricAuxiliaryText("Third")))
+        assertNull(untagged.translationFor(LyricsTranslationLanguage.AUTO, "zh-CN"))
+        assertEquals("First\nSecond", untagged.translationFor(LyricsTranslationLanguage.AUTO, "en-US"))
+        assertEquals("First\nSecond", untagged.translationFor(LyricsTranslationLanguage.ENGLISH, "zh-CN"))
+        assertNull(untagged.translationFor(LyricsTranslationLanguage.CHINESE, "zh-CN"))
+        assertEquals("First\nSecond\nThird", untagged.translationFor(LyricsTranslationLanguage.ALL, "zh-CN"))
         for (preference in LyricsTranslationLanguage.entries) {
-            assertEquals("First\nSecond\nThird", untagged.translationFor(preference, "zh-CN"))
             assertEquals("Legacy\ntext", line.copy(translation = "Legacy\ntext")
                 .translationFor(preference, "zh-CN"))
             assertNull(line.translationFor(preference, "zh-CN"))
         }
         assertEquals("Untyped", line.copy(translations = listOf(LyricAuxiliaryText("French", "fr"),
             LyricAuxiliaryText("Untyped"))).translationFor(LyricsTranslationLanguage.AUTO, "zh"))
+        val chineseAndUnclassifiedReading = line.copy(translations = listOf(
+            LyricAuxiliaryText("da ke"), LyricAuxiliaryText("仅此而已")))
+        assertEquals("仅此而已", chineseAndUnclassifiedReading.translationFor(
+            LyricsTranslationLanguage.AUTO, "zh-CN"))
     }
 
     @Test

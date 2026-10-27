@@ -66,7 +66,7 @@ import com.melox.player.model.DefaultHomePage
 import com.melox.player.model.DynamicColorSource
 import com.melox.player.model.LocalPlaylist
 import com.melox.player.model.LyricsDocument
-import com.melox.player.model.LyricsSidecarFormatPriority
+import com.melox.player.model.LyricsFormatPriority
 import com.melox.player.model.LyricsSourcePriority
 import com.melox.player.model.MusicTrack
 import com.melox.player.model.PlaybackMode
@@ -78,6 +78,7 @@ import com.melox.player.model.DynamicFlowStyle
 import com.melox.player.model.ScanStatus
 import com.melox.player.model.ThemeMode
 import com.melox.player.model.withTrackMetadata
+import com.melox.player.model.PlaybackMetadataProjection
 import com.melox.player.playback.PlaybackController
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -470,12 +471,14 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         .distinctUntilChanged()
+    private val playbackMetadataProjection = PlaybackMetadataProjection()
     val compactPlaybackState: StateFlow<PlaybackUiState> = combine(
         compactControllerPlaybackState,
         allLibraryTracks,
     ) { playback, tracks ->
-        playback.withTrackMetadata(tracks)
+        playbackMetadataProjection.project(playback, tracks)
     }
+        .flowOn(Dispatchers.Default)
         .distinctUntilChanged()
         .stateIn(
             scope = viewModelScope,
@@ -507,7 +510,7 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
             durationMs = target.second,
             refreshRevision = refreshRevision,
             sourcePriority = loadedSettings.value.lyricsSourcePriority,
-            sidecarFormatPriority = loadedSettings.value.lyricsSidecarFormatPriority,
+            formatPriority = loadedSettings.value.lyricsFormatPriority,
         )
     }
         .distinctUntilChanged()
@@ -879,9 +882,9 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun setLyricsSidecarFormatPriority(priority: LyricsSidecarFormatPriority) {
+    fun setLyricsFormatPriority(priority: LyricsFormatPriority) {
         viewModelScope.launch {
-            settingsRepository.setLyricsSidecarFormatPriority(priority)
+            settingsRepository.setLyricsFormatPriority(priority)
         }
     }
 

@@ -69,8 +69,9 @@ data class LyricLine(
             word.text + if (word.hasTrailingSpace) " " else ""
         }.trimEnd()
 
-    val romanization: String? = romanizations.map { it.text }.filter(String::isNotBlank).distinct()
-        .joinToString("\n").takeIf(String::isNotEmpty)
+    val romanization: String?
+        get() = romanizations.map { it.text }.filter(String::isNotBlank).distinct()
+            .joinToString("\n").takeIf(String::isNotEmpty)
 
     /** Select captions for presentation without changing the parsed auxiliary tracks. */
     fun translationFor(preference: LyricsTranslationLanguage, appLanguageTag: String): String? {
@@ -84,14 +85,17 @@ data class LyricLine(
         if (preference == LyricsTranslationLanguage.ALL) {
             return captions.map { it.second }.distinct().joinToString("\n")
         }
-        // Legacy LRC captions have no language labels; retain their intentional hard breaks.
-        if (captions.all { it.first.isEmpty() }) return captions.map { it.second }.joinToString("\n")
         val appTag = appLanguageTag.replace('_', '-').lowercase(Locale.ROOT)
         val preferred = when (preference) {
             LyricsTranslationLanguage.AUTO -> appTag.substringBefore('-')
             LyricsTranslationLanguage.CHINESE -> "zh"
             LyricsTranslationLanguage.ENGLISH -> "en"
             LyricsTranslationLanguage.ALL -> error("Handled above")
+        }
+        // Untagged LRC has no language metadata; infer a script per caption and select one track.
+        if (captions.all { it.first.isEmpty() }) {
+            if (captions.size == 1) return captions.single().second
+            return captions.firstOrNull { (inferCaptionLanguage(it.second) ?: "") == preferred }?.second
         }
         val languages = captions.map { it.first }.distinct()
         fun matchingLanguage(language: String): String? = languages
@@ -106,7 +110,31 @@ data class LyricLine(
             }.thenBy { it })
         val selected = matchingLanguage(preferred) ?: matchingLanguage("en")
             ?: "".takeIf { it in languages } ?: languages.sorted().first()
-        return captions.filter { it.first == selected }.map { it.second }.joinToString("\n")
+        return captions.firstOrNull { it.first == selected }?.second
+    }
+
+    private fun inferCaptionLanguage(text: String): String? {
+        val codePoints = text.codePoints().toArray()
+        if (codePoints.any { code ->
+                val script = Character.UnicodeScript.of(code)
+                script == Character.UnicodeScript.HIRAGANA || script == Character.UnicodeScript.KATAKANA
+            }) return "ja"
+        if (codePoints.any { Character.UnicodeScript.of(it) == Character.UnicodeScript.HAN }) return "zh"
+        if (codePoints.any { Character.isLetter(it) } && codePoints.all { code ->
+                val script = Character.UnicodeScript.of(code)
+                script == Character.UnicodeScript.LATIN || Character.isWhitespace(code) ||
+                    Character.getType(code) in translationPunctuationTypes
+            }) return "en"
+        return null
+    }
+
+    private companion object {
+        val translationPunctuationTypes = setOf(
+            Character.CONNECTOR_PUNCTUATION.toInt(), Character.DASH_PUNCTUATION.toInt(),
+            Character.START_PUNCTUATION.toInt(), Character.END_PUNCTUATION.toInt(),
+            Character.OTHER_PUNCTUATION.toInt(), Character.INITIAL_QUOTE_PUNCTUATION.toInt(),
+            Character.FINAL_QUOTE_PUNCTUATION.toInt(),
+        )
     }
 
     fun animationWords(): List<LyricWord> = words.ifEmpty {

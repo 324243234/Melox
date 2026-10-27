@@ -7,6 +7,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.melox.player.data.repository.SettingsRepository
+import com.melox.player.model.CoverShape
 import com.melox.player.model.LyricAnimationMode
 import com.melox.player.model.NavigationTransitionStyle
 import com.melox.player.model.ThemeMode
@@ -74,11 +75,17 @@ class MeloxInstrumentedTest {
                 NavigationTransitionStyle.AOSP,
                 restored.navigationTransitionStyle,
             )
+            for (shape in CoverShape.entries) {
+                repository.setCoverShape(shape)
+                val shaped = repository.loadSettings()
+                assertEquals(shape, shaped.coverShape)
+                assertEquals(shape == CoverShape.CIRCLE, shaped.circularArtwork)
+            }
         } finally {
             repository.setThemeMode(original.themeMode)
             repository.setDynamicColorEnabled(original.dynamicColorEnabled)
             repository.setShowSongListArtwork(original.showSongListArtwork)
-            repository.setCircularArtwork(original.circularArtwork)
+            repository.setCoverShape(original.coverShape)
             repository.setShowSongListFileName(original.showSongListFileName)
             repository.setBlurEnabled(original.blurEnabled)
             repository.setProgressiveTopBarBlurEnabled(

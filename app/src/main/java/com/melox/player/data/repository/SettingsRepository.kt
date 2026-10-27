@@ -40,7 +40,7 @@ import com.melox.player.model.DefaultHomePage
 import com.melox.player.model.DynamicColorSource
 import com.melox.player.model.CoverShape
 import com.melox.player.model.DynamicFlowStyle
-import com.melox.player.model.LyricsSidecarFormatPriority
+import com.melox.player.model.LyricsFormatPriority
 import com.melox.player.model.LyricsSourcePriority
 import com.melox.player.model.NavigationTransitionStyle
 import com.melox.player.model.PlaybackBackgroundStyle
@@ -171,11 +171,11 @@ class SettingsRepository(context: Context) {
                         enumValueOrDefault(storedValue, LyricsSourcePriority.EMBEDDED)
                     }
                     ?: LyricsSourcePriority.EMBEDDED,
-                lyricsSidecarFormatPriority = preferences[Keys.LyricsSidecarFormatPriority]
+                lyricsFormatPriority = preferences[Keys.LyricsFormatPriority]
                     ?.let { storedValue ->
-                        enumValueOrDefault(storedValue, LyricsSidecarFormatPriority.LRC)
+                        enumValueOrDefault(storedValue, LyricsFormatPriority.LRC)
                     }
-                    ?: LyricsSidecarFormatPriority.LRC,
+                    ?: LyricsFormatPriority.LRC,
                 blurEnabled = preferences[Keys.BlurEnabled] ?: true,
                 progressiveTopBarBlurEnabled =
                     preferences[Keys.ProgressiveTopBarBlurEnabled] ?: false,
@@ -486,9 +486,9 @@ class SettingsRepository(context: Context) {
         dataStore.edit { it[Keys.ShowLunaBeatEditor] = enabled }
     }
 
-    suspend fun setLyricsSidecarFormatPriority(priority: LyricsSidecarFormatPriority) {
+    suspend fun setLyricsFormatPriority(priority: LyricsFormatPriority) {
         dataStore.edit { preferences ->
-            preferences[Keys.LyricsSidecarFormatPriority] = priority.name
+            preferences[Keys.LyricsFormatPriority] = priority.name
         }
     }
 
@@ -718,7 +718,8 @@ class SettingsRepository(context: Context) {
         val ShowLyricoEditor = booleanPreferencesKey("show_lyrico_editor")
         val ShowLunaBeatEditor = booleanPreferencesKey("show_luna_beat_editor")
         val LyricsSourcePriority = stringPreferencesKey("lyrics_source_priority")
-        val LyricsSidecarFormatPriority = stringPreferencesKey("lyrics_sidecar_format_priority")
+        // Keep the existing key so saved external-format preferences apply to both sources.
+        val LyricsFormatPriority = stringPreferencesKey("lyrics_sidecar_format_priority")
         val BottomBarStyle = stringPreferencesKey("bottom_bar_style")
         val BlurEnabled = booleanPreferencesKey("blur_enabled")
         val ProgressiveTopBarBlurEnabled =

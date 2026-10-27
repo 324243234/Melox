@@ -538,7 +538,7 @@ internal fun PlayerSheetArtworkOverlay(
     val artworkBlend = artworkState.toArtworkBlend()
     val bitmap = artworkBlend.currentBitmap
     val placeholderArtworkAlpha = playerSheetPlaceholderArtworkAlpha(progress)
-    val artworkLayerAlphas = sourceOverAlphas(artworkBlend.frames.map { frame ->
+    val artworkLayerAlphas = sourceOverAlphas(artworkBlend.frames().map { frame ->
         frame.alpha * if (frame.isPlaceholder) placeholderArtworkAlpha else 1f
     })
     val density = LocalDensity.current
@@ -668,7 +668,7 @@ internal fun PlayerSheetArtworkOverlay(
                         filterQuality = FilterQuality.High,
                     )
                 }
-            } else artworkBlend.frames.forEachIndexed { index, frame ->
+            } else artworkBlend.frames().forEachIndexed { index, frame ->
                 Image(
                     bitmap = frame.value.asImageBitmap(),
                     contentDescription = null,

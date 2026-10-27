@@ -12,6 +12,207 @@ import org.junit.Test
 
 class LyricsParserTest {
     @Test
+    fun lyricsWithoutSuppliedReadingsNeverGainPronunciationInEitherFormat() {
+        for (source in LyricsSource.entries) {
+            val lrc = LyricsParser.parse("[00:01.000]今日も君を想う\n[00:03.000]あの日のまま", source)!!
+            val ttml = LyricsParser.parse("""
+                <tt xmlns="http://www.w3.org/ns/ttml" xml:lang="ja"><body><div>
+                <p begin="1s" end="3s">今日も君を想う</p>
+                <p begin="3s" end="5s">あの日のまま</p>
+                </div></body></tt>
+            """.trimIndent(), source)!!
+            for (document in listOf(lrc, ttml)) {
+                assertEquals(listOf("今日も君を想う", "あの日のまま"), document.lines.map { it.displayText })
+                assertTrue(document.lines.all { it.romanization == null && it.romanizations.isEmpty() })
+                assertTrue(document.lines.all { it.words.all { word -> word.ruby.isEmpty() } })
+            }
+        }
+    }
+
+    @Test
+    fun shortKanjiReadingsUseConsistentSuppliedColumnsWithoutGeneratingAnyCaption() {
+        val text = "[00:01.000]あの日\n[00:01.000]a no hi\n[00:01.000]那一天\n" +
+            "[00:02.000]君の名は\n[00:02.000]ki mi no na wa\n[00:02.000]你的名字\n" +
+            "[00:03.000]今日\n[00:03.000]kyou\n[00:03.000]今天\n[00:04.000]あの日のまま"
+        val document = LyricsParser.parse(text, LyricsSource.SIDECAR)!!
+        val today = document.lines.single { it.displayText == "今日" }
+        assertEquals("kyou", today.romanization)
+        assertEquals("今天", today.translation)
+        assertNull(document.lines.last().romanization)
+        assertEquals(3, document.lines.count { it.romanization != null })
+    }
+
+    @Test
+    fun suppliedShortJapaneseReadingsRemainRomanizationWithEveryOriginalTimestamp() {
+        val sample = javaClass.getResource("/lyrics/tada-kimi-ni-hare-romanized.lrc")!!.readText()
+        val document = LyricsParser.parse(sample, LyricsSource.SIDECAR)!!
+        val originals = LyricsParser.parse(sample.lineSequence().distinctBy { it.substringBefore(']') }
+            .joinToString("\n"), LyricsSource.SIDECAR)!!
+        val short = document.lines.filter { it.displayText == "だけ" }
+        assertEquals(listOf(21_253L, 72_742L, 189_544L), short.map { it.startTimeMs })
+        assertTrue(short.all { it.romanization == "da ke" && it.translation == "仅此而已" })
+        assertTrue(short.all {
+            it.translationFor(com.melox.player.model.LyricsTranslationLanguage.AUTO, "zh-CN") == "仅此而已"
+        })
+        assertTrue(short.all {
+            it.translationFor(com.melox.player.model.LyricsTranslationLanguage.ALL, "zh-CN") == "仅此而已"
+        })
+        assertEquals(54, document.lines.count { it.romanization != null })
+        assertEquals(originals.lines.size, document.lines.size)
+        for ((line, original) in document.lines.zip(originals.lines)) {
+            assertEquals(original.displayText, line.displayText)
+            assertEquals(original.words, line.words)
+            assertEquals(original.startTimeMs, line.startTimeMs)
+            assertEquals(original.endTimeMs, line.endTimeMs)
+        }
+    }
+
+    @Test
+    fun shortKanaReadingsNeedActualPhoneticCorrespondenceAndNeverConsumeEnglishTranslations() {
+        for ((primary, reading) in listOf("だけ" to "da ke", "だけ" to "dake", "ねえ" to "nee",
+            "アオ" to "a o", "きゃ" to "kya", "きっと" to "kitto", "まっちゃ" to "ma tcha",
+            "そう" to "sō", "そう" to "sou", "がっこう" to "gakkō", "コーヒー" to "kōhī",
+            "カフェ" to "kafe", "うん" to "un", "ｺｰﾋｰ" to "ko\u0304hi\u0304")) {
+            val line = LyricsParser.parse("[00:01.000]$primary\n[00:01.000]$reading", LyricsSource.SIDECAR)!!.lines.single()
+            assertEquals(reading, line.romanization)
+            assertNull(line.translation)
+        }
+        for ((primary, translation) in listOf("だけ" to "Only", "君に" to "to me", "もう" to "no more",
+            "そう" to "so")) {
+            val line = LyricsParser.parse("[00:00.000]あの日\n[00:00.000]a no hi\n" +
+                "[00:01.000]$primary\n[00:01.000]$translation", LyricsSource.SIDECAR)!!.lines.last()
+            assertNull(line.romanization)
+            assertEquals(translation, line.translation)
+        }
+    }
+
+    @Test
+    fun automaticLrcTranslationSelectsOneLanguageTrackInsteadOfShowingAllAuxiliaryRows() {
+        val line = LyricsParser.parse("[00:01.000]あの日\n[00:01.000]a no hi\n" +
+            "[00:02.000]だけ\n[00:02.000]Latin reading\n[00:02.000]仅此而已\n" +
+            "[00:02.000]那就是全部", LyricsSource.SIDECAR)!!.lines.last()
+        assertEquals("Latin reading\n仅此而已\n那就是全部", line.translation)
+        assertEquals(listOf("en", "zh", "zh"), line.translations.map { it.language })
+        assertEquals("仅此而已", line.translationFor(
+            com.melox.player.model.LyricsTranslationLanguage.AUTO, "zh-CN"))
+        assertEquals("Latin reading\n仅此而已\n那就是全部", line.translationFor(
+            com.melox.player.model.LyricsTranslationLanguage.ALL, "zh-CN"))
+        assertEquals("Latin reading", line.translationFor(
+            com.melox.player.model.LyricsTranslationLanguage.AUTO, "en-US"))
+        assertEquals("Latin reading", line.translationFor(
+            com.melox.player.model.LyricsTranslationLanguage.ENGLISH, "zh-CN"))
+        val lineWithUnknownLatin = line.copy(translations = line.translations.map {
+            if (it.text == "Latin reading") it.copy(language = null) else it
+        })
+        assertEquals("仅此而已", lineWithUnknownLatin.translationFor(
+            com.melox.player.model.LyricsTranslationLanguage.AUTO, "zh-CN"))
+    }
+
+    @Test
+    fun inlineTranslationDoesNotEnterOriginalWordTimingOrRendering() {
+        for (primary in listOf(
+            "[00:01.000]Hello[00:02.000] world[00:03.000]",
+            "[00:01.000]Hello[00:02.000] world",
+            "[00:01.000]<00:01.500>Hello<00:02.000> world<00:03.000>",
+        )) {
+            val original = LyricsParser.parse(primary, LyricsSource.SIDECAR)!!.lines.single()
+            for (caption in listOf("你好世界", "<00:07.000>你好<00:08.000>世界<00:09.000>")) {
+                val line = LyricsParser.parse("$primary\u2009$caption", LyricsSource.SIDECAR)!!.lines.single()
+                assertEquals(original.displayText, line.displayText)
+                assertEquals(original.words, line.words)
+                assertEquals(original.animationWords(), line.animationWords())
+                assertEquals(original.endTimeMs, line.endTimeMs)
+                assertEquals("你好世界", line.translation)
+                assertEquals(original.revealProgress(2_250L, false), line.revealProgress(2_250L, false), 0f)
+            }
+        }
+    }
+
+    @Test
+    fun inlineCaptionsKeepRomanizationAndRepeatedTranslationsSeparate() {
+        val line = LyricsParser.parse(
+            "[offset:250]\n[00:01.000]君[00:02.000]の名は[00:03.000]\u2009你的名字\n" +
+                "[00:01.000]ki mi no na wa\n[00:01.000]你的名字\n[00:04.000]次の行",
+            LyricsSource.SIDECAR,
+        )!!.lines.first()
+        assertEquals("君の名は", line.displayText)
+        assertEquals("你的名字", line.translation)
+        assertEquals("ki mi no na wa", line.romanization)
+        assertEquals(listOf(1_250L, 2_250L), line.words.map { it.startTimeMs })
+        assertEquals(4_250L, line.endTimeMs)
+    }
+
+    @Test
+    fun inlineCaptionSplitKeepsPlainPausesAndRequiresVisibleTextOnBothSides() {
+        for (text in listOf("Hello world", "Hello\u3000world", "\u2009Hello", "Hello\u2009")) {
+            val line = LyricsParser.parse("[00:01.000]$text", LyricsSource.SIDECAR)!!.lines.single()
+            assertEquals(text.trim(), line.displayText)
+            assertNull(line.translation)
+        }
+        val line = LyricsParser.parse("[00:01.000]Hello\u2009你好", LyricsSource.SIDECAR)!!.lines.single()
+        assertEquals("Hello", line.displayText)
+        assertEquals("你好", line.translation)
+        assertTrue(line.words.isEmpty())
+    }
+
+    @Test
+    fun suppliedRomanizedLyricsKeepSokuonAndMixedCreditsOutOfTranslations() {
+        val sample = javaClass.getResource("/lyrics/uchiage-hanabi-romanized.lrc")!!.readText()
+        val document = LyricsParser.parse(sample, LyricsSource.SIDECAR)!!
+        for ((original, romanization, translation) in listOf(
+            Triple("きっとまだ 胸に住んでいた", "ki tto ma da  mu ne ni su n de i ta", "便定会再次寄宿于心中"),
+            Triple("あったかい未来は", "a tta ka i mi ra i wa", "那温暖的未来"),
+            Triple("打上花火 - DAOKO (ダヲコ)/米津玄師 (よねづ けんし)",
+                "u chi a ge ha na bi  - DAOKO (da wo ko )/yo ne tsu ge n shi  (yo ne du  ke n shi )", null),
+            Triple("词：米津玄師", "shi :yo ne tsu ge n shi", null),
+            Triple("Sound Produce：浦本雅史(Soi.Co.Ltd)", "Sound Produce:u ra mo to ma sa fu mi (Soi.Co.Ltd)", null),
+        )) {
+            val line = document.lines.first { it.displayText == original }
+            assertEquals(original, romanization, line.romanization)
+            assertEquals(original, translation, line.translation)
+        }
+        val credits = document.lines.filter { it.startTimeMs < 19_953L }
+        assertTrue(credits.all { it.translation == null })
+        assertEquals(credits.size - 1, credits.count { it.romanization != null })
+        assertEquals("Mastering：Ted Jensen(Stering Sound)", credits.single { it.romanization == null }.displayText)
+        assertEquals(document.lines.size - 1, document.lines.count { it.romanization != null })
+        val primaryOnly = sample.lineSequence().distinctBy { it.substringBefore(']') }.joinToString("\n")
+        val primaryDocument = LyricsParser.parse(primaryOnly, LyricsSource.SIDECAR)!!
+        assertEquals(primaryDocument.lines.size, document.lines.size)
+        for ((line, original) in document.lines.zip(primaryDocument.lines)) {
+            assertTrue(line.translation.orEmpty().none { it in 'a'..'z' || it in 'A'..'Z' })
+            assertEquals(original.displayText, line.displayText)
+            assertEquals(original.words, line.words)
+            assertEquals(original.startTimeMs, line.startTimeMs)
+            assertEquals(original.endTimeMs, line.endTimeMs)
+        }
+    }
+
+    @Test
+    fun japaneseSokuonCaptionsAreRecognizedWithoutAnAccompanyingTranslation() {
+        for (romanization in listOf("a tta ka i", "ki tto ma da", "a sshu ni na tte", "ma tcha no ka o ri")) {
+            val line = LyricsParser.parse("[00:01.000]あったかい未来は\n[00:01.000]$romanization",
+                LyricsSource.SIDECAR)!!.lines.single()
+            assertEquals(romanization, line.romanization)
+            assertNull(line.translation)
+        }
+    }
+
+    @Test
+    fun mixedJapaneseCreditsKeepEnglishTranslationsAndMetadataSeparateFromReadings() {
+        val prefix = "[00:01.000]あの日\n[00:01.000]a no hi\n[00:02.000]Sound Produce：米津玄師\n"
+        for (translation in listOf("Sound Produce:music from the heart", "声音制作：米津玄师", "(9899,154)")) {
+            val line = LyricsParser.parse(prefix + "[00:02.000]Sound Produce:yo ne tsu ge n shi\n" +
+                "[00:02.000]$translation", LyricsSource.SIDECAR)!!.lines.last()
+            assertEquals("Sound Produce:yo ne tsu ge n shi", line.romanization)
+            assertEquals(translation, line.translation)
+        }
+        val withoutContext = LyricsParser.parse(
+            "[00:01.000]主歌词\n[00:01.000]a no hi mi wa ta shi ta", LyricsSource.SIDECAR)!!.lines.single()
+        assertNull(withoutContext.romanization)
+    }
+
+    @Test
     fun suppliedJapaneseLyricsSeparateAllRomanizationsWithoutChangingWordTiming() {
         val sample = javaClass.getResource("/lyrics/uchiage-hanabi.lrc")!!.readText()
         val document = LyricsParser.parse(sample, LyricsSource.SIDECAR)!!

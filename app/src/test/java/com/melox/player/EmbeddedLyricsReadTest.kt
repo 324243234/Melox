@@ -4,9 +4,11 @@ import com.melox.player.data.repository.embeddedLyricsCandidates
 import com.melox.player.data.repository.parseEmbeddedLyrics
 import com.melox.player.data.repository.exactLyricsSidecarCandidates
 import com.melox.player.data.repository.readFirstSidecar
+import com.melox.player.data.repository.lyricsSourceOrder
 import com.melox.player.model.LyricsFormat
 import com.melox.player.model.LyricsSource
-import com.melox.player.model.LyricsSidecarFormatPriority
+import com.melox.player.model.LyricsFormatPriority
+import com.melox.player.model.LyricsSourcePriority
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import org.junit.Assert.*
@@ -43,7 +45,7 @@ class EmbeddedLyricsReadTest {
     }
 
     @Test
-    fun wordLyricsAliasesTakePriorityOverPlainLyrics() {
+    fun embeddedFormatsFollowPreferenceRatherThanTagNames() {
         for (key in listOf("TTML", "TTML LYRICS", "TTML_LYRIC", "TXXX:TTML", "ttmllyrics")) {
             val candidates = embeddedLyricsCandidates(linkedMapOf(
                 "LYRICS" to arrayOf(lineLyrics),
@@ -51,7 +53,69 @@ class EmbeddedLyricsReadTest {
                 "TITLE" to arrayOf("Ignored title"),
             ))
             assertEquals(listOf(wordLyrics, lineLyrics), candidates)
-            assertEquals(LyricsFormat.TTML, parseEmbeddedLyrics(candidates, 30_000L)?.format)
+            for (priority in LyricsFormatPriority.entries) {
+                assertEquals(priority.format,
+                    parseEmbeddedLyrics(candidates, 30_000L, formatPriority = priority)?.format)
+                val mislabeled = embeddedLyricsCandidates(mapOf(
+                    "LYRICS" to arrayOf(wordLyrics), key to arrayOf(lineLyrics)))
+                assertEquals(priority.format,
+                    parseEmbeddedLyrics(mislabeled, 30_000L, formatPriority = priority)?.format)
+            }
+        }
+    }
+
+    @Test
+    fun sourcePriorityAlwaysPrecedesTheSharedFormatPriority() {
+        val properties = mapOf("LYRICS" to arrayOf(lineLyrics), "TTML" to arrayOf(wordLyrics))
+        val files = mapOf("song.lrc" to lineLyrics, "song.ttml" to wordLyrics)
+        for (source in LyricsSourcePriority.entries) for (format in LyricsFormatPriority.entries) {
+            fun load(embedded: List<String>) = lyricsSourceOrder(source).firstNotNullOfOrNull { candidate ->
+                when (candidate) {
+                    LyricsSource.EMBEDDED -> parseEmbeddedLyrics(embedded, 30_000L, formatPriority = format)
+                    LyricsSource.SIDECAR -> readFirstSidecar(exactLyricsSidecarCandidates("song.flac", format),
+                        30_000L, format, files::get)
+                }
+            }!!
+            val selected = load(embeddedLyricsCandidates(properties))
+            assertEquals(lyricsSourceOrder(source).first(), selected.source)
+            assertEquals(format.format, selected.format)
+            // A valid embedded LRC must beat an external TTML when embedded is preferred.
+            val onlyLrcEmbedded = load(listOf(lineLyrics))
+            assertEquals(lyricsSourceOrder(source).first(), onlyLrcEmbedded.source)
+            assertEquals(if (source == LyricsSourcePriority.EMBEDDED) LyricsFormat.LRC else format.format,
+                onlyLrcEmbedded.format)
+            assertEquals(LyricsSource.SIDECAR, load(listOf("Not timed")).source)
+        }
+    }
+
+    @Test
+    fun sidecarFormatsUseParsedContentAndRecoverFromUnreadablePreferredFiles() {
+        val mislabeled = mapOf("song.lrc" to wordLyrics, "song.ttml" to lineLyrics)
+        for (priority in LyricsFormatPriority.entries) {
+            val candidates = exactLyricsSidecarCandidates("song.flac", priority)
+            val document = readFirstSidecar(candidates, 30_000L, priority, mislabeled::get)!!
+            assertEquals(priority.format, document.format)
+            for (failure in listOf("missing", "invalid", "unreadable")) {
+                val fallback = readFirstSidecar(candidates, 30_000L, priority) { name ->
+                    when {
+                        name == candidates.first().first -> when (failure) {
+                            "missing" -> null
+                            "invalid" -> "Not timed"
+                            else -> throw IOException("Unreadable preferred file")
+                        }
+                        name == candidates.last().first -> if (priority == LyricsFormatPriority.LRC) wordLyrics else lineLyrics
+                        else -> null
+                    }
+                }!!
+                assertEquals(if (priority == LyricsFormatPriority.LRC) LyricsFormat.TTML else LyricsFormat.LRC,
+                    fallback.format)
+            }
+            assertThrows(IOException::class.java) {
+                readFirstSidecar(candidates, 30_000L, priority) { throw IOException("Unreadable file") }
+            }
+        }
+        assertThrows(CancellationException::class.java) {
+            readFirstSidecar(exactLyricsSidecarCandidates("song.flac"), 30_000L) { throw CancellationException() }
         }
     }
 
@@ -144,7 +208,7 @@ class EmbeddedLyricsReadTest {
         )) {
             val reads = mutableListOf<String>()
             val document = readFirstSidecar(exactLyricsSidecarCandidates("song.flac",
-                if (name.endsWith("ttml")) LyricsSidecarFormatPriority.TTML else LyricsSidecarFormatPriority.LRC,
+                if (name.endsWith("ttml")) LyricsFormatPriority.TTML else LyricsFormatPriority.LRC,
             ), 10_000L) {
                 reads += it
                 if (it == name) text else error("Unnecessary sidecar read: $it")
@@ -194,8 +258,8 @@ class EmbeddedLyricsReadTest {
     fun translationOnlySidecarCannotBecomeMainLyricsAndFormatFallbackRemainsAvailable() {
         val files = mapOf("song_trans.lrc" to "[00:01.00]Translation only")
         val candidates = exactLyricsSidecarCandidates("song.flac")
-        assertNull(readFirstSidecar(candidates, 10_000L, files::get))
-        val document = readFirstSidecar(candidates, 10_000L, (files + ("song.ttml" to wordLyrics))::get)!!
+        assertNull(readFirstSidecar(candidates, 10_000L, read = files::get))
+        val document = readFirstSidecar(candidates, 10_000L, read = (files + ("song.ttml" to wordLyrics))::get)!!
         assertEquals(LyricsFormat.TTML, document.format)
         assertNull(document.lines.single().translation)
     }

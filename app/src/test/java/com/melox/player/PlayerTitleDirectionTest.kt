@@ -1,10 +1,63 @@
 package com.melox.player
 
 import com.melox.player.playback.resolveTrackChangeDirection
+import com.melox.player.playback.TrackChangeDirectionState
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class PlayerTitleDirectionTest {
+    @Test
+    fun previousIntentPrecedesTheTargetAndSurvivesSameTrackCallbacks() {
+        val state = TrackChangeDirectionState()
+        state.observeCurrentItem("first", 0)
+        state.request("last", -1)
+        assertEquals(-1, state.direction)
+        state.observeCurrentItem("first", 0)
+        state.onTransition("last", seek = true, automatic = false, nextIndex = 1, queueSize = 2)
+        assertEquals(-1, state.direction)
+        repeat(3) {
+            state.onTransition("last", seek = false, automatic = false, nextIndex = 1, queueSize = 2)
+            state.observeCurrentItem("last", 1)
+            assertEquals(-1, state.direction)
+        }
+    }
+
+    @Test
+    fun duplicateCallbacksDoNotConsumeThePendingPreviousCommand() {
+        val state = TrackChangeDirectionState()
+        state.observeCurrentItem("first", 0)
+        state.request("last", -1)
+        state.onTransition("first", seek = false, automatic = false, nextIndex = 0, queueSize = 2)
+        state.onTransition("last", seek = true, automatic = false, nextIndex = 1, queueSize = 2)
+        assertEquals(-1, state.direction)
+    }
+
+    @Test
+    fun rapidTransitionsUseTheLastEventEvenWhenNoUiSnapshotWasPublished() {
+        val state = TrackChangeDirectionState()
+        state.observeCurrentItem("first", 0)
+        state.request("last", -1)
+        state.onTransition("last", seek = true, automatic = false, nextIndex = 4, queueSize = 5)
+        state.onTransition("fourth", seek = true, automatic = false, nextIndex = 3, queueSize = 5)
+        assertEquals(-1, state.direction)
+        state.request("last", 1)
+        state.onTransition("last", seek = true, automatic = false, nextIndex = 4, queueSize = 5)
+        assertEquals(1, state.direction)
+        state.request("fourth", -1)
+        state.onTransition("fourth", seek = true, automatic = false, nextIndex = 3, queueSize = 5)
+        assertEquals(-1, state.direction)
+    }
+
+    @Test
+    fun automaticPlaybackAfterPreviousUsesTheNextDirection() {
+        val state = TrackChangeDirectionState()
+        state.observeCurrentItem("first", 0)
+        state.request("last", -1)
+        state.onTransition("last", seek = true, automatic = false, nextIndex = 4, queueSize = 5)
+        state.onTransition("first", seek = false, automatic = true, nextIndex = 0, queueSize = 5)
+        assertEquals(1, state.direction)
+    }
+
     @Test
     fun explicitSkipsPreserveDirectionAcrossWrapAndTwoItemQueues() {
         for (size in listOf(2, 5)) {

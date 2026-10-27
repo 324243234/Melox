@@ -2126,8 +2126,8 @@ fun MeloxApp(
                                                             onBack = navigateBack,
                                                             onLyricsSourcePriorityChange =
                                                                 viewModel::setLyricsSourcePriority,
-                                                            onLyricsSidecarFormatPriorityChange =
-                                                                viewModel::setLyricsSidecarFormatPriority,
+                                                            onLyricsFormatPriorityChange =
+                                                                viewModel::setLyricsFormatPriority,
                                                             onShowMiniPlayerLyricsChange =
                                                                 viewModel::setShowMiniPlayerLyrics,
                                                             onShowArtworkLyricsChange =
@@ -3243,6 +3243,7 @@ private fun PlaybackArtworkPrefetchEffect(
                 placeholderArtworkResId = placeholderArtworkResId,
                 includeBlurredArtwork =
                     playbackBackgroundStyle == PlaybackBackgroundStyle.BLURRED_ARTWORK,
+                foreground = index == 0,
             )
         }
     }

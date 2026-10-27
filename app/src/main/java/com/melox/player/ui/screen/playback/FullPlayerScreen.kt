@@ -701,6 +701,7 @@ internal fun FullPlayerScreen(
                                         SyncedLyrics(
                                             activeLyricAlpha = activeLyricAlpha,
                                             lyrics = lyrics,
+                                            currentMediaId = playback.currentItem?.mediaId,
                                             positionMs = playback.positionMs,
                                             positionUpdateElapsedRealtimeMs =
                                                 playback.positionUpdateElapsedRealtimeMs,
@@ -808,6 +809,7 @@ internal fun FullPlayerScreen(
                                         SyncedLyrics(
                                             activeLyricAlpha = activeLyricAlpha,
                                             lyrics = lyrics,
+                                            currentMediaId = playback.currentItem?.mediaId,
                                             positionMs = playback.positionMs,
                                             positionUpdateElapsedRealtimeMs =
                                                 playback.positionUpdateElapsedRealtimeMs,
@@ -920,6 +922,7 @@ internal fun FullPlayerScreen(
                                     activeLyricAlpha = activeLyricAlpha,
                                     pagerState = pagerState,
                                     lyrics = lyrics,
+                                    currentMediaId = playback.currentItem?.mediaId,
                                     positionMs = playback.positionMs,
                                     positionUpdateElapsedRealtimeMs =
                                         playback.positionUpdateElapsedRealtimeMs,
@@ -1066,6 +1069,7 @@ internal fun FullPlayerScreen(
                                             activeLyricAlpha = activeLyricAlpha,
                                             pagerState = pagerState,
                                             lyrics = lyrics,
+                                            currentMediaId = playback.currentItem?.mediaId,
                                             positionMs = playback.positionMs,
                                             positionUpdateElapsedRealtimeMs =
                                                 playback.positionUpdateElapsedRealtimeMs,
@@ -1083,16 +1087,14 @@ internal fun FullPlayerScreen(
                                             lyricsPagingEnabled = lyricsPagingEnabled,
                                             lyricFontScale = displayedLyricFontScale,
                                             lyricFontWeight = displayedLyricFontWeight,
-                                            lyricAnimationMode =
-                                                displayedLyricAnimationMode,
+                                            lyricAnimationMode = displayedLyricAnimationMode,
                                             lyricBlurEnabled = displayedLyricBlurEnabled,
                                             centerLyrics = displayedCenterLyrics,
                                             lyricCenterOffsetY =
                                                 portraitHeaderHeight + (artworkHeight - maxHeight) / 2f,
                                             showLyricsTranslation =
                                                 displayedShowLyricsTranslation,
-                                            showLyricsRomanization =
-                                                displayedShowLyricsRomanization,
+                                            showLyricsRomanization = displayedShowLyricsRomanization,
                                             lyricsTranslationLanguage = displayedLyricsTranslationLanguage,
                                             showBottomFade = true,
                                             resumeFollowRequestKey = lyricsFollowRequestKey,
@@ -1460,16 +1462,16 @@ private fun LyricsTranslationSheet(
                 .verticalScroll(scrollState, overscrollEffect = null)
                 .padding(bottom = bottomPadding + 12.dp),
         ) {
-            Card(colors = CardDefaults.defaultColors(color = bottomSheetCardColor())) {
-                LyricsTranslationPreferences(
-                    showLyricsTranslation = showLyricsTranslation,
-                    showLyricsRomanization = showLyricsRomanization,
-                    lyricsTranslationLanguage = lyricsTranslationLanguage,
-                    onShowLyricsTranslationChange = onShowLyricsTranslationChange,
-                    onShowLyricsRomanizationChange = onShowLyricsRomanizationChange,
-                    onLyricsTranslationLanguageChange = onLyricsTranslationLanguageChange,
-                )
-            }
+            LyricsTranslationPreferences(
+                showLyricsTranslation = showLyricsTranslation,
+                showLyricsRomanization = showLyricsRomanization,
+                lyricsTranslationLanguage = lyricsTranslationLanguage,
+                onShowLyricsTranslationChange = onShowLyricsTranslationChange,
+                onShowLyricsRomanizationChange = onShowLyricsRomanizationChange,
+                onLyricsTranslationLanguageChange = onLyricsTranslationLanguageChange,
+                cardColor = bottomSheetCardColor(),
+                usePageMaterial = false,
+            )
         }
     }
 }
@@ -1643,9 +1645,10 @@ private fun PlayerHeader(
     artistSlotHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
+    val direction = remember(item?.contentUri) { trackChangeDirection }
     val header = PlayerHeaderContent(
         trackKey = item?.contentUri,
-        direction = trackChangeDirection,
+        direction = direction,
         title = item?.title ?: stringResource(R.string.mini_player_title),
         artist = displayArtistName(item?.artist)
             ?: stringResource(if (item == null) R.string.mini_player_empty else R.string.music_unknown_artist),
@@ -1659,106 +1662,91 @@ private fun PlayerHeader(
     val titleFadeWidthPx = with(LocalDensity.current) {
         PLAYER_HEADER_TITLE_EDGE_FADE_WIDTH.roundToPx()
     }
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        horizontalAlignment = if (leftAligned) Alignment.Start else Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(1.dp),
-    ) {
+    Box(modifier = modifier.fillMaxWidth()) {
         Box(
-            modifier = Modifier.fillMaxWidth().heightIn(min = titleSlotHeight),
-            contentAlignment = if (leftAligned) Alignment.CenterStart else Alignment.Center,
+            modifier = Modifier
+                .expandLeftForMarquee(PLAYER_HEADER_TITLE_EDGE_FADE_WIDTH)
+                .fillMaxWidth()
+                .playerHeaderEdgeMask(),
         ) {
-            Box(
-                modifier = Modifier
-                    .expandLeftForMarquee(PLAYER_HEADER_TITLE_EDGE_FADE_WIDTH)
-                    .fillMaxWidth()
-                    .playerHeaderEdgeMask(),
-            ) {
-                headerTransition.AnimatedContent(
+            headerTransition.AnimatedContent(
+                modifier = Modifier.fillMaxWidth(),
+                contentKey = { it.trackKey },
+                transitionSpec = {
+                    val slideDirection = targetState.direction
+                    slideInHorizontally(tween(PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS)) { it * slideDirection }
+                        .togetherWith(
+                            slideOutHorizontally(tween(PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS)) { -it * slideDirection },
+                        ).using(null)
+                },
+                contentAlignment = if (leftAligned) Alignment.CenterStart else Alignment.Center,
+            ) { target ->
+                var titleLayout by remember(target.trackKey) {
+                    mutableStateOf<TextLayoutResult?>(null)
+                }
+                var artistLayout by remember(target.trackKey) {
+                    mutableStateOf<TextLayoutResult?>(null)
+                }
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    contentKey = { it.trackKey to it.direction },
-                    transitionSpec = {
-                        slideInHorizontally(tween(PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS)) { it * targetState.direction }
-                            .togetherWith(
-                                slideOutHorizontally(tween(PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS)) { -it * targetState.direction },
-                            ).using(null)
-                    },
-                ) { target ->
-                    var titleLayout by remember(target.trackKey) {
-                        mutableStateOf<TextLayoutResult?>(null)
+                    horizontalAlignment = if (leftAligned) Alignment.Start else Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(1.dp),
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().heightIn(min = titleSlotHeight),
+                        contentAlignment = if (leftAligned) Alignment.CenterStart else Alignment.Center,
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth()
+                                .animatedPlayerTextAlignment(
+                                    layout = titleLayout,
+                                    progress = alignmentProgress,
+                                    viewportInsetPx = titleFadeWidthPx.toFloat(),
+                                )
+                                .basicMarquee(
+                                    iterations = if (headerTransition.isRunning) 0 else 1,
+                                    spacing = MarqueeSpacing.fractionOfContainer(
+                                        PLAYER_HEADER_MARQUEE_SPACING_FRACTION,
+                                    ),
+                                ),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            Text(
+                                text = target.title,
+                                modifier = Modifier.fillMaxWidth()
+                                    .padding(start = PLAYER_HEADER_TITLE_EDGE_FADE_WIDTH),
+                                style = MiuixTheme.textStyles.title3.copy(
+                                    lineHeight = PLAYER_HEADER_TITLE_LINE_HEIGHT,
+                                ),
+                                color = titleColor,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Start,
+                                maxLines = 1,
+                                overflow = TextOverflow.Clip,
+                                onTextLayout = { titleLayout = it },
+                            )
+                        }
                     }
                     Box(
-                        modifier = Modifier.fillMaxWidth()
-                            .animatedPlayerTextAlignment(
-                                layout = titleLayout,
-                                progress = alignmentProgress,
-                                viewportInsetPx = titleFadeWidthPx.toFloat(),
-                            )
-                            .basicMarquee(
-                                iterations = if (headerTransition.isRunning) 0 else 1,
-                                spacing = MarqueeSpacing.fractionOfContainer(
-                                    PLAYER_HEADER_MARQUEE_SPACING_FRACTION,
-                                ),
-                            ),
-                        contentAlignment = Alignment.CenterStart,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = artistSlotHeight),
+                        contentAlignment = if (leftAligned) Alignment.CenterStart else Alignment.Center,
                     ) {
                         Text(
-                            text = target.title,
+                            text = playerHeaderArtistText(target.artist),
                             modifier = Modifier.fillMaxWidth()
-                                .padding(start = PLAYER_HEADER_TITLE_EDGE_FADE_WIDTH),
-                            style = MiuixTheme.textStyles.title3.copy(
-                                lineHeight = PLAYER_HEADER_TITLE_LINE_HEIGHT,
+                                .padding(start = PLAYER_HEADER_TITLE_EDGE_FADE_WIDTH)
+                                .animatedPlayerTextAlignment(artistLayout, alignmentProgress),
+                            style = MiuixTheme.textStyles.body2.copy(
+                                fontSize = 14.sp,
+                                lineHeight = PLAYER_HEADER_ARTIST_LINE_HEIGHT,
                             ),
-                            color = titleColor,
-                            fontWeight = FontWeight.Bold,
+                            color = artistColor,
                             textAlign = TextAlign.Start,
                             maxLines = 1,
-                            overflow = TextOverflow.Clip,
-                            onTextLayout = { titleLayout = it },
+                            overflow = TextOverflow.Ellipsis,
+                            onTextLayout = { artistLayout = it },
                         )
                     }
-                }
-            }
-        }
-        Box(
-            modifier = Modifier.fillMaxWidth().heightIn(min = artistSlotHeight),
-            contentAlignment = if (leftAligned) Alignment.CenterStart else Alignment.Center,
-        ) {
-            Box(
-                modifier = Modifier
-                    .expandLeftForMarquee(PLAYER_HEADER_TITLE_EDGE_FADE_WIDTH)
-                    .fillMaxWidth()
-                    .playerHeaderEdgeMask(),
-            ) {
-                headerTransition.AnimatedContent(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentKey = { it.trackKey to it.direction },
-                    transitionSpec = {
-                        slideInHorizontally(tween(PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS)) { it * targetState.direction }
-                            .togetherWith(
-                                slideOutHorizontally(tween(PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS)) { -it * targetState.direction },
-                            ).using(null)
-                    },
-                    contentAlignment = if (leftAligned) Alignment.CenterStart else Alignment.Center,
-                ) { target ->
-                    var artistLayout by remember(target.trackKey) {
-                        mutableStateOf<TextLayoutResult?>(null)
-                    }
-                    Text(
-                        text = playerHeaderArtistText(target.artist),
-                        modifier = Modifier.fillMaxWidth()
-                            .padding(start = PLAYER_HEADER_TITLE_EDGE_FADE_WIDTH)
-                            .animatedPlayerTextAlignment(artistLayout, alignmentProgress),
-                        style = MiuixTheme.textStyles.body2.copy(
-                            fontSize = 14.sp,
-                            lineHeight = PLAYER_HEADER_ARTIST_LINE_HEIGHT,
-                        ),
-                        color = artistColor,
-                        textAlign = TextAlign.Start,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        onTextLayout = { artistLayout = it },
-                    )
                 }
             }
         }
@@ -1786,7 +1774,7 @@ private fun Modifier.playerHeaderEdgeMask(): Modifier = this
         )
     }
 
-private fun Modifier.expandLeftForMarquee(extra: Dp): Modifier = layout { measurable, constraints ->
+internal fun Modifier.expandLeftForMarquee(extra: Dp): Modifier = layout { measurable, constraints ->
     val extraPx = extra.roundToPx()
     val expandedConstraints = constraints.copy(
         minWidth = constraints.minWidth + extraPx,

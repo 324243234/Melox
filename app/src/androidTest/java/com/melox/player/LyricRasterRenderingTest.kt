@@ -14,9 +14,11 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.createFontFamilyResolver
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.sp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -43,6 +45,23 @@ class LyricRasterRenderingTest {
         createFontFamilyResolver(InstrumentationRegistry.getInstrumentation().targetContext),
         density, LayoutDirection.Ltr,
     ).measure(text, TextStyle(fontSize = 32.sp))
+
+    @Test
+    fun narrowLogicalConstraintsDoNotCropAnOverflowingGlyphFromItsRaster() {
+        val layout = TextMeasurer(
+            createFontFamilyResolver(InstrumentationRegistry.getInstrumentation().targetContext),
+            density, LayoutDirection.Ltr,
+        ).measure("皆", TextStyle(fontSize = 64.sp),
+            constraints = Constraints(maxWidth = 1), overflow = TextOverflow.Visible)
+        val raster = requireNotNull(prepareLyricTextRaster(layout, Color.White, density, LayoutDirection.Ltr, 1_000_000))
+        val position = Offset(60f, 40f)
+        val expected = render { drawLyricForeground(layout, Color.White, position) }
+        val actual = render {
+            raster.draw(this, position, -raster.padding.toFloat(), layout.getLineRight(0) + raster.padding)
+        }
+        assertTrue("Fixture must overflow its logical width", layout.getLineRight(0) > layout.size.width)
+        assertArrayEquals("Paragraph raster clipped an indivisible glyph", expected, actual)
+    }
 
     @Test
     fun completedGlyphSlicesMatchWholeParagraphAtFractionalPositions() {

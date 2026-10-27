@@ -378,7 +378,7 @@ internal fun ArtworkPreviewOverlay(
                 animate = true,
                 durationMillis = 100,
             )
-            val artworkLayerAlphas = sourceOverAlphas(artworkBlend.frames.map { it.alpha })
+            val artworkLayerAlphas = sourceOverAlphas(artworkBlend.frames().map { it.alpha })
             Box(Modifier.fillMaxSize()
                 .then(topBarBackdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier)) {
             Box(Modifier.fillMaxSize()
@@ -460,7 +460,7 @@ internal fun ArtworkPreviewOverlay(
                             translationY = panOffset.y * progress.value
                         }
                         .squircleClip(8.dp * (1f - progress.value))) {
-                    artworkBlend.frames.forEachIndexed { index, frame ->
+                    artworkBlend.frames().forEachIndexed { index, frame ->
                         Image(
                             bitmap = frame.value.asImageBitmap(),
                             contentDescription = null,

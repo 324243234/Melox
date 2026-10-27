@@ -210,6 +210,7 @@ internal suspend fun prefetchPlaybackArtworkResource(
     targetSizePx: Int,
     placeholderArtworkResId: Int,
     includeBlurredArtwork: Boolean,
+    foreground: Boolean = false,
 ): PlaybackArtworkResource = loadPlaybackArtworkResource(
     context = context.applicationContext,
     contentUri = contentUri,
@@ -218,6 +219,7 @@ internal suspend fun prefetchPlaybackArtworkResource(
     targetSizePx = targetSizePx,
     placeholderArtworkResId = placeholderArtworkResId,
     includeBlurredArtwork = includeBlurredArtwork,
+    foreground = foreground,
 )
 
 private suspend fun loadPlaybackArtworkResource(
@@ -228,6 +230,7 @@ private suspend fun loadPlaybackArtworkResource(
     targetSizePx: Int,
     placeholderArtworkResId: Int,
     includeBlurredArtwork: Boolean,
+    foreground: Boolean = true,
 ): PlaybackArtworkResource {
     val normalizedTargetSizePx = normalizeArtworkTargetSize(targetSizePx)
     val cacheKey = createArtworkCacheKey(
@@ -247,7 +250,7 @@ private suspend fun loadPlaybackArtworkResource(
         dateModifiedEpochSeconds = dateModifiedEpochSeconds,
         fileSizeBytes = fileSizeBytes,
         targetSizePx = normalizedTargetSizePx,
-        foreground = true,
+        foreground = foreground,
     )
     val usesPlaceholderArtwork = embeddedArtwork == null
     val artwork = embeddedArtwork ?: loadPlaceholderArtwork(

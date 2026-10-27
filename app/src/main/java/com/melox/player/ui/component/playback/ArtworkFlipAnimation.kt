@@ -26,7 +26,7 @@ internal fun artworkFlipCameraDistance(width: Float, height: Float): Float =
     // A three-edge distance shortens the far edge as in the supplied reference.
     maxOf(width, height, 1f) * 3f / 72f
 
-/** 翻转结尾越界量：1.04 ≈ 越过平面 7.2°，配合 spring 软回弹收尾更自然。 */
+/** Overshoot the resting face by 7.2 degrees before settling with a spring. */
 private const val ARTWORK_FLIP_OVERSHOOT = 1.04f
 
 internal fun artworkFlipFrame(progress: Float, direction: Int): ArtworkFlipFrame {
@@ -79,13 +79,24 @@ internal class ArtworkFlipState<T>(initialValue: T?, initialKey: Any?, initialPl
     // Keep the incoming face active until it is promoted to the front.
     val isRunning: Boolean get() = back != null
     val frame: ArtworkFlipFrame get() = artworkFlipFrame(if (isRunning) progress.value else 0f, direction)
-    // 组合期只读这个"是否已翻过中点"的派生状态：progress 每帧推进不会触发重组，
-    // 只在跨过 0.5 时通知一次，避免快速连切时每帧重组导致画面发颤。
+    // Consumers recompose at the face boundary instead of on every animation frame.
     private val visibleIsBack by derivedStateOf { isRunning && progress.value >= 0.5f }
     val visibleValue: T? get() = if (visibleIsBack) back ?: front else front
     val visibleContentKey: Any? get() = if (visibleIsBack) backKey else frontKey
     val visibleIsPlaceholder: Boolean
         get() = if (visibleIsBack) backIsPlaceholder else frontIsPlaceholder
+
+    fun updateIncomingImage(value: T?, key: Any?, isPlaceholder: Boolean): Boolean {
+        if (!isRunning || value == null) return false
+        if (key == frontKey) {
+            front = value
+            frontIsPlaceholder = isPlaceholder
+        }
+        if (key != backKey) return false
+        back = value
+        backIsPlaceholder = isPlaceholder
+        return true
+    }
 
     suspend fun snapTo(value: T?, key: Any?, isPlaceholder: Boolean = false) {
         front = value
@@ -172,9 +183,7 @@ internal class ArtworkFlipState<T>(initialValue: T?, initialKey: Any?, initialPl
     private suspend fun finish(durationMillis: Int) {
         val start = progress.value
         if (start < 1f) {
-            // 还未到过冲点（无论是首次翻转到 0，还是中途被打断的续转）：
-            // 继续冲到 ARTWORK_FLIP_OVERSHOOT 再 spring 回正，保留自然的结尾过冲。
-            // remaining 给最短时长下限，避免剩余时间接近 0 时瞬跳。
+            // Preserve the remaining turn and overshoot when resuming before the resting face.
             val remaining = (durationMillis * (1f - start)).roundToInt().coerceAtLeast(60)
             progress.animateTo(
                 ARTWORK_FLIP_OVERSHOOT,
@@ -185,8 +194,7 @@ internal class ArtworkFlipState<T>(initialValue: T?, initialKey: Any?, initialPl
                 spring(dampingRatio = 1f, stiffness = 100f, visibilityThreshold = 0.001f),
             )
         } else {
-            // 已经在过冲/回弹段（前一轮收尾被 LaunchedEffect 重启打断）：
-            // 从当前角度平滑 spring 回正面，既不瞬跳、也不重复冲 1.04；过冲已在上一轮发生。
+            // Resume an interrupted rebound without repeating its overshoot.
             progress.animateTo(
                 1f,
                 spring(dampingRatio = 1f, stiffness = 100f, visibilityThreshold = 0.001f),

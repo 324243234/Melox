@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.offset
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
+import top.yukonga.miuix.kmp.blur.BlurBlendMode
 import top.yukonga.miuix.kmp.blur.BlurColors
 import top.yukonga.miuix.kmp.blur.BlurDefaults
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
@@ -28,6 +29,7 @@ import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.blur.textureBlurEffect
 import top.yukonga.miuix.kmp.blur.progressiveTextureBlurEffect
 import top.yukonga.miuix.kmp.blur.highlight.Highlight
+import top.yukonga.miuix.kmp.blur.highlight.BloomStroke
 import top.yukonga.miuix.kmp.layout.BottomSheetDefaults
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import com.melox.player.model.DEFAULT_CUSTOM_BACKGROUND_CARD_BLUR_PERCENT
@@ -160,8 +162,9 @@ internal fun bottomSheetCardColor(): Color {
     if (LocalBottomSheetBlurBackdrop.current == null) {
         return MiuixTheme.colorScheme.secondaryContainer
     }
-    return MiuixTheme.colorScheme.secondaryContainer.copy(
-        alpha = BottomSheetCardMaterialAlpha,
+    val isDark = MiuixTheme.colorScheme.surface.luminance() < 0.5f
+    return MiuixTheme.colorScheme.onSurface.copy(
+        alpha = if (isDark) 0x26 / 255f else 0x0F / 255f,
     )
 }
 
@@ -183,7 +186,13 @@ internal fun bottomSheetGlassModifier(): Modifier {
     val highlight = if (isDark) {
         Highlight.GlassStrokeBigDark
     } else {
-        Highlight.GlassStrokeBigLight
+        val stroke = BloomStroke.GlassStrokeBigLight
+        Highlight(
+            style = stroke.copy(
+                primaryLight = stroke.primaryLight.copy(intensity = 0f),
+                secondaryLight = stroke.secondaryLight.copy(intensity = 0f),
+            ),
+        )
     }
     return Modifier
         .layout { measurable, constraints ->
@@ -204,8 +213,12 @@ internal fun bottomSheetGlassModifier(): Modifier {
             colors = BlurDefaults.blurColors(
                 blendColors = listOf(
                     BlendColorEntry(
+                        color = if (isDark) Color(0x4D000000) else Color(0x99FFFFFF),
+                        mode = if (isDark) BlurBlendMode.ColorBurn else BlurBlendMode.Overlay,
+                    ),
+                    BlendColorEntry(
                         color = MiuixTheme.colorScheme.surface.copy(
-                            alpha = BottomSheetMaterialAlpha,
+                            alpha = if (isDark) 0x80 / 255f else 0xBF / 255f,
                         ),
                     ),
                 ),
@@ -223,8 +236,6 @@ internal fun bottomSheetGlassModifier(): Modifier {
 }
 
 private const val BottomSheetDragDampingDivisor = 10
-private const val BottomSheetMaterialAlpha = 0.75f
-private const val BottomSheetCardMaterialAlpha = 0.5f
 
 @Composable
 internal fun BlurredBar(

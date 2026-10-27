@@ -24,7 +24,6 @@ internal data class LyricCenteringEvent(
     val browsing: Boolean,
     val previewing: Boolean,
     val geometry: List<Any>,
-    val translationRevision: Int = 0,
     val active: Boolean = true,
     val focusLineIndices: List<Int> = emptyList(),
 )

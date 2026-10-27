@@ -18,6 +18,18 @@ import org.junit.Test
 private val sameSharedArtwork: (String, String) -> Boolean = { first, second -> first == second }
 
 class SharedArtworkTransitionTest {
+    private var lastFrameMs = 0L
+
+    private suspend fun ArtworkTestComposition.advanceTo(millis: Long) {
+        if (millis < lastFrameMs) lastFrameMs = millis
+        while (lastFrameMs + 16 < millis) {
+            lastFrameMs += 16
+            frame(lastFrameMs)
+        }
+        lastFrameMs = millis
+        frame(millis)
+    }
+
     private data class Input(
         val image: String? = "a",
         val song: String? = "a",
@@ -71,27 +83,27 @@ class SharedArtworkTransitionTest {
             if (fullMounted.value) Observe(state) { observed["full"] = it }
             if (overlayMounted.value) Observe(state) { observed["overlay"] = it }
         }) {
-            frame(0)
+            advanceTo(0)
             input.value = Input("b", "b")
-            frame(16)
+            advanceTo(16)
             val compositions = ownerCompositions
-            frame(116)
-            frame(256)
+            advanceTo(116)
+            advanceTo(256)
             assertEquals(compositions, ownerCompositions)
             assertEquals("b", state.currentValue)
             val progress = state.progress
             overlayMounted.value = true
-            frame(256)
+            advanceTo(256)
             assertEquals(progress, state.progress, 0f)
             assertEquals(observed["mini"], observed["full"])
             assertEquals(observed["mini"], observed["overlay"])
             fullMounted.value = false
-            frame(272)
+            advanceTo(272)
             fullMounted.value = true
-            frame(272)
+            advanceTo(272)
             assertEquals(observed["mini"], observed["full"])
             assertEquals(observed["mini"], observed["overlay"])
-            frame(816)
+            advanceTo(1216)
             assertEquals("b", state.currentValue)
             assertFalse(state.isRunning)
         }
@@ -102,22 +114,22 @@ class SharedArtworkTransitionTest {
         val input = mutableStateOf(Input())
         lateinit var state: ArtworkTransitionState<String>
         withArtworkComposition(content = { state = rememberTransition(input.value) }) {
-            frame(0)
+            advanceTo(0)
             input.value = Input("b", "b")
-            frame(16)
-            frame(256)
+            advanceTo(16)
+            advanceTo(256)
             val angle = state.flipState!!.frame.rotationY
             input.value = input.value.copy(flip = false)
-            frame(256)
+            advanceTo(256)
             assertTrue(state.flipAnimationEnabled)
             assertEquals("b", state.currentValue)
             assertEquals(angle, state.flipState!!.frame.rotationY, 0f)
-            frame(816)
+            advanceTo(1216)
             assertFalse(state.flipAnimationEnabled)
             assertEquals(listOf(WeightedCrossfadeFrame("b", 1f)), state.frames)
             input.value = Input("c", "c", flip = false)
-            frame(832)
-            frame(932)
+            advanceTo(1232)
+            advanceTo(1332)
             assertEquals(0.25f, state.progress, 0.02f)
             assertEquals(listOf(WeightedCrossfadeFrame("b", 0.75f),
                 WeightedCrossfadeFrame("c", 0.25f)), state.frames)
@@ -129,25 +141,25 @@ class SharedArtworkTransitionTest {
         val input = mutableStateOf(Input(flip = false))
         lateinit var state: ArtworkTransitionState<String>
         withArtworkComposition(content = { state = rememberTransition(input.value) }) {
-            frame(0)
+            advanceTo(0)
             input.value = Input("b", "b", flip = false)
-            frame(16)
-            frame(116)
+            advanceTo(16)
+            advanceTo(116)
             val visible = state.frames
             input.value = input.value.copy(flip = true)
-            frame(116)
+            advanceTo(116)
             assertFalse(state.flipAnimationEnabled)
             assertEquals(visible, state.frames)
-            frame(416)
+            advanceTo(416)
             assertTrue(state.flipAnimationEnabled)
             assertFalse(state.isRunning)
             assertEquals("b", state.currentValue)
             input.value = Input("c", "c", direction = -1)
-            frame(432)
-            frame(512)
+            advanceTo(432)
+            advanceTo(512)
             assertTrue(state.flipState!!.frame.rotationY < 0f)
             assertEquals("b", state.currentValue)
-            frame(832)
+            advanceTo(1232)
             assertEquals("c", state.currentValue)
         }
     }
@@ -157,21 +169,21 @@ class SharedArtworkTransitionTest {
         val input = mutableStateOf(Input())
         lateinit var state: ArtworkTransitionState<String>
         withArtworkComposition(content = { state = rememberTransition(input.value) }) {
-            frame(0)
+            advanceTo(0)
             input.value = Input("b", "b")
-            frame(16)
-            frame(96)
+            advanceTo(16)
+            advanceTo(96)
             for (flip in listOf(false, true, false)) {
                 input.value = input.value.copy(flip = flip)
-                frame(96)
+                advanceTo(96)
                 assertTrue(state.flipAnimationEnabled)
             }
-            frame(816)
+            advanceTo(1216)
             assertFalse(state.flipAnimationEnabled)
             assertEquals("b", state.currentValue)
             assertEquals("b", state.currentContentKey)
             input.value = input.value.copy(flip = true)
-            frame(832)
+            advanceTo(1232)
             assertTrue(state.flipAnimationEnabled)
             assertFalse(state.isRunning)
             assertEquals("b", state.currentValue)
@@ -183,22 +195,22 @@ class SharedArtworkTransitionTest {
         val input = mutableStateOf(Input())
         lateinit var state: ArtworkTransitionState<String>
         withArtworkComposition(content = { state = rememberTransition(input.value) }) {
-            frame(0)
+            advanceTo(0)
             input.value = Input("b", "b")
-            frame(16)
-            frame(96)
+            advanceTo(16)
+            advanceTo(96)
             input.value = Input("placeholder", "c", ready = false, flip = false)
-            frame(96)
-            frame(196)
+            advanceTo(96)
+            advanceTo(196)
             assertFalse(state.flipAnimationEnabled)
             assertFalse(state.isRunning)
             assertEquals("a", state.currentValue)
             assertEquals("a", state.currentContentKey)
-            frame(500)
+            advanceTo(500)
             assertEquals(listOf(WeightedCrossfadeFrame("a", 1f)), state.frames)
             input.value = Input("c", "c", flip = false)
-            frame(516)
-            frame(616)
+            advanceTo(516)
+            advanceTo(616)
             assertEquals(listOf(WeightedCrossfadeFrame("a", 0.75f),
                 WeightedCrossfadeFrame("c", 0.25f)), state.frames)
         }
@@ -214,21 +226,21 @@ class SharedArtworkTransitionTest {
             val back = state.flipState?.back
             SideEffect { flippedBacks += back }
         }) {
-            frame(0)
+            advanceTo(0)
             input.value = Input("b", "b")
-            frame(16)
-            frame(256)
+            advanceTo(16)
+            advanceTo(256)
             input.value = Input("c", "c", flip = false)
-            frame(256)
+            advanceTo(256)
             assertTrue(state.flipAnimationEnabled)
             assertEquals("b", state.currentValue)
-            frame(816)
+            advanceTo(1216)
             assertFalse(state.flipAnimationEnabled)
             assertFalse(flippedBacks.contains("c"))
-            frame(916)
+            advanceTo(1316)
             assertTrue(state.frames.any { it.value == "b" && it.alpha > 0f })
             assertTrue(state.frames.any { it.value == "c" && it.alpha > 0f })
-            frame(1216)
+            advanceTo(1616)
             assertEquals(listOf(WeightedCrossfadeFrame("c", 1f)), state.frames)
         }
     }
@@ -243,21 +255,21 @@ class SharedArtworkTransitionTest {
             val layers = state.frames.map { it.value } + listOfNotNull(state.currentValue)
             SideEffect { observed += layers }
         }) {
-            frame(0)
+            advanceTo(0)
             input.value = Input("b", "b")
-            frame(16)
-            frame(256)
+            advanceTo(16)
+            advanceTo(256)
             input.value = Input("c", "c", flip = false)
-            frame(256)
+            advanceTo(256)
             input.value = Input("d", "d", flip = false, direction = -1)
-            frame(272)
+            advanceTo(272)
             assertEquals("b", state.currentValue)
-            frame(816)
+            advanceTo(1216)
             assertFalse(state.flipAnimationEnabled)
-            frame(916)
+            advanceTo(1316)
             assertFalse(observed.contains("c"))
             assertTrue(state.frames.any { it.value == "d" && it.alpha > 0f })
-            frame(1216)
+            advanceTo(1616)
             assertEquals(listOf(WeightedCrossfadeFrame("d", 1f)), state.frames)
         }
     }
@@ -267,27 +279,27 @@ class SharedArtworkTransitionTest {
         val input = mutableStateOf(Input(flip = false))
         lateinit var state: ArtworkTransitionState<String>
         withArtworkComposition(content = { state = rememberTransition(input.value) }) {
-            frame(0)
+            advanceTo(0)
             input.value = Input("b", "b", flip = false)
-            frame(16)
-            frame(116)
+            advanceTo(16)
+            advanceTo(116)
             val visible = state.frames
             input.value = Input("placeholder", "c", ready = false, flip = true)
-            frame(116)
+            advanceTo(116)
             assertFalse(state.flipAnimationEnabled)
             assertEquals(visible, state.frames)
-            frame(216)
+            advanceTo(216)
             assertEquals(0.5f, state.progress, 0.02f)
-            frame(416)
+            advanceTo(416)
             assertTrue(state.flipAnimationEnabled)
             assertFalse(state.isRunning)
             assertEquals("b", state.currentValue)
             assertEquals("b", state.currentContentKey)
             input.value = Input("c", "c")
-            frame(432)
-            frame(512)
+            advanceTo(432)
+            advanceTo(512)
             assertEquals("b", state.currentValue)
-            frame(832)
+            advanceTo(1232)
             assertEquals("c", state.currentValue)
         }
     }
@@ -297,20 +309,20 @@ class SharedArtworkTransitionTest {
         val input = mutableStateOf(Input(flip = false))
         lateinit var state: ArtworkTransitionState<String>
         withArtworkComposition(content = { state = rememberTransition(input.value) }) {
-            frame(0)
+            advanceTo(0)
             input.value = Input("b", "b", flip = false)
-            frame(16)
-            frame(116)
+            advanceTo(16)
+            advanceTo(116)
             input.value = Input("c", "c", flip = true)
-            frame(116)
+            advanceTo(116)
             assertFalse(state.flipAnimationEnabled)
-            frame(416)
+            advanceTo(416)
             assertTrue(state.flipAnimationEnabled)
             assertEquals("b", state.currentValue)
-            frame(496)
+            advanceTo(496)
             assertTrue(state.flipState != null)
             assertEquals("c", state.flipState!!.back)
-            frame(816)
+            advanceTo(1216)
             assertEquals("c", state.currentValue)
         }
     }
@@ -320,17 +332,17 @@ class SharedArtworkTransitionTest {
         val input = mutableStateOf(Input(flip = false))
         lateinit var state: ArtworkTransitionState<String>
         withArtworkComposition(content = { state = rememberTransition(input.value) }) {
-            frame(0)
+            advanceTo(0)
             input.value = Input("b", "b", flip = false)
-            frame(16)
-            frame(116)
+            advanceTo(16)
+            advanceTo(116)
             input.value = Input("c", "c", flip = true)
-            frame(116)
+            advanceTo(116)
             input.value = input.value.copy(flip = false)
-            frame(216)
-            frame(416)
+            advanceTo(216)
+            advanceTo(416)
             assertFalse(state.flipAnimationEnabled)
-            frame(816)
+            advanceTo(1216)
             assertEquals("c", state.currentValue)
             assertEquals(listOf(WeightedCrossfadeFrame("c", 1f)), state.frames)
         }
@@ -341,18 +353,18 @@ class SharedArtworkTransitionTest {
         val input = mutableStateOf(Input(flip = false))
         lateinit var state: ArtworkTransitionState<String>
         withArtworkComposition(content = { state = rememberTransition(input.value) }) {
-            frame(0)
+            advanceTo(0)
             input.value = Input("high-a", "a", flip = false)
-            frame(16)
-            frame(66)
+            advanceTo(16)
+            advanceTo(66)
             assertEquals(0.5f, state.progress, 0.02f)
-            frame(116)
+            advanceTo(116)
             assertEquals(listOf(WeightedCrossfadeFrame("high-a", 1f)), state.frames)
             input.value = Input("b", "b", flip = false)
-            frame(132)
-            frame(232)
+            advanceTo(132)
+            advanceTo(232)
             assertEquals(0.25f, state.progress, 0.02f)
-            frame(532)
+            advanceTo(532)
             assertEquals(listOf(WeightedCrossfadeFrame("b", 1f)), state.frames)
         }
     }
@@ -362,20 +374,20 @@ class SharedArtworkTransitionTest {
         val input = mutableStateOf(Input(flip = false))
         lateinit var state: ArtworkTransitionState<String>
         withArtworkComposition(content = { state = rememberTransition(input.value) }) {
-            frame(0)
+            advanceTo(0)
             input.value = Input("low-b", "b", flip = false)
-            frame(16)
-            frame(116)
+            advanceTo(16)
+            advanceTo(116)
             val progress = state.progress
             input.value = input.value.copy(image = "high-b")
-            frame(116)
+            advanceTo(116)
             assertEquals(progress, state.progress, 0f)
             assertEquals(listOf(WeightedCrossfadeFrame("a", 0.75f),
                 WeightedCrossfadeFrame("high-b", 0.25f)), state.frames)
             input.value = Input("placeholder", "c", ready = false, flip = false)
-            frame(132)
+            advanceTo(132)
             assertTrue(state.progress > progress)
-            frame(416)
+            advanceTo(416)
             assertEquals(listOf(WeightedCrossfadeFrame("high-b", 1f)), state.frames)
         }
     }
@@ -391,19 +403,101 @@ class SharedArtworkTransitionTest {
             Observe(state) { observed["full"] = it }
             Observe(state) { observed["overlay"] = it }
         }) {
-            frame(0)
+            advanceTo(0)
             input.value = Input("low-b", "b")
-            frame(16)
-            frame(256)
+            advanceTo(16)
+            advanceTo(256)
             val angle = state.flipState!!.frame.rotationY
             input.value = input.value.copy(image = "high-b")
-            frame(256)
+            advanceTo(256)
             assertEquals(angle, state.flipState!!.frame.rotationY, 0f)
             assertEquals("high-b", state.currentValue)
             assertEquals(observed["mini"], observed["full"])
             assertEquals(observed["mini"], observed["overlay"])
-            frame(416)
+            advanceTo(416)
             assertEquals("high-b", state.currentValue)
+        }
+    }
+
+    @Test
+    fun queuedFlipsCompleteTheCurrentTurnAndOnlyStartTheNewestSong() = runBlocking {
+        val input = mutableStateOf(Input())
+        val observed = mutableListOf<String?>()
+        lateinit var state: ArtworkTransitionState<String>
+        withArtworkComposition(content = {
+            state = rememberTransition(input.value)
+            val visible = state.currentValue
+            SideEffect { observed += visible }
+        }) {
+            advanceTo(0)
+            input.value = Input("b", "b")
+            advanceTo(16)
+            advanceTo(96)
+            val angle = state.flipState!!.frame.rotationY
+            input.value = Input("c", "c")
+            advanceTo(96)
+            assertEquals(angle, state.flipState!!.frame.rotationY, 0f)
+            assertEquals("b", state.flipState!!.back)
+            input.value = Input("d", "d", direction = -1)
+            advanceTo(112)
+            assertEquals("b", state.flipState!!.back)
+            advanceTo(512)
+            assertEquals("b", state.currentValue)
+            advanceTo(1112)
+            assertEquals("d", state.flipState!!.back)
+            advanceTo(2212)
+            assertFalse(state.isRunning)
+            assertEquals("d", state.currentValue)
+            assertFalse(observed.contains("c"))
+            assertTrue(observed.contains("b"))
+        }
+    }
+
+    @Test
+    fun anIncomingQualityUpgradeBeforeTheMidpointKeepsTheTurnClock() = runBlocking {
+        val input = mutableStateOf(Input())
+        lateinit var state: ArtworkTransitionState<String>
+        withArtworkComposition(content = { state = rememberTransition(input.value) }) {
+            advanceTo(0)
+            input.value = Input("low-b", "b")
+            advanceTo(16)
+            advanceTo(96)
+            val angle = state.flipState!!.frame.rotationY
+            val progress = state.progress
+            assertEquals("a", state.currentValue)
+            input.value = Input("high-b", "b")
+            advanceTo(96)
+            assertEquals("high-b", state.flipState!!.back)
+            assertEquals(angle, state.flipState!!.frame.rotationY, 0f)
+            assertEquals(progress, state.progress, 0f)
+            advanceTo(1216)
+            assertFalse(state.isRunning)
+            assertEquals("high-b", state.currentValue)
+        }
+    }
+
+    @Test
+    fun sharedFadesRemainInterruptibleAndKeepTheVisibleMixture() = runBlocking {
+        val input = mutableStateOf(Input(flip = false))
+        lateinit var state: ArtworkTransitionState<String>
+        withArtworkComposition(content = { state = rememberTransition(input.value) }) {
+            advanceTo(0)
+            input.value = Input("b", "b", flip = false)
+            advanceTo(16)
+            advanceTo(116)
+            val visible = state.frames
+            input.value = Input("c", "c", flip = false)
+            advanceTo(116)
+            assertEquals(visible, state.frames)
+            assertEquals("c", state.currentContentKey)
+            advanceTo(216)
+            val interrupted = state.frames
+            input.value = Input("d", "d", flip = false)
+            advanceTo(216)
+            assertEquals(interrupted, state.frames)
+            assertEquals("d", state.currentContentKey)
+            advanceTo(616)
+            assertEquals(listOf(WeightedCrossfadeFrame("d", 1f)), state.frames)
         }
     }
 
@@ -414,14 +508,14 @@ class SharedArtworkTransitionTest {
             val input = mutableStateOf(Input())
             lateinit var state: ArtworkTransitionState<String>
             withArtworkComposition(content = { state = rememberTransition(input.value) }) {
-                frame(0)
+                advanceTo(0)
                 input.value = Input("b", "b", flip = false)
-                frame(16)
+                advanceTo(16)
                 assertFalse(state.isRunning)
                 assertFalse(state.flipAnimationEnabled)
                 assertEquals("b", state.currentValue)
                 input.value = Input("c", "c", flip = true)
-                frame(32)
+                advanceTo(32)
                 assertFalse(state.isRunning)
                 assertTrue(state.flipAnimationEnabled)
                 assertEquals("c", state.currentValue)

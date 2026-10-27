@@ -5,6 +5,7 @@ import com.melox.player.data.library.createMusicSortKeys
 import com.melox.player.data.library.withRefreshedTags
 import com.melox.player.model.MusicTrack
 import com.melox.player.model.PlaybackQueueItem
+import com.melox.player.model.PlaybackMetadataProjection
 import com.melox.player.model.PlaybackUiState
 import com.melox.player.model.withTrackMetadata
 import org.junit.Assert.*
@@ -21,6 +22,33 @@ class AudioTagRefreshTest {
         bitrateBitsPerSecond = 900_000, sampleRateHz = 96_000, channelCount = 2,
         bitDepth = 24, audioPropertiesScanned = true,
     )
+
+    @Test
+    fun metadataProjectionReusesTheQueueUntilLibraryOrQueueChanges() {
+        val item = PlaybackQueueItem("track:31", track.id, track.contentUri, "Old title",
+            track.artist, track.album, track.durationMs, track.dateModifiedEpochSeconds,
+            track.fileSizeBytes)
+        val original = PlaybackUiState(queue = listOf(item, item.copy(mediaId = "duplicate:31")),
+            currentIndex = 0, isPlaying = true, positionMs = 42_000L)
+        val tracks = listOf(track)
+        val projector = PlaybackMetadataProjection()
+        val first = projector.project(original, tracks)
+        assertEquals("Before", first.currentItem?.title)
+
+        val skipped = original.copy(currentIndex = 1, positionMs = 0L, playbackIteration = 1L)
+        val second = projector.project(skipped, tracks)
+        assertSame(first.queue, second.queue)
+        assertEquals(skipped, second.copy(queue = skipped.queue))
+
+        val refreshed = projector.project(skipped, listOf(track.copy(title = "After")))
+        assertEquals("After", refreshed.currentItem?.title)
+        assertNotSame(first.queue, refreshed.queue)
+
+        val removed = original.copy(queue = emptyList(), currentIndex = -1)
+        assertSame(removed, projector.project(removed, tracks))
+        val restored = projector.project(original, tracks)
+        assertEquals(first, restored)
+    }
 
     @Test
     fun descriptiveTagUpdatesPreserveAllStreamAndSourceFields() {

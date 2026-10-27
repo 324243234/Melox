@@ -10,6 +10,7 @@ import com.melox.player.model.LyricsFormat
 import com.melox.player.model.LyricsSource
 import java.io.StringReader
 import java.math.BigDecimal
+import java.text.Normalizer
 import java.util.Locale
 import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Element
@@ -177,16 +178,15 @@ internal object LyricsParser {
                     return@forEach
                 }
                 val addedIndices = mutableListOf<Int>()
+                val (primaryPayload, inlineTranslation) = splitInlineTranslation(payload)
                 lineTimestamps.forEach { timestamp ->
                     val startTimeMs = timestamp.toTimeMs() ?: return@forEach
-                    val words = parseTimedWords(payload, startTimeMs, splInlineTimestamp)
-                    val rawText = payload
+                    val words = parseTimedWords(primaryPayload, startTimeMs, splInlineTimestamp)
+                    val text = primaryPayload
                         .replace(splInlineTimestamp, "")
                         .trim()
                         .takeIf(String::isNotEmpty)
                         ?: return@forEach
-                    // 同一行内用窄间隔 U+2009 分隔原文/译文（不靠重复时间戳表达翻译）。
-                    val (text, inlineTranslation) = splitInlineTranslation(rawText)
                     addedIndices += entries.size
                     entries += RawLine(
                         agent = DEFAULT_AGENT,
@@ -208,52 +208,159 @@ internal object LyricsParser {
             }
         if (entries.isEmpty()) return null
 
-        val grouped = entries
+        val groups = entries
             .sortedBy(RawLine::startTimeMs)
             .groupBy(RawLine::startTimeMs)
             .map { (_, sameTimeLines) ->
                 val primary = sameTimeLines.first()
+                val primaryText = primary.text.orEmpty().normalizedCaption()
                 val auxiliaryTexts = buildList {
                     sameTimeLines.forEachIndexed { index, entry ->
                         if (index > 0) entry.text?.let(::add)
                         entry.translation?.lineSequence()?.forEach(::add)
                     }
-                }.distinct()
-                val (romanizations, translations) = auxiliaryTexts.partition { auxiliary ->
-                    isJapaneseRomanization(primary.text.orEmpty(), auxiliary)
-                }
-                primary.copy(
-                    translation = translations.joinToString("\n")
-                        .takeIf(String::isNotBlank),
-                    romanizations = romanizations.map { LyricAuxiliaryText(it, language = "ja-Latn") },
-                )
+                }.distinct().filter { it.normalizedCaption() != primaryText }
+                primary to auxiliaryTexts
             }
+        // Confirm Japanese readings elsewhere before classifying kanji-only titles and credits.
+        val hasJapaneseContext = groups.any { (primary, auxiliaries) ->
+            auxiliaries.any { isJapaneseRomanization(primary.text.orEmpty(), it) }
+        }
+        // Consistent supplied caption columns can identify short Kanji-only readings without a dictionary.
+        val romanizationColumns = (0 until (groups.maxOfOrNull { it.second.size } ?: 0)).filter { column ->
+            val captions = groups.mapNotNull { (primary, auxiliaries) ->
+                auxiliaries.getOrNull(column)?.let { primary.text.orEmpty() to it }
+            }
+            val confirmed = captions.count { (text, caption) ->
+                isJapaneseRomanization(text, caption, hasJapaneseContext)
+            }
+            confirmed >= 2 && confirmed * 2 > captions.size
+        }.toSet()
+        val grouped = groups.map { (primary, auxiliaries) ->
+            val roles = auxiliaries.mapIndexed { column, auxiliary ->
+                isJapaneseRomanization(primary.text.orEmpty(), auxiliary, hasJapaneseContext,
+                    hasRomanizationColumn = column in romanizationColumns)
+            }
+            val romanizations = auxiliaries.filterIndexed { index, _ -> roles[index] }
+            val translations = auxiliaries.filterIndexed { index, _ -> !roles[index] }
+            primary.copy(
+                translation = translations.joinToString("\n").takeIf(String::isNotBlank),
+                translations = translations.map { caption ->
+                    LyricAuxiliaryText(caption, language = inferLrcCaptionLanguage(caption))
+                },
+                romanizations = romanizations.map { LyricAuxiliaryText(it, language = "ja-Latn") },
+            )
+        }
         return buildDocument(grouped, LyricsFormat.LRC, source, durationMs)
     }
 
-    /** LRC has no track roles; only recognize kana-backed, syllabic Japanese captions. */
-    private fun isJapaneseRomanization(primary: String, auxiliary: String): Boolean {
-        if (primary.none { it in '\u3041'..'\u3096' || it in '\u30A1'..'\u30FA' }) return false
-        if (auxiliary.any { it.isDigit() || it.isLetter() && it !in JAPANESE_ROMAN_LETTERS }) return false
-        val tokens = JAPANESE_ROMAN_TOKEN.findAll(auxiliary).map { it.value }.toList()
-        return tokens.size >= 3 && tokens.all { token ->
-            token.length <= 64 && JAPANESE_ROMAN_SYLLABLES.matches(token)
+    private fun String.normalizedCaption(): String =
+        Normalizer.normalize(this, Normalizer.Form.NFKC).filterNot(Char::isWhitespace)
+
+    /** Untyped LRC rows stay separate so AUTO can choose the system-language caption. */
+    private fun inferLrcCaptionLanguage(caption: String): String? {
+        val codePoints = caption.codePoints().toArray()
+        val hasKana = codePoints.any { code ->
+            val script = Character.UnicodeScript.of(code)
+            script == Character.UnicodeScript.HIRAGANA || script == Character.UnicodeScript.KATAKANA
         }
+        if (hasKana) return "ja"
+        if (codePoints.any { Character.UnicodeScript.of(it) == Character.UnicodeScript.HAN }) return "zh"
+        if (codePoints.any { Character.isLetter(it) } && codePoints.all { code ->
+                Character.UnicodeScript.of(code) == Character.UnicodeScript.LATIN ||
+                    Character.isWhitespace(code) || Character.getType(code) in setOf(
+                        Character.CONNECTOR_PUNCTUATION.toInt(), Character.DASH_PUNCTUATION.toInt(),
+                        Character.START_PUNCTUATION.toInt(), Character.END_PUNCTUATION.toInt(),
+                        Character.OTHER_PUNCTUATION.toInt(), Character.INITIAL_QUOTE_PUNCTUATION.toInt(),
+                        Character.FINAL_QUOTE_PUNCTUATION.toInt(),
+                    )
+            }) return "en"
+        return null
     }
 
-    /** 单行内翻译的最小分隔符：窄间隔 U+2009（thin space）。 */
+    /** LRC has no track roles; require Japanese source context and syllabic readings. */
+    private fun isJapaneseRomanization(
+        primary: String,
+        auxiliary: String,
+        hasJapaneseContext: Boolean = false,
+        hasRomanizationColumn: Boolean = false,
+    ): Boolean {
+        val normalizedPrimary = Normalizer.normalize(primary, Normalizer.Form.NFKC)
+        val hasKana = normalizedPrimary.any { it in '\u3041'..'\u3096' || it in '\u30A1'..'\u30FA' }
+        val hasKanji = normalizedPrimary.any { it in '\u3400'..'\u4DBF' || it in '\u4E00'..'\u9FFF' }
+        if (!hasKana && !(hasJapaneseContext && hasKanji)) return false
+        // Keep shared names and labels such as DAOKO, Produce and Soi.Co.Ltd as literals.
+        val literals = LATIN_LITERAL_TOKEN.findAll(normalizedPrimary).map { it.value.lowercase(Locale.ROOT) }.toSet()
+        val reading = LATIN_LITERAL_TOKEN.replace(Normalizer.normalize(auxiliary, Normalizer.Form.NFKC)) { token ->
+            if (token.value.lowercase(Locale.ROOT) in literals) " " else token.value
+        }.lowercase(Locale.ROOT)
+        if (reading.any { it.isDigit() || it.isLetter() && it !in JAPANESE_ROMAN_LETTERS }) return false
+        val tokens = JAPANESE_ROMAN_TOKEN.findAll(reading).map { it.value }.toList()
+        return tokens.isNotEmpty() && tokens.all { token ->
+            token.length <= 64 && JAPANESE_ROMAN_SYLLABLES.matches(token)
+        } && (tokens.size >= 3 || hasKana && matchesKanaReading(normalizedPrimary, tokens.joinToString("")) ||
+            hasKanji && hasRomanizationColumn)
+    }
+
+    /** Short roleless LRC captions require a matching kana reading, not just Latin letters. */
+    private fun matchesKanaReading(primary: String, reading: String): Boolean {
+        val kana = Normalizer.normalize(primary, Normalizer.Form.NFKC).filterNot { char ->
+            char.isWhitespace() || Character.getType(char) in setOf(
+                Character.START_PUNCTUATION.toInt(), Character.END_PUNCTUATION.toInt(),
+                Character.OTHER_PUNCTUATION.toInt(), Character.DASH_PUNCTUATION.toInt(),
+            )
+        }.map { if (it in '\u30A1'..'\u30F6') (it.code - 0x60).toChar() else it }.joinToString("")
+        val pattern = StringBuilder()
+        var offset = 0
+        while (offset < kana.length) {
+            if (kana[offset] == 'っ') {
+                val nextOffset = offset + 1
+                if (nextOffset >= kana.length) return false
+                val next = KANA_SHORT_READINGS[kana.substring(nextOffset, minOf(nextOffset + 2, kana.length))]
+                    ?: KANA_SHORT_READINGS[kana[nextOffset].toString()] ?: return false
+                val consonants = next.split('|').map { it.first() }.filter { it !in "aeiou" }.distinct()
+                if (consonants.isEmpty()) return false
+                pattern.append("(?:").append(consonants.flatMap { listOf(it.toString(), "'$it") }.joinToString("|"))
+                    .append(')')
+                offset++
+                continue
+            }
+            val pair = kana.substring(offset, minOf(offset + 2, kana.length))
+            val contracted = KANA_SHORT_READINGS[pair]
+            val syllable = contracted ?: KANA_SHORT_READINGS[kana[offset].toString()] ?: return false
+            val length = if (contracted != null && pair.length == 2) 2 else 1
+            val vowel = syllable.substringBefore('|').last()
+            val following = kana.getOrNull(offset + length)
+            val prolonged = following != null && (following == 'ー' ||
+                following == "あいうえお".getOrNull("aiueo".indexOf(vowel)) ||
+                following == 'う' && vowel in "ou" || following == 'い' && vowel in "ei")
+            val readingPattern = if (prolonged) {
+                val endings = when (vowel) {
+                    'a' -> "aa|ā|â"
+                    'i' -> "ii|ī|î"
+                    'u' -> "uu|ū|û"
+                    'e' -> "ei|ee|ē|ê"
+                    'o' -> "ou|oo|ō|ô"
+                    else -> return false
+                }
+                syllable.split('|').joinToString("|") { it.dropLast(1) + "(?:$endings)" }
+            } else syllable
+            pattern.append("(?:").append(readingPattern).append(')')
+            offset += length + if (prolonged) 1 else 0
+        }
+        return pattern.isNotEmpty() && Regex(pattern.toString()).matches(reading)
+    }
+
+    /** Thin space separates an inline caption; ordinary and full-width spaces remain pauses. */
     private const val INLINE_TRANSLATION_SEPARATOR = '\u2009'
 
-    /**
-     * 单行歌词内的翻译拆分：只认窄间隔 U+2009 作为原文/译文分界，
-     * 左侧原文、右侧译文；半角/全角空格是行内停顿，不拆。
-     */
+    /** Split before word parsing so auxiliary text and its timestamps never enter the reveal clock. */
     private fun splitInlineTranslation(text: String): Pair<String, String?> {
         val index = text.indexOf(INLINE_TRANSLATION_SEPARATOR)
         if (index <= 0 || index >= text.length - 1) return text to null
-        val main = text.substring(0, index).trim()
-        val sub = text.substring(index + 1).trim()
-        if (main.isEmpty() || sub.isEmpty()) return text to null
+        val main = text.substring(0, index)
+        val sub = text.substring(index + 1).replace(splInlineTimestamp, "").trim()
+        if (main.replace(splInlineTimestamp, "").isBlank() || sub.isEmpty()) return text to null
         return main to sub
     }
 
@@ -766,9 +873,34 @@ internal object LyricsParser {
     private val ttmlOffset = Regex("""^(\d+(?:\.\d+)?)(ms|s|m|h|f|t)$""")
     private val AUXILIARY_ROLES = setOf("x-translation", "x-roman", "x-bg")
     private const val JAPANESE_ROMAN_LETTERS = "abcdefghijklmnopqrstuvwxyzāīūēōâîûêô"
+    private val LATIN_LITERAL_TOKEN = Regex("""[A-Za-z][A-Za-z0-9]*(?:[.'-][A-Za-z0-9]+)*""")
     private val JAPANESE_ROMAN_TOKEN = Regex("""'?[a-zāīūēōâîûêô]+""")
     private val JAPANESE_ROMAN_SYLLABLES =
-        Regex("""(?:(?:sh|ch|ts|[bcdfghjklmpqrstvwxyz]y?)?[aeiouāīūēōâîûêô]|n|'[bcdfghjklmnpqrstvwxyz])+""")
+        Regex("""(?:(?:([bcdfghjklmpqrstvwxyz])\1y?|ssh|tch|cch|sh|ch|ts|[bcdfghjklmpqrstvwxyz]y?)?[aeiouāīūēōâîûêô]|n|'[bcdfghjklmnpqrstvwxyz])+""")
+    private val KANA_SHORT_READINGS = buildMap {
+        for ((kana, readings) in listOf(
+            "あいうえお" to "a i u e o", "かきくけこ" to "ka ki ku ke ko",
+            "がぎぐげご" to "ga gi gu ge go", "さしすせそ" to "sa shi|si su se so",
+            "ざじずぜぞ" to "za ji|zi zu ze zo", "たちつてと" to "ta chi|ti tsu|tu te to",
+            "だぢづでど" to "da ji|di zu|du de do", "なにぬねの" to "na ni nu ne no",
+            "はひふへほ" to "ha|wa hi fu|hu he|e ho", "ばびぶべぼ" to "ba bi bu be bo",
+            "ぱぴぷぺぽ" to "pa pi pu pe po", "まみむめも" to "ma mi mu me mo",
+            "やゆよ" to "ya yu yo", "らりるれろ" to "ra ri ru re ro", "わをん" to "wa wo|o n",
+        )) kana.toList().zip(readings.split(' ')).forEach { (char, roman) -> put(char.toString(), roman) }
+        for ((kana, consonant) in listOf("き" to "k", "ぎ" to "g", "し" to "sh|sy", "じ" to "j|zy",
+            "ち" to "ch|ty", "に" to "ny", "ひ" to "hy", "び" to "by", "ぴ" to "py",
+            "み" to "my", "り" to "ry")) {
+            for ((small, vowel) in listOf("ゃ" to "a", "ゅ" to "u", "ょ" to "o")) {
+                val prefix = if (kana == "き" || kana == "ぎ") consonant + "y" else consonant
+                put(kana + small, prefix.split('|').joinToString("|") { it + vowel })
+            }
+        }
+        putAll(mapOf("ふぁ" to "fa", "ふぃ" to "fi", "ふぇ" to "fe", "ふぉ" to "fo",
+            "てぃ" to "ti", "でぃ" to "di", "とぅ" to "tu", "どぅ" to "du",
+            "うぃ" to "wi", "うぇ" to "we", "うぉ" to "wo", "しぇ" to "she",
+            "ちぇ" to "che", "じぇ" to "je", "ゔ" to "vu", "ゔぁ" to "va",
+            "ゔぃ" to "vi", "ゔぇ" to "ve", "ゔぉ" to "vo"))
+    }
 
     private const val DEFAULT_AGENT = "main"
     private const val MAX_LYRICS_CHARS = 2 * 1024 * 1024

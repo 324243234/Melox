@@ -165,27 +165,45 @@ internal fun LyricsTranslationPreferences(
     onShowLyricsRomanizationChange: (Boolean) -> Unit,
     onLyricsTranslationLanguageChange: (LyricsTranslationLanguage) -> Unit,
     modifier: Modifier = Modifier,
+    cardColor: Color = MiuixTheme.colorScheme.surfaceContainer,
+    usePageMaterial: Boolean = true,
 ) {
-    Column(modifier = modifier.fillMaxWidth()) {
-        SwitchPreference(
-            title = stringResource(R.string.lyrics_translation),
-            checked = showLyricsTranslation,
-            onCheckedChange = onShowLyricsTranslationChange,
-        )
-        val translationLanguages = LyricsTranslationLanguage.entries
-        OverlayDropdownPreference(
-            title = stringResource(R.string.lyrics_translation_language),
-            items = translationLanguages.map { lyricsTranslationLanguageLabel(it) },
-            selectedIndex = translationLanguages.indexOf(lyricsTranslationLanguage),
-            enabled = showLyricsTranslation,
-            onSelectedIndexChange = { index ->
-                translationLanguages.getOrNull(index)?.let(onLyricsTranslationLanguageChange)
-            },
-        )
-        SwitchPreference(
-            title = stringResource(R.string.lyrics_romanization),
-            checked = showLyricsRomanization,
-            onCheckedChange = onShowLyricsRomanizationChange,
-        )
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.defaultColors(color = cardColor),
+            usePageMaterial = usePageMaterial,
+        ) {
+            SwitchPreference(
+                title = stringResource(R.string.lyrics_translation),
+                checked = showLyricsTranslation,
+                onCheckedChange = onShowLyricsTranslationChange,
+            )
+            val translationLanguages = LyricsTranslationLanguage.entries
+            OverlayDropdownPreference(
+                title = stringResource(R.string.lyrics_translation_language),
+                items = translationLanguages.map { lyricsTranslationLanguageLabel(it) },
+                selectedIndex = translationLanguages.indexOf(lyricsTranslationLanguage),
+                enabled = showLyricsTranslation,
+                onSelectedIndexChange = { index ->
+                    translationLanguages.getOrNull(index)?.let(onLyricsTranslationLanguageChange)
+                },
+            )
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.defaultColors(color = cardColor),
+            usePageMaterial = usePageMaterial,
+        ) {
+            SwitchPreference(
+                title = stringResource(R.string.lyrics_romanization),
+                checked = showLyricsRomanization,
+                onCheckedChange = onShowLyricsRomanizationChange,
+            )
+
+        }
     }
 }
