@@ -57,6 +57,7 @@ import androidx.lifecycle.compose.currentStateAsState
 import com.melox.player.model.LyricsTranslationLanguage
 import com.melox.player.model.LyricAnimationMode
 import com.melox.player.model.LyricLine
+import com.melox.player.model.LyricWord
 import com.melox.player.model.LyricsDocument
 import com.melox.player.model.LyricsUiState
 import com.melox.player.model.PlaybackUiState
@@ -70,6 +71,7 @@ internal const val COMPACT_LYRIC_SCROLL_MS = 600
 internal const val COMPACT_LYRIC_INACTIVE_ALPHA = 0.45f
 private val CompactLyricScrollEasing = Easing { 1f - (1f - it) * (1f - it) }
 private val CompactArtworkMotion = spring<Dp>(dampingRatio = 1f, stiffness = 350f)
+private val CompactLyricHorizontalEdgeFadeWidth = 6.dp
 
 internal fun compactLyricsDocument(lyrics: LyricsUiState, mediaId: String?): LyricsDocument? {
     val available = lyrics as? LyricsUiState.Available ?: return null
@@ -100,16 +102,22 @@ internal fun compactLyricAuxiliaryText(
     translationLanguage: LyricsTranslationLanguage = LyricsTranslationLanguage.AUTO,
     appLanguageTag: String = "en",
 ): List<String> = listOfNotNull(
-    line.romanization?.takeIf { showRomanization && it.isNotBlank() },
+    lyricPhonetics(line).standaloneRomanization?.takeIf { showRomanization && it.isNotBlank() },
     line.translationFor(translationLanguage, appLanguageTag)?.takeIf { showTranslation && it.isNotBlank() },
 ).flatMap { caption -> caption.lines().map(String::trim).filter(String::isNotEmpty) }
 
 internal fun compactLyricSingleLine(line: LyricLine): LyricLine {
-    if (line.displayText.none { it == '\r' || it == '\n' }) return line
     fun String.singleLine() = replace("\r\n", " ").replace('\r', ' ').replace('\n', ' ')
+    fun LyricWord.singleLine() = copy(
+        text = text.singleLine(),
+        ruby = ruby.map { it.copy(text = it.text.singleLine()) },
+    )
     return line.copy(
         text = line.text?.singleLine(),
-        words = line.words.map { it.copy(text = it.text.singleLine()) },
+        words = line.words.map { it.singleLine() },
+        romanizations = line.romanizations.map { track ->
+            track.copy(text = track.text.singleLine(), words = track.words.map { it.singleLine() })
+        },
     )
 }
 
@@ -363,6 +371,7 @@ internal fun PortraitArtworkWithLyrics(
         LyricContentTransition(
             lyrics = displayedLyrics,
             modifier = Modifier.align(Alignment.TopCenter).width(contentWidth)
+                .expandLeftForMarquee(CompactLyricHorizontalEdgeFadeWidth)
                 .height(geometry.lyricsHeight).offset(y = geometry.lyricsTop),
         ) { frame, _, target ->
             val document = frame?.document
@@ -437,8 +446,9 @@ private fun CompactLyricsViewport(
         key(row) {
             val line = lines[row]
             val captions = auxiliary[row - visibleRows.first]
-            remember(line, captions, primaryStyle, auxiliaryStyle, density, measurer) {
-                val original = compactLyricSingleLine(line).animationWords().joinToString("") {
+            remember(line, captions, primaryStyle, auxiliaryStyle, showRomanization, density, measurer) {
+                val singleLine = compactLyricSingleLine(line)
+                val original = singleLine.animationWords().joinToString("") {
                     it.text + if (it.hasTrailingSpace) " " else ""
                 }
                 val primaryHeight = measurer.measure(original, primaryStyle.copy(lineHeightStyle = LyricLineHeightStyle),
@@ -447,7 +457,10 @@ private fun CompactLyricsViewport(
                     measurer.measure(caption, auxiliaryStyle.copy(lineHeightStyle = LyricLineHeightStyle),
                         softWrap = false).size.height
                 }
-                with(density) { (primaryHeight + auxiliaryHeight).toDp() }
+                val annotationHeight = if (showRomanization) {
+                    compactLyricAnnotationHeight(singleLine, primaryStyle, auxiliaryStyle, measurer, density)
+                } else 0
+                with(density) { (primaryHeight + annotationHeight + auxiliaryHeight).toDp() }
             }
         }
     }
@@ -455,6 +468,7 @@ private fun CompactLyricsViewport(
         with(density) { compactLyricRowCenters(rowHeights.map { it.toPx() }, 6.dp.toPx()) }
     }
     val edgeFade = with(density) { 4.dp.toPx() }
+    val horizontalFade = with(density) { CompactLyricHorizontalEdgeFadeWidth.toPx() }
     val auxiliaryColor = color.copy(alpha = lyricTranslationAlpha(1f))
     val hasTimedWords = remember(lines) { lines.any { it.words.isNotEmpty() } }
     BoxWithConstraints(
@@ -464,6 +478,9 @@ private fun CompactLyricsViewport(
                 val edge = (edgeFade / size.height.coerceAtLeast(1f)).coerceAtMost(0.5f)
                 drawRect(Brush.verticalGradient(0f to Color.Transparent, edge to Color.Black,
                     1f - edge to Color.Black, 1f to Color.Transparent), blendMode = BlendMode.DstIn)
+                val horizontalEdge = (horizontalFade / size.width.coerceAtLeast(1f)).coerceIn(0f, 0.18f)
+                drawRect(Brush.horizontalGradient(0f to Color.Transparent, horizontalEdge to Color.Black,
+                    1f - horizontalEdge to Color.Black, 1f to Color.Transparent), blendMode = BlendMode.DstIn)
             },
     ) {
         val viewportHeight = with(density) { maxHeight.toPx() }
@@ -491,6 +508,8 @@ private fun CompactLyricsViewport(
                     CompactTimedLyricLine(line, primaryStyle, rowColor, time, animationMode, hasTimedWords,
                         modifier = Modifier.fillMaxWidth(), centered = centered, focused = focused,
                         activeOpacityLimit = if (focused) activeLyricAlpha else 1f,
+                        textStartPadding = CompactLyricHorizontalEdgeFadeWidth,
+                        phoneticStyle = auxiliaryStyle.takeIf { showRomanization },
                         resetKey = playback.playbackIteration to playback.positionDiscontinuityRevision)
                     auxiliary[localRow].forEach { text ->
                         CompactAuxiliaryLine(line, text, auxiliaryStyle, auxiliaryColor, time, focused, centered)
@@ -507,5 +526,6 @@ private fun CompactAuxiliaryLine(line: LyricLine, text: String, style: TextStyle
 ) {
     val auxiliary = remember(line, text) { line.copy(text = text, words = emptyList()) }
     CompactTimedLyricLine(auxiliary, style, color, time, LyricAnimationMode.NEVER, false,
-        modifier = Modifier.fillMaxWidth(), centered = centered, focused = focused)
+        modifier = Modifier.fillMaxWidth(), centered = centered, focused = focused,
+        textStartPadding = CompactLyricHorizontalEdgeFadeWidth)
 }

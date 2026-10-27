@@ -1774,7 +1774,7 @@ private fun Modifier.playerHeaderEdgeMask(): Modifier = this
         )
     }
 
-private fun Modifier.expandLeftForMarquee(extra: Dp): Modifier = layout { measurable, constraints ->
+internal fun Modifier.expandLeftForMarquee(extra: Dp): Modifier = layout { measurable, constraints ->
     val extraPx = extra.roundToPx()
     val expandedConstraints = constraints.copy(
         minWidth = constraints.minWidth + extraPx,

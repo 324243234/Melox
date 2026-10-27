@@ -1425,6 +1425,30 @@ private fun AuxiliaryLyricText(
     }
 }
 
+/** Measure the same unbounded caption groups used by the compact renderer. */
+internal fun compactLyricAnnotationHeight(
+    line: LyricLine,
+    style: TextStyle,
+    phoneticStyle: TextStyle,
+    measurer: TextMeasurer,
+    density: androidx.compose.ui.unit.Density,
+): Int {
+    val annotations = lyricPhonetics(line)
+    if (!annotations.hasAnnotations) return 0
+    var offset = 0
+    val sources = line.animationWords().map { word ->
+        val start = offset
+        offset += word.text.length + if (word.hasTrailingSpace) 1 else 0
+        ParagraphSource(word, start, offset)
+    }
+    val text = sources.joinToString("") { it.word.text + if (it.word.hasTrailingSpace) " " else "" }
+    val layout = measurer.measure(text, style.copy(lineHeightStyle = LyricLineHeightStyle), softWrap = false)
+    val captions = paragraphCaptions(paragraphClusters(layout, text), sources, annotations, text,
+        measurer, phoneticStyle, Constraints.Infinity)
+    val height = captions.maxOfOrNull { it.layout.size.height } ?: return 0
+    return ceil(height + with(density) { (4f * style.fontSize.value / LYRIC_PRIMARY_FONT_SIZE_SP).dp.toPx() }).toInt()
+}
+
 @Composable
 internal fun CompactTimedLyricLine(
     line: LyricLine,
@@ -1440,11 +1464,12 @@ internal fun CompactTimedLyricLine(
     resetKey: Any? = null,
     textStartPadding: Dp = 0.dp,
     textBaseline: Dp? = null,
+    phoneticStyle: TextStyle? = null,
 ) {
     val density = LocalDensity.current
     val direction = LocalLayoutDirection.current
     val measurer = rememberTextMeasurer()
-    val cache = remember(style, color, density, direction) { PreparedLyricLineCache() }
+    val cache = remember(style, phoneticStyle, color, density, direction) { PreparedLyricLineCache(phoneticStyle) }
     val singleLine = remember(line) { compactLyricSingleLine(line) }
     val prepared = remember(cache, singleLine) {
         cache.prepare(singleLine, Float.MAX_VALUE, measurer, style, color, density, direction,
@@ -1485,9 +1510,16 @@ internal fun CompactTimedLyricLine(
                     val offset = scroll.update(target, position, size.width, row.width,
                         smooth = durationScale?.scaleFactor != 0f)
                     clipRect {
+                        val annotationHeight = if (row.phonetics.isEmpty()) 0f
+                            else row.phoneticHeight + prepared.phoneticGap
                         val textTop = textBaselinePx?.minus(preparedBaseline)
                             ?: ((size.height - prepared.heightPx) / 2f)
                         translate(offset, textTop) {
+                            drawLyricPhonetics(row, color.copy(alpha = color.alpha *
+                                lyricTranslationAlpha(1f) * activeOpacityLimit),
+                                if (usesWordProgress && focused) position else null, row.width)
+                        }
+                        translate(offset, textTop + annotationHeight) {
                             drawLyricsLine(
                                 rows = prepared.rows,
                                 canvasWidth = row.width,
@@ -1672,39 +1704,49 @@ private fun InlineLyricPhonetics(
         .graphicsLayer { alpha = motion.opacity.value },
     ) {
         val offset = playerTextAlignmentOffset(row.minX, row.maxX, size.width, alignmentProgress.value, endAligned)
-        val time = latestTime.value()
-        for (caption in row.phonetics) {
-            val position = caption.position + Offset(offset, 0f)
-            if (time == null) {
-                drawText(caption.layout, color, topLeft = position)
-            } else {
-                // Pronunciation follows its source timing, without inheriting glyph motion.
-                val path = caption.revealPath
-                path.reset()
-                var unstarted = true
-                var completed = true
-                for (revealRow in caption.revealRows) {
-                    val progress = revealRow.progressAt(time)
-                    unstarted = unstarted && progress <= 0f
-                    completed = completed && progress >= 1f
-                    if (progress >= 1f) {
-                        // Completed tracks retain horizontal ink overhang while other tracks sing.
-                        path.addRect(Rect(-size.width, revealRow.top, size.width * 2f, revealRow.bottom))
-                    } else {
-                        for (bounds in lyricRevealClipRects(revealRow.pieces, progress,
-                            revealRow.top, revealRow.bottom)) path.addRect(bounds)
-                    }
+        drawLyricPhonetics(row, color, latestTime.value(), size.width, offset)
+    }
+}
+
+/** Both lyric surfaces share authored pronunciation timing and reveal masks. */
+private fun DrawScope.drawLyricPhonetics(
+    row: RowRenderData,
+    color: Color,
+    time: Long?,
+    viewportWidth: Float,
+    offset: Float = 0f,
+) {
+    for (caption in row.phonetics) {
+        val position = caption.position + Offset(offset, 0f)
+        if (time == null) {
+            drawText(caption.layout, color, topLeft = position)
+        } else {
+            // Pronunciation follows its source timing, without inheriting glyph motion.
+            val path = caption.revealPath
+            path.reset()
+            var unstarted = true
+            var completed = true
+            for (revealRow in caption.revealRows) {
+                val progress = revealRow.progressAt(time)
+                unstarted = unstarted && progress <= 0f
+                completed = completed && progress >= 1f
+                if (progress >= 1f) {
+                    // Completed tracks retain horizontal ink overhang while other tracks sing.
+                    path.addRect(Rect(-viewportWidth, revealRow.top, viewportWidth * 2f, revealRow.bottom))
+                } else {
+                    for (bounds in lyricRevealClipRects(revealRow.pieces, progress,
+                        revealRow.top, revealRow.bottom)) path.addRect(bounds)
                 }
-                if (unstarted || completed) {
-                    drawText(caption.layout, if (completed) color
-                        else color.copy(alpha = color.alpha * LYRIC_INACTIVE_TEXT_ALPHA), topLeft = position)
-                    continue
-                }
-                translate(position.x, position.y) {
-                    clipPath(path) { drawText(caption.layout, color) }
-                    clipPath(path, ClipOp.Difference) {
-                        drawText(caption.layout, color.copy(alpha = color.alpha * LYRIC_INACTIVE_TEXT_ALPHA))
-                    }
+            }
+            if (unstarted || completed) {
+                drawText(caption.layout, if (completed) color
+                    else color.copy(alpha = color.alpha * LYRIC_INACTIVE_TEXT_ALPHA), topLeft = position)
+                continue
+            }
+            translate(position.x, position.y) {
+                clipPath(path) { drawText(caption.layout, color) }
+                clipPath(path, ClipOp.Difference) {
+                    drawText(caption.layout, color.copy(alpha = color.alpha * LYRIC_INACTIVE_TEXT_ALPHA))
                 }
             }
         }

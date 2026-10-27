@@ -7,6 +7,8 @@ import androidx.compose.runtime.mutableStateOf
 import com.melox.player.model.LyricLine
 import com.melox.player.model.LyricAuxiliaryText
 import com.melox.player.model.LyricWord
+import com.melox.player.model.LyricRuby
+import com.melox.player.data.lyrics.LyricsParser
 import com.melox.player.model.LyricsDocument
 import com.melox.player.model.LyricsFormat
 import com.melox.player.model.LyricsSource
@@ -16,6 +18,7 @@ import com.melox.player.ui.screen.playback.compactLyricsDocument
 import com.melox.player.ui.screen.playback.compactPrimaryLines
 import com.melox.player.ui.screen.playback.compactLyricAuxiliaryText
 import com.melox.player.ui.screen.playback.compactLyricSingleLine
+import com.melox.player.ui.screen.playback.lyricPhonetics
 import com.melox.player.ui.screen.playback.compactLyricRowCenters
 import com.melox.player.ui.screen.playback.compactLyricIndexAtPosition
 import com.melox.player.ui.screen.playback.compactLyricScrollTarget
@@ -201,6 +204,32 @@ class LyricPlaybackClockTest {
             val nextTop = centers[index] - heights[index] / 2f
             assertEquals(6f, nextTop - previousBottom, 0f)
         }
+    }
+
+    @Test
+    fun compactLyricsKeepMappedPronunciationAboveAndUnmappedCaptionsBelow() {
+        val document = LyricsParser.parse("""
+            <tt xmlns="http://www.w3.org/ns/ttml" xmlns:i="http://music.apple.com/lyric-ttml-internal">
+            <head><metadata><i:transliterations><i:transliteration xml:lang="ja-Latn">
+            <i:text for="L10"><span begin="1s" end="2s">mai</span><span begin="2s" end="3s">a</span><span begin="3s" end="4s">ge,</span></i:text>
+            </i:transliteration></i:transliterations></metadata></head>
+            <body><div><p begin="1s" end="4s" i:key="L10"><span begin="1s" end="2s">舞い</span><span begin="2s" end="3s">上</span><span begin="3s" end="4s">げ、</span></p></div></body></tt>
+        """.trimIndent(), LyricsSource.SIDECAR)!!
+        val line = document.lines.single().copy(translation = "Translation")
+        assertEquals(listOf("mai", "a", "ge,"), lyricPhonetics(compactLyricSingleLine(line)).words)
+        assertEquals(listOf("Translation"), compactLyricAuxiliaryText(line, true, true))
+        val mixed = line.copy(romanizations = line.romanizations + LyricAuxiliaryText("mai a ge"))
+        assertEquals(listOf("mai a ge", "Translation"), compactLyricAuxiliaryText(mixed, true, true))
+        assertEquals(listOf("Translation"), compactLyricAuxiliaryText(mixed, true, false))
+        val untimed = line.copy(romanizations = line.romanizations.map { it.copy(words = emptyList()) })
+        assertFalse(lyricPhonetics(untimed).hasAnnotations)
+        assertEquals(listOf("maiage,", "Translation"), compactLyricAuxiliaryText(untimed, true, true))
+        val ruby = line.copy(romanizations = emptyList(), words = listOf(
+            LyricWord(1_000, 4_000, "今日", false, listOf(LyricRuby("kyou\n", 1_000, 4_000)))))
+        val flattened = compactLyricSingleLine(ruby)
+        assertEquals(listOf("kyou "), lyricPhonetics(flattened).words)
+        assertEquals(listOf("Translation"), compactLyricAuxiliaryText(flattened, true, true))
+        assertEquals(ruby.words.single().ruby.single().startTimeMs, flattened.words.single().ruby.single().startTimeMs)
     }
 
     @Test
