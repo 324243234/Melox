@@ -26,7 +26,7 @@ import com.melox.player.ui.screen.playback.PLAYER_ARTWORK_PLAYING_PADDING
 import com.melox.player.ui.screen.playback.PLAYER_ARTWORK_VERTICAL_FOOTPRINT_EXPANSION
 import com.melox.player.ui.screen.playback.lyricPlaybackPositionMs
 import com.melox.player.ui.screen.playback.stabilizedLyricPlaybackPositionMs
-import com.melox.player.ui.screen.playback.rememberLyricDocumentTransition
+import com.melox.player.ui.screen.playback.rememberRetainedLyricDocument
 import com.melox.player.ui.screen.playback.rememberCompactArtworkLyricsPresence
 import com.melox.player.ui.screen.playback.fitPlayerArtworkSize
 import kotlinx.coroutines.runBlocking
@@ -80,86 +80,53 @@ class LyricPlaybackClockTest {
     }
 
     @Test
-    fun lyricDocumentTransitionsRetainContentForFadeOutAndFadeInAfterLoading() = runBlocking {
+    fun lyricLoadingRetainsTheOldDocumentUntilItsReplacementIsActuallyAvailable() = runBlocking {
         val first = LyricsUiState.Available(
             LyricsDocument(listOf(LyricLine("main", 0, 1_000, "First", emptyList(), null)),
                 LyricsFormat.LRC, LyricsSource.SIDECAR), "first")
-        val second = first.copy(document = first.document.copy(
-            lines = first.document.lines.map { it.copy(text = "Second") }), mediaId = "second")
+        val second = first.copy(mediaId = "second")
         val input = mutableStateOf<LyricsUiState>(first)
         var displayed: LyricsUiState.Available? = null
-        lateinit var alpha: State<Float>
         withArtworkComposition(content = {
-            val transition = rememberLyricDocumentTransition(input.value)
-            SideEffect { displayed = transition.first; alpha = transition.second }
+            val retained = rememberRetainedLyricDocument(input.value)
+            SideEffect { displayed = retained }
         }) {
             frame(0)
             assertEquals(first, displayed)
-            assertEquals(0f, alpha.value, 0f)
-            frame(120)
-            assertTrue(alpha.value > 0f && alpha.value < 1f)
-            frame(240)
-            assertEquals(1f, alpha.value, 0f)
-
             input.value = LyricsUiState.Loading
-            frame(256)
-            frame(346)
+            frame(16)
+            frame(500)
             assertEquals(first, displayed)
-            assertTrue(alpha.value > 0f && alpha.value < 1f)
-            frame(436)
-            assertEquals(0f, alpha.value, 0f)
-
             input.value = second
-            frame(452)
+            frame(516)
             assertEquals(second, displayed)
-            assertEquals(0f, alpha.value, 0f)
-            frame(572)
-            assertTrue(alpha.value > 0f && alpha.value < 1f)
-            frame(692)
-            assertEquals(1f, alpha.value, 0f)
-
             input.value = LyricsUiState.Unavailable
-            frame(708)
-            frame(798)
-            assertEquals(second, displayed)
-            assertTrue(alpha.value > 0f && alpha.value < 1f)
-            frame(888)
+            frame(532)
             assertNull(displayed)
-            assertEquals(0f, alpha.value, 0f)
+            input.value = LyricsUiState.Loading
+            frame(548)
+            assertNull(displayed)
         }
     }
 
     @Test
-    fun interruptedLyricReplacementFadesOnlyIntoTheLatestSong() = runBlocking {
-        val document = LyricsDocument(emptyList(), LyricsFormat.LRC, LyricsSource.SIDECAR)
-        val first = LyricsUiState.Available(document, "first")
+    fun coalescedLyricLoadsPresentTheLatestConfirmedDocumentWithoutAnEmptyTarget() = runBlocking {
+        val first = LyricsUiState.Available(LyricsDocument(emptyList(), LyricsFormat.LRC, LyricsSource.SIDECAR), "first")
         val input = mutableStateOf<LyricsUiState>(first)
-        var displayed: LyricsUiState.Available? = null
-        lateinit var alpha: State<Float>
-        val visibleSongs = mutableListOf<String?>()
+        val observed = mutableListOf<String?>()
         withArtworkComposition(content = {
-            val transition = rememberLyricDocumentTransition(input.value)
-            SideEffect {
-                displayed = transition.first
-                alpha = transition.second
-                visibleSongs += displayed?.mediaId
-            }
+            val retained = rememberRetainedLyricDocument(input.value)
+            SideEffect { observed += retained?.mediaId }
         }) {
             frame(0)
-            frame(240)
+            input.value = LyricsUiState.Loading
+            frame(16)
             input.value = first.copy(mediaId = "skipped")
-            frame(256)
-            frame(346)
-            assertEquals(first, displayed)
-            assertTrue(alpha.value > 0f && alpha.value < 1f)
             input.value = first.copy(mediaId = "latest")
-            frame(362)
-            frame(542)
-            assertEquals("latest", displayed?.mediaId)
-            assertEquals(0f, alpha.value, 0f)
-            frame(782)
-            assertEquals(1f, alpha.value, 0f)
-            assertFalse("skipped" in visibleSongs)
+            frame(32)
+            assertEquals("latest", observed.last())
+            assertFalse("skipped" in observed)
+            assertFalse(null in observed)
         }
     }
 

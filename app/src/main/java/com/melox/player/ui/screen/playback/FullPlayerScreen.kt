@@ -701,6 +701,7 @@ internal fun FullPlayerScreen(
                                         SyncedLyrics(
                                             activeLyricAlpha = activeLyricAlpha,
                                             lyrics = lyrics,
+                                            currentMediaId = playback.currentItem?.mediaId,
                                             positionMs = playback.positionMs,
                                             positionUpdateElapsedRealtimeMs =
                                                 playback.positionUpdateElapsedRealtimeMs,
@@ -808,6 +809,7 @@ internal fun FullPlayerScreen(
                                         SyncedLyrics(
                                             activeLyricAlpha = activeLyricAlpha,
                                             lyrics = lyrics,
+                                            currentMediaId = playback.currentItem?.mediaId,
                                             positionMs = playback.positionMs,
                                             positionUpdateElapsedRealtimeMs =
                                                 playback.positionUpdateElapsedRealtimeMs,
@@ -920,6 +922,7 @@ internal fun FullPlayerScreen(
                                     activeLyricAlpha = activeLyricAlpha,
                                     pagerState = pagerState,
                                     lyrics = lyrics,
+                                    currentMediaId = playback.currentItem?.mediaId,
                                     positionMs = playback.positionMs,
                                     positionUpdateElapsedRealtimeMs =
                                         playback.positionUpdateElapsedRealtimeMs,
@@ -1066,6 +1069,7 @@ internal fun FullPlayerScreen(
                                             activeLyricAlpha = activeLyricAlpha,
                                             pagerState = pagerState,
                                             lyrics = lyrics,
+                                            currentMediaId = playback.currentItem?.mediaId,
                                             positionMs = playback.positionMs,
                                             positionUpdateElapsedRealtimeMs =
                                                 playback.positionUpdateElapsedRealtimeMs,
@@ -1083,16 +1087,14 @@ internal fun FullPlayerScreen(
                                             lyricsPagingEnabled = lyricsPagingEnabled,
                                             lyricFontScale = displayedLyricFontScale,
                                             lyricFontWeight = displayedLyricFontWeight,
-                                            lyricAnimationMode =
-                                                displayedLyricAnimationMode,
+                                            lyricAnimationMode = displayedLyricAnimationMode,
                                             lyricBlurEnabled = displayedLyricBlurEnabled,
                                             centerLyrics = displayedCenterLyrics,
                                             lyricCenterOffsetY =
                                                 portraitHeaderHeight + (artworkHeight - maxHeight) / 2f,
                                             showLyricsTranslation =
                                                 displayedShowLyricsTranslation,
-                                            showLyricsRomanization =
-                                                displayedShowLyricsRomanization,
+                                            showLyricsRomanization = displayedShowLyricsRomanization,
                                             lyricsTranslationLanguage = displayedLyricsTranslationLanguage,
                                             showBottomFade = true,
                                             resumeFollowRequestKey = lyricsFollowRequestKey,

@@ -1,6 +1,12 @@
 package com.melox.player
 
 import androidx.compose.runtime.BroadcastFrameClock
+import androidx.compose.animation.core.TargetBasedAnimation
+import androidx.compose.animation.core.VectorConverter
+import com.melox.player.ui.screen.playback.lyricContentEnterSpec
+import com.melox.player.ui.screen.playback.lyricContentExitSpec
+import com.melox.player.ui.screen.playback.LYRIC_CONTENT_MIN_SCALE
+import com.melox.player.ui.component.playback.PLAYBACK_BACKGROUND_TRANSITION_DURATION_MILLIS
 import androidx.compose.ui.MotionDurationScale
 import com.melox.player.ui.screen.playback.LyricTranslationMotion
 import com.melox.player.ui.screen.playback.lyricTranslationPaddingDp
@@ -16,6 +22,45 @@ import org.junit.Test
 private class TranslationTestDurationScale(override val scaleFactor: Float) : MotionDurationScale
 
 class LyricTranslationMotionTest {
+    @Test
+    fun firstLyricsEnterImmediatelyWithoutWaitingForAnOutgoingDocument() {
+        val enter = TargetBasedAnimation(lyricContentEnterSpec(fromEmpty = true), Float.VectorConverter, 0f, 1f)
+        assertEquals(PLAYBACK_BACKGROUND_TRANSITION_DURATION_MILLIS * 1_000_000L, enter.durationNanos)
+        assertTrue(enter.getValueFromNanos(20_000_000) > 0f)
+        assertEquals(1f, enter.getValueFromNanos(400_000_000), 0f)
+    }
+
+    @Test
+    fun lyricFadesMatchTheBackgroundDurationAndOverlapWithoutAnEmptyFrame() {
+        val enter = TargetBasedAnimation(lyricContentEnterSpec(), Float.VectorConverter, 0f, 1f)
+        val exit = TargetBasedAnimation(lyricContentExitSpec(), Float.VectorConverter, 1f, 0f)
+        assertEquals(PLAYBACK_BACKGROUND_TRANSITION_DURATION_MILLIS * 1_000_000L, enter.durationNanos)
+        assertEquals(1f, exit.getValueFromNanos(0), 0f)
+        assertEquals(0f, enter.getValueFromNanos(0), 0f)
+        assertEquals(0f, enter.getValueFromNanos(150_000_000), 0f)
+        assertTrue(enter.getValueFromNanos(151_000_000) > 0f)
+        assertTrue(exit.getValueFromNanos(249_000_000) > 0f)
+        assertEquals(0f, exit.getValueFromNanos(250_000_000), 0f)
+        assertEquals(1f, enter.getValueFromNanos(400_000_000), 0f)
+        assertTrue(exit.getValueFromNanos(200_000_000) > 0f)
+        assertTrue(enter.getValueFromNanos(200_000_000) > 0f)
+        for (ms in 0..400) {
+            assertTrue("Empty lyric frame at $ms ms",
+                exit.getValueFromNanos(ms * 1_000_000L) + enter.getValueFromNanos(ms * 1_000_000L) > 0f)
+        }
+    }
+
+    @Test
+    fun lyricScaleMovesBetweenNinetyTwoPercentAndFullSizeOnTheSameFadeTimeline() {
+        val enter = TargetBasedAnimation(lyricContentEnterSpec(), Float.VectorConverter, LYRIC_CONTENT_MIN_SCALE, 1f)
+        val exit = TargetBasedAnimation(lyricContentExitSpec(), Float.VectorConverter, 1f, LYRIC_CONTENT_MIN_SCALE)
+        assertEquals(0.92f, enter.getValueFromNanos(0), 0f)
+        assertEquals(0.92f, exit.getValueFromNanos(250_000_000), 0f)
+        assertEquals(1f, enter.getValueFromNanos(400_000_000), 0f)
+        assertTrue(enter.getValueFromNanos(200_000_000) in 0.92f..1f)
+        assertTrue(exit.getValueFromNanos(200_000_000) in 0.92f..1f)
+    }
+
     private val clock = BroadcastFrameClock()
     private var time = 0L
 

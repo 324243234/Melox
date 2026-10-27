@@ -335,15 +335,7 @@ internal fun PortraitArtworkWithLyrics(
         else -> LyricsUiState.Loading
     }
     val reserveLyrics = rememberCompactArtworkLyricsPresence(incomingLyrics)
-    val (displayedLyrics, lyricsAlpha) = rememberLyricDocumentTransition(incomingLyrics)
-    val document = displayedLyrics?.document
-    val lines = remember(document) { compactPrimaryLines(document) }
-    val currentDocument = displayedLyrics != null && displayedLyrics == incomingLyrics
-    var retainedPlayback by remember(displayedLyrics) { mutableStateOf(playback) }
-    if (currentDocument) SideEffect { retainedPlayback = playback }
-    // Retain the outgoing song's last sample only for its fade, without following the new song's clock.
-    val renderPlayback = if (currentDocument) playback else retainedPlayback.copy(isPlaying = false)
-    val renderActive = active && currentDocument
+    val displayedLyrics = rememberRetainedLyricDocument(incomingLyrics)
     val lyricFontFamily = rememberLyricFontFamily(lyricFontWeight)
     val primaryStyle = MiuixTheme.textStyles.footnote1.copy(
         fontSize = 14.sp,
@@ -351,6 +343,7 @@ internal fun PortraitArtworkWithLyrics(
         fontFamily = lyricFontFamily,
         fontWeight = FontWeight(lyricFontWeight.coerceIn(1, 1000)),
         fontSynthesis = FontSynthesis.None,
+        lineHeightStyle = LyricLineHeightStyle,
     )
     val auxiliaryStyle = primaryStyle.copy(fontSize = 12.sp, lineHeight = 16.sp)
     BoxWithConstraints(modifier = modifier) {
@@ -367,24 +360,33 @@ internal fun PortraitArtworkWithLyrics(
                 .offset(y = artworkTop),
             contentAlignment = Alignment.Center,
         ) { artworkContent(maxHeight) }
-        if (document != null && lines.isNotEmpty()) {
-            val time = rememberCompactLyricTime(document, renderPlayback, renderActive,
-                previewPositionMs.takeIf { currentDocument })
-            val frozenTime = remember(displayedLyrics, currentDocument) {
-                if (currentDocument) null else time()
-            }
-            val renderTime = remember(time, frozenTime) {
-                if (frozenTime == null) time else { { frozenTime } }
-            }
-            key(displayedLyrics) {
+        LyricContentTransition(
+            lyrics = displayedLyrics,
+            modifier = Modifier.align(Alignment.TopCenter).width(contentWidth)
+                .height(geometry.lyricsHeight).offset(y = geometry.lyricsTop),
+        ) { frame, _, target ->
+            val document = frame?.document
+            val lines = remember(document) { compactPrimaryLines(document) }
+            val currentDocument = target && frame != null && frame == incomingLyrics
+            var retainedPlayback by remember(frame) { mutableStateOf(playback) }
+            if (currentDocument) SideEffect { retainedPlayback = playback }
+            val renderPlayback = if (currentDocument) playback else retainedPlayback.copy(isPlaying = false)
+            val renderActive = active && currentDocument
+            if (document != null && lines.isNotEmpty()) {
+                val time = rememberCompactLyricTime(document, renderPlayback, renderActive,
+                    previewPositionMs.takeIf { currentDocument })
+                val frozenTime = remember(frame, currentDocument) {
+                    if (currentDocument) null else time()
+                }
+                val renderTime = remember(time, frozenTime) {
+                    if (frozenTime == null) time else { { frozenTime } }
+                }
                 CompactLyricsViewport(
-                    lines, renderPlayback, renderTime, active, currentDocument && previewPositionMs != null, primaryStyle,
-                    auxiliaryStyle, showTranslation, showRomanization, centerLyrics, animationMode, color,
+                    lines, renderPlayback, renderTime, renderActive, currentDocument && previewPositionMs != null,
+                    primaryStyle, auxiliaryStyle, showTranslation, showRomanization, centerLyrics, animationMode, color,
                     translationLanguage = translationLanguage,
                     activeLyricAlpha = activeLyricAlpha,
-                    modifier = Modifier.align(Alignment.TopCenter).width(contentWidth)
-                        .height(geometry.lyricsHeight).offset(y = geometry.lyricsTop)
-                        .graphicsLayer { alpha = lyricsAlpha.value },
+                    modifier = Modifier.fillMaxWidth().height(geometry.lyricsHeight),
                 )
             }
         }

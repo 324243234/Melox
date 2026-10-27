@@ -497,6 +497,8 @@ internal fun rememberSmoothLyricTimeProvider(
     return remember(smoothPositionMs) { { smoothPositionMs.doubleValue.roundToLong() } }
 }
 
+internal data class LyricBrowseAnchor(val index: Int, val offset: Int)
+
 @Composable
 internal fun LyricsView(
     document: LyricsDocument,
@@ -529,6 +531,9 @@ internal fun LyricsView(
     lyricsTranslationLanguage: LyricsTranslationLanguage = LyricsTranslationLanguage.AUTO,
     applyEdgeFade: Boolean = true,
     annotationLayout: Boolean? = null,
+    annotationFrameTarget: Boolean = true,
+    initialBrowseAnchor: LyricBrowseAnchor? = null,
+    onBrowseAnchorChange: (LyricBrowseAnchor?) -> Unit = {},
 ) {
     val appLanguageTag = LocalConfiguration.current.locales[0].toLanguageTag()
     val selectedTranslations = remember(document, lyricsTranslationLanguage, appLanguageTag) {
@@ -538,7 +543,7 @@ internal fun LyricsView(
     val documentHasTimedWords = remember(document) {
         document.lines.any { it.words.isNotEmpty() }
     }
-    val listState = rememberLazyListState()
+    val listState = rememberLazyListState(initialBrowseAnchor?.index ?: 0, initialBrowseAnchor?.offset ?: 0)
     val currentTimeProvider = rememberSmoothLyricTimeProvider(
         document = document,
         positionMs = positionMs,
@@ -587,7 +592,7 @@ internal fun LyricsView(
         derivedStateOf { document.playbackFrame(lyricTimeProvider()).anchorIndex }
     }
     val activeLineIndices = playbackFrame.activeLineIndices
-    var isUserBrowsingLyrics by remember(document) { mutableStateOf(false) }
+    var isUserBrowsingLyrics by remember(document) { mutableStateOf(initialBrowseAnchor != null) }
     var outgoingSeekPositions by remember(document) { mutableStateOf(emptyMap<Int, Long>()) }
     var pendingSeekCenteringTargetIndex by remember(document) { mutableIntStateOf(-1) }
     var pendingSeekCenteringDeltaPx by remember(document) { mutableStateOf<Float?>(null) }
@@ -612,7 +617,14 @@ internal fun LyricsView(
             )
         }
     }
-    var hasPositionedInitialFocus by remember(document) { mutableStateOf(false) }
+    var hasPositionedInitialFocus by remember(document) { mutableStateOf(initialBrowseAnchor != null) }
+    val latestBrowseAnchorChange = rememberUpdatedState(onBrowseAnchorChange)
+    LaunchedEffect(document, listState) {
+        snapshotFlow {
+            if (isUserBrowsingLyrics) LyricBrowseAnchor(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
+            else null
+        }.collect { latestBrowseAnchorChange.value(it) }
+    }
     val centeringGeometry = listOf(
         centerOffsetY, viewportHeightPx, viewportWidthPx, contentWidth,
         lyricFontScale, lyricFontWeight, lyricsTranslationLanguage, appLanguageTag,
@@ -733,8 +745,11 @@ internal fun LyricsView(
         if (document.lines.none { it.translation != null }) return@LaunchedEffect
         translationMotion.transitionTo(showLyricsTranslation)
     }
-    LaunchedEffect(document, showLyricsRomanization) {
-        romanizationMotion.transitionTo(showLyricsRomanization)
+    LaunchedEffect(document, showLyricsRomanization, annotationFrameTarget) {
+        if (hasMappedPronunciation && annotationLayout != null) {
+            if (annotationFrameTarget) romanizationMotion.snapTo(showLyricsRomanization)
+            else romanizationMotion.transitionTo(showLyricsRomanization, lyricContentExitSpec())
+        } else romanizationMotion.transitionTo(showLyricsRomanization)
     }
     val centeringEvent = LyricCenteringEvent(
         focusIndex = visualFocusRenderIndex,
