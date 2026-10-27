@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 package com.melox.player.ui.screen.playback
 
-import androidx.compose.ui.text.PlatformTextStyle
-import androidx.compose.ui.text.style.LineHeightStyle
-import java.io.File
 import android.graphics.Typeface
 import android.os.SystemClock
 import androidx.compose.animation.core.EaseInOut
@@ -132,43 +129,18 @@ private const val LYRIC_FOCUS_SCALE_IN_DURATION_MS = 600
 private const val LYRIC_FOCUS_SCALE_OUT_DURATION_MS = 300
 private const val LYRIC_FOCUS_ALPHA_ANIMATION_DURATION_MS = 180
 private const val LYRIC_BLUR_ANIMATION_DURATION_MS = 300
-
-// ========================================================
-// 【修改】：你定义的大号字体数值
-internal const val LYRIC_PRIMARY_FONT_SIZE_SP = 29f
-internal const val LYRIC_PRIMARY_LINE_HEIGHT_SP = 30f
+internal const val LYRIC_PRIMARY_FONT_SIZE_SP = 24f
+internal const val LYRIC_PRIMARY_LINE_HEIGHT_SP = 28f
 internal const val LYRIC_ROMANIZATION_FONT_SIZE_SP = 14f
 internal const val LYRIC_ROMANIZATION_LINE_HEIGHT_SP = 16f
-internal const val LYRIC_TRANSLATION_FONT_SIZE_SP = 19f
+internal const val LYRIC_TRANSLATION_FONT_SIZE_SP = 16f
 internal const val LYRIC_TRANSLATION_LINE_HEIGHT_SP = 22f
-// ========================================================
-
 internal const val LYRIC_TRANSLATION_GAP_DP = 2f
 private val LyricLayerPaint = Paint()
 
 @Composable
 internal fun rememberLyricFontFamily(weight: Int): FontFamily = remember(weight) {
-    // ========================================================
-    // 【修改】：使用你的本地字体路径和加载逻辑
-    val mediumFontPath = "/storage/emulated/0/Documents/字体/SimplifiedChinese/SourceHanSansSC-Medium.otf"
-    val boldFontPath = "/storage/emulated/0/Documents/字体/SimplifiedChinese/SourceHanSansSC-Bold.otf"
-
-    val isBold = weight >= 600
-    val targetPath = if (isBold) boldFontPath else mediumFontPath
-
-    val customTypeface = try {
-        val file = File(targetPath)
-        if (file.exists() && file.canRead()) {
-            Typeface.createFromFile(file)
-        } else {
-            Typeface.create(Typeface.DEFAULT, weight.coerceIn(1, 1000), false)
-        }
-    } catch (e: Exception) {
-        Typeface.create(Typeface.DEFAULT, weight.coerceIn(1, 1000), false)
-    }
-
-    FontFamily(customTypeface)
-    // ========================================================
+    FontFamily(Typeface.create(Typeface.DEFAULT, weight.coerceIn(1, 1000), false))
 }
 
 internal fun lyricEdgeFadeHeights(showBottomFade: Boolean): Pair<Float, Float> =
@@ -260,6 +232,8 @@ internal fun stabilizedLyricPlaybackPositionMs(
     frameAdvanceNanos: Long,
     playbackSpeed: Float,
 ): Double {
+    // A suspended UI clock is not evidence that playback ran throughout the gap.
+    // Re-anchor to the controller, which may have paused or sought in the background.
     if (frameAdvanceNanos > 250_000_000L) return sampledPositionMs.coerceAtLeast(0L).toDouble()
     val validSpeed = playbackSpeed.takeIf { it.isFinite() && it > 0f } ?: 1f
     val frameAdvancedPositionMs = previousPositionMs.coerceAtLeast(0.0) +
@@ -558,6 +532,7 @@ internal fun LyricsView(
             )
         }
     }
+    // Offscreen rows need ready geometry, but do not need per-frame glyph rendering.
     val offscreenRenderPositionMs = lyricDisplayedPositionMs(
         previewPositionMs = previewPositionMs,
         seekRequestPending = seekRequestKey != 0,
@@ -611,47 +586,29 @@ internal fun LyricsView(
         density.density, density.fontScale,
     )
     val visualFocusRenderIndex = focusLineIndex
-    
-    // ========================================================
-    // 【修改】：集成你的大字体与去除排版基线留白的代码
     val lyricFontFamily = rememberLyricFontFamily(lyricFontWeight)
-
     val normalTextStyle = MiuixTheme.textStyles.title3.copy(
         fontSize = (LYRIC_PRIMARY_FONT_SIZE_SP * lyricFontScale).sp,
         lineHeight = (LYRIC_PRIMARY_LINE_HEIGHT_SP * lyricFontScale).sp,
         fontFamily = lyricFontFamily,
-        fontWeight = FontWeight.Normal, // 强制 Normal 避免伪加粗
+        fontWeight = FontWeight(lyricFontWeight.coerceIn(1, 1000)),
         fontSynthesis = FontSynthesis.None,
         textDirection = TextDirection.Content,
         textMotion = TextMotion.Animated,
-        platformStyle = PlatformTextStyle(includeFontPadding = false),
-        lineHeightStyle = LineHeightStyle(
-            alignment = LineHeightStyle.Alignment.Center,
-            trim = LineHeightStyle.Trim.Both
-        )
     )
-
     val translationTextStyle = MiuixTheme.textStyles.body1.copy(
         fontSize = (LYRIC_TRANSLATION_FONT_SIZE_SP * lyricFontScale).sp,
         lineHeight = (LYRIC_TRANSLATION_LINE_HEIGHT_SP * lyricFontScale).sp,
         fontFamily = lyricFontFamily,
-        fontWeight = FontWeight.Normal, // 强制 Normal
+        fontWeight = FontWeight(lyricFontWeight.coerceIn(1, 1000)),
         fontSynthesis = FontSynthesis.None,
         textDirection = TextDirection.Content,
         textMotion = TextMotion.Animated,
-        platformStyle = PlatformTextStyle(includeFontPadding = false),
-        lineHeightStyle = LineHeightStyle(
-            alignment = LineHeightStyle.Alignment.Center,
-            trim = LineHeightStyle.Trim.Both
-        )
     )
-
     val romanizationTextStyle = translationTextStyle.copy(
         fontSize = (LYRIC_ROMANIZATION_FONT_SIZE_SP * lyricFontScale).sp,
         lineHeight = (LYRIC_ROMANIZATION_LINE_HEIGHT_SP * lyricFontScale).sp,
     )
-    // ========================================================
-
     val textMeasurer = rememberTextMeasurer()
     val layoutDirection = LocalLayoutDirection.current
     val fontResolver = LocalFontFamilyResolver.current
@@ -824,4 +781,1424 @@ internal fun LyricsView(
                 }
                 val measuredScrollDelta = capturedSeekCenteringDelta ?: targetItem?.let { visibleTarget ->
                     lyricCenterScrollDelta(
-                        itemOffset = visibleTarget
+                        itemOffset = visibleTarget.offset,
+                        itemSize = visibleTarget.size,
+                        viewportStartOffset = layoutInfo.viewportStartOffset,
+                        viewportEndOffset = layoutInfo.viewportEndOffset,
+                        centerOffsetPx = centeringOffsetPx,
+                    )
+                }
+                val estimatedItemSize = layoutInfo.visibleItemsInfo
+                    .map { it.size }
+                    .average()
+                    .takeIf { !it.isNaN() }
+                    ?.roundToInt()
+                    ?: with(density) { normalTextStyle.lineHeight.toDp().roundToPx() }
+                val offscreenCenteringTravelPx = lyricOffscreenTranslationDistance(
+                    viewportStartOffset = 0,
+                    viewportEndOffset = viewportHeightPx + with(density) { (keepAliveZone * 2).roundToPx() },
+                    itemSize = targetItem?.size ?: estimatedItemSize,
+                )
+                val previousRenderIndex = lastVisualFocusRenderIndex
+                    .takeIf { it >= 0 }
+                    ?: visualFocusRenderIndex
+                val currentTranslationVelocity = rowMotion.velocity(visualFocusRenderIndex)
+                lastCenteringGeometry = centeringGeometry
+                val previousTranslation = rowMotion.offset(visualFocusRenderIndex)
+                val requestedTranslation = if (animateCentering) {
+                    val translationStart = lyricProgrammaticTranslationStart(
+                        currentTranslationY = previousTranslation,
+                        measuredScrollDelta = measuredScrollDelta,
+                        targetRenderIndex = visualFocusRenderIndex,
+                        previousRenderIndex = previousRenderIndex,
+                        offscreenTravelPx = offscreenCenteringTravelPx,
+                    )
+                    retainedTravelPx = maxOf(
+                        retainedTravelPx,
+                        rowMotion.retainedTravel(centeringSpringStiffness) + abs(translationStart - previousTranslation),
+                        lyricRetainedTravelPx(
+                            translationStartPx = translationStart,
+                            velocityPxPerSecond = currentTranslationVelocity,
+                            stiffness = centeringSpringStiffness,
+                        ),
+                    )
+                    translationStart
+                } else {
+                    retainedTravelPx = 0f
+                    0f
+                }
+                val reservePx = with(density) { keepAliveZone.roundToPx() } + retainedTravelPx.roundToInt()
+                // snapToItem can synchronously remeasure the child with its old constraints.
+                // Wait until the outer viewport and both paddings have changed together first.
+                snapshotFlow { listState.layoutInfo }.first { measured ->
+                    lyricRetentionIsMeasured(
+                        viewportHeightPx = viewportHeightPx,
+                        reservePx = reservePx,
+                        measuredHeightPx = measured.viewportSize.height,
+                        beforePaddingPx = measured.beforeContentPadding,
+                        afterPaddingPx = measured.afterContentPadding,
+                    )
+                }
+                val placement = LazyLayoutScrollScope(listState, this)
+                // Capture and commit in one frame, after retention has finished remeasuring.
+                // A pre-wait snapshot may describe an obsolete native scroll anchor.
+                placementCommitted = withFrameNanos {
+                    val currentFrame = document.playbackFrame(lyricTimeProvider())
+                    if (currentFrame.anchorIndex != visualFocusRenderIndex ||
+                        currentFrame.anchorLineIndices != centeringEvent.focusLineIndices
+                    ) {
+                        return@withFrameNanos false
+                    }
+                    val readyLayout = listState.layoutInfo
+                    val readyTarget = readyLayout.visibleItemsInfo.firstOrNull {
+                        it.index == visualFocusRenderIndex
+                    }
+                    val previousVisualOffsets = readyLayout.visibleItemsInfo.associate { item ->
+                        item.index to item.offset + rowMotion.offset(item.index)
+                    }
+                    val viewportStart = readyLayout.viewportStartOffset + reservePx
+                    visibleRowOrder = lyricVisibleRowOrder(
+                        rows = readyLayout.visibleItemsInfo.map { item ->
+                            LyricVisualRow(item.index, previousVisualOffsets.getValue(item.index), item.size)
+                        },
+                        viewportStart = viewportStart.toFloat(),
+                        viewportEnd = viewportStart + viewportHeightPx.toFloat(),
+                    )
+                    val placementTranslation = rowMotion.offset(visualFocusRenderIndex)
+                    val placementVelocity = rowMotion.velocity(visualFocusRenderIndex)
+                    placement.snapToItem(
+                        index = visualFocusRenderIndex,
+                        offset = lyricTargetScrollOffset(
+                            itemSize = readyTarget?.size ?: targetItem?.size ?: estimatedItemSize,
+                            viewportStartOffset = readyLayout.viewportStartOffset,
+                            viewportEndOffset = readyLayout.viewportEndOffset,
+                            centerOffsetPx = centeringOffsetPx,
+                        ),
+                    )
+                    listState.layoutInfo.visibleItemsInfo.firstOrNull {
+                        it.index == visualFocusRenderIndex
+                    }?.let { centeredItem ->
+                        val centeredLayoutInfo = listState.layoutInfo
+                        val correction = lyricCenterScrollDelta(
+                            itemOffset = centeredItem.offset,
+                            itemSize = centeredItem.size,
+                            viewportStartOffset = centeredLayoutInfo.viewportStartOffset,
+                            viewportEndOffset = centeredLayoutInfo.viewportEndOffset,
+                            centerOffsetPx = centeringOffsetPx,
+                        )
+                        // A delta may defer placement; snap with the measured size before compensation.
+                        if (abs(correction) > 0.5f) {
+                            placement.snapToItem(
+                                index = visualFocusRenderIndex,
+                                offset = lyricTargetScrollOffset(
+                                    itemSize = centeredItem.size,
+                                    viewportStartOffset = centeredLayoutInfo.viewportStartOffset,
+                                    viewportEndOffset = centeredLayoutInfo.viewportEndOffset,
+                                    centerOffsetPx = centeringOffsetPx,
+                                ),
+                            )
+                        }
+                    }
+                    val placedTargetOffset = listState.layoutInfo.visibleItemsInfo.firstOrNull {
+                        it.index == visualFocusRenderIndex
+                    }?.offset
+                    rowMotion.place(
+                        previousVisualOffsets = previousVisualOffsets,
+                        placedOffsets = listState.layoutInfo.visibleItemsInfo.associate { it.index to it.offset },
+                        fallbackTranslation = lyricActualPlacementTranslation(
+                            previousTranslationPx = placementTranslation,
+                            previousTargetOffsetPx = readyTarget?.offset,
+                            placedTargetOffsetPx = placedTargetOffset,
+                            offscreenTranslationPx = requestedTranslation,
+                        ),
+                        fallbackVelocity = placementVelocity,
+                        animate = animateCentering,
+                    )
+                    true
+                }
+                if (placementCommitted) hasPositionedInitialFocus = true
+            }
+        } finally {
+            scrollInCode.value = false
+        }
+        if (!placementCommitted) return@LaunchedEffect
+        if (pendingSeekCenteringTargetIndex == visualFocusRenderIndex) {
+            pendingSeekCenteringTargetIndex = -1
+            pendingSeekCenteringDeltaPx = null
+        }
+        lastVisualFocusRenderIndex = visualFocusRenderIndex
+        if (animateCentering) {
+            rowMotion.settle(
+                stiffness = centeringSpringStiffness,
+                visibleOrder = visibleRowOrder,
+                cascade = true,
+            )
+            retainedTravelPx = 0f
+        }
+    }
+
+    BoxWithConstraints(modifier = modifier.onSizeChanged {
+        viewportHeightPx = it.height
+        viewportWidthPx = it.width
+    }) {
+        val animationBleed = LYRIC_ANIMATION_BLEED_DP.dp
+        val horizontalPadding = (
+            (maxWidth - contentWidth) / 2f - animationBleed
+            ).coerceAtLeast(0.dp)
+        val textWidthPx = with(density) {
+            (maxWidth.roundToPx() - horizontalPadding.roundToPx() * 2 -
+                animationBleed.roundToPx() * 2).coerceAtLeast(1).toFloat()
+        }
+        LaunchedEffect(lineCache, focusLineIndex, textWidthPx, lyricAnimationMode) {
+            withContext(Dispatchers.Default) {
+                val measurer = TextMeasurer(fontResolver, density, layoutDirection)
+                val indices = listOf(focusLineIndex + 1, focusLineIndex + 2, focusLineIndex + 3, focusLineIndex - 1)
+                for (index in indices) {
+                    if (!isActive) break
+                    val line = document.lines.getOrNull(index) ?: continue
+                    if (!lyricAnimationMode.usesWordAnimation(line.words.isNotEmpty(), documentHasTimedWords)) continue
+                    lineCache.prepare(line, textWidthPx,
+                        measurer, normalTextStyle, emphasisColor, density, layoutDirection)
+                }
+            }
+        }
+        val viewportHeight = maxHeight
+        // Read retention during measurement so padding and viewport grow together before centering.
+        val listContentPadding = remember(document, horizontalPadding, viewportHeight, density) {
+            object : PaddingValues {
+                override fun calculateLeftPadding(layoutDirection: LayoutDirection) = horizontalPadding
+                override fun calculateRightPadding(layoutDirection: LayoutDirection) = horizontalPadding
+                override fun calculateTopPadding() = with(density) {
+                    (viewportHeight.roundToPx() / 2 + keepAliveZone.roundToPx() +
+                        retainedTravelPx.roundToInt()).toDp()
+                }
+                override fun calculateBottomPadding() = calculateTopPadding()
+            }
+        }
+        val glyphOutset = with(density) {
+            lyricGlyphOutsetPx(normalTextStyle.lineHeight.toPx()).toDp()
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clipToBounds()
+                .then(lyricBrowsingModifier),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        compositingStrategy = CompositingStrategy.Offscreen
+                    }
+                    .drawWithCache {
+                        if (!applyEdgeFade) return@drawWithCache onDrawWithContent { drawContent() }
+                        val (topFadeDp, bottomFadeDp) = lyricEdgeFadeHeights(showBottomFade)
+                        val topFade = (topFadeDp.dp.toPx() / size.height.coerceAtLeast(1f))
+                            .coerceAtMost(0.5f)
+                        val bottomFade =
+                            (bottomFadeDp.dp.toPx() / size.height.coerceAtLeast(1f))
+                                .coerceAtMost(0.5f)
+                        val edgeMask = if (bottomFade > 0f) {
+                            Brush.verticalGradient(
+                                0f to Color.Transparent,
+                                topFade to Color.Black,
+                                1f - bottomFade to Color.Black,
+                                1f to Color.Transparent,
+                            )
+                        } else {
+                            Brush.verticalGradient(
+                                0f to Color.Transparent,
+                                topFade to Color.Black,
+                                1f to Color.Black,
+                            )
+                        }
+                        onDrawWithContent {
+                            drawContent()
+                            drawRect(
+                                brush = edgeMask,
+                                blendMode = BlendMode.DstIn,
+                            )
+                        }
+                    },
+            ) {
+                LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                .graphicsLayer {
+                    alpha = if (hasPositionedInitialFocus) 1f else 0f
+                }
+                .layout { measurable, constraints ->
+                        val keepAlivePx = keepAliveZone.roundToPx() + retainedTravelPx.roundToInt()
+                        val extraHeightPx = keepAlivePx * 2
+                        val placeable = measurable.measure(
+                            constraints.copy(
+                                maxHeight = constraints.maxHeight + extraHeightPx,
+                            ),
+                        )
+                        layout(constraints.maxWidth, constraints.maxHeight) {
+                            placeable.place(0, -keepAlivePx)
+                        }
+                    },
+                contentPadding = listContentPadding,
+            ) {
+                itemsIndexed(
+                    items = document.lines,
+                    key = { index, line ->
+                        "line-${line.startTimeMs}-${line.endTimeMs}-$index"
+                    },
+                ) { index, line ->
+                    val distanceFromFocus = activeLineIndices.minOfOrNull { kotlin.math.abs(index - it) }
+                        ?: if (focusLineIndex >= 0) kotlin.math.abs(index - focusLineIndex) else 0
+                    val lineAlignment = document.lineAlignment(index).takeIf { document.isDuet }
+                    val lineAlignmentProgress: State<Float> = if (lineAlignment == null) {
+                        alignmentProgress
+                    } else remember(lineAlignment) {
+                        mutableFloatStateOf(if (lineAlignment == LyricAlignment.CENTER) 1f else 0f)
+                    }
+                    val endAligned = lineAlignment == LyricAlignment.END
+                    val blurRadius by animateFloatAsState(
+                        targetValue = lyricBlurRadiusTarget(
+                            lyricBlurEnabled = lyricBlurEnabled,
+                            distanceFromFocus = distanceFromFocus,
+                            isUserBrowsingLyrics = lyricBlurShouldDisableForBrowsing(
+                                isUserBrowsingLyrics = isUserBrowsingLyrics,
+                                isManualScrolling = isManualScrolling,
+                            ),
+                        ),
+                        animationSpec = tween(LYRIC_BLUR_ANIMATION_DURATION_MS),
+                        label = "lyricBlurRadius",
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer {
+                                translationY = rowMotion.offset(index)
+                            },
+                    ) {
+                        val isCurrentLine = index in activeLineIndices
+                        val preservesOutgoingSeekProgress = !isCurrentLine && index in outgoingSeekPositions
+                        val usesWordProgress = lyricAnimationMode.usesWordAnimation(
+                            lineHasTimedWords = line.words.isNotEmpty(),
+                            documentHasTimedWords = documentHasTimedWords,
+                        )
+                        val prepared = if (usesWordProgress) remember(lineCache, line, textWidthPx) {
+                            lineCache.prepare(line, textWidthPx, textMeasurer, normalTextStyle,
+                                emphasisColor, density, layoutDirection)
+                        } else null
+                        val visualOutsets = remember(prepared, textWidthPx, density, endAligned) {
+                            prepared?.visualOutsets(textWidthPx, density, endAligned) ?: LayerOutsets()
+                        }
+                        val lineTimeProvider = {
+                            lyricLineRenderPositionMs(
+                                lineIndex = index,
+                                displayedPositionMs = if (active) lyricTimeProvider() else offscreenRenderPositionMs,
+                                outgoingSeekLineIndex = if (preservesOutgoingSeekProgress) index else -1,
+                                outgoingSeekPositionMs = outgoingSeekPositions[index] ?: 0L,
+                            )
+                        }
+                        LyricsLineItem(
+                            activeOpacityLimit = activeLyricAlpha,
+                            pressColor = emphasisColor,
+                            isFocused = isCurrentLine,
+                            usesWordProgress = usesWordProgress,
+                            alignmentProgress = lineAlignmentProgress,
+                            endAligned = endAligned,
+                            blurRadius = blurRadius,
+                            glyphOutset = glyphOutset,
+                            visualOutsets = visualOutsets,
+                            onAlphaSettled = { settledAlpha ->
+                                if (
+                                    lyricOutgoingSeekCanClear(
+                                        lineIndex = index,
+                                        outgoingSeekLineIndex = if (index in outgoingSeekPositions) index else -1,
+                                        currentLineIndex = if (isCurrentLine) index else -1,
+                                        settledAlpha = settledAlpha,
+                                    )
+                                ) {
+                                    outgoingSeekPositions = outgoingSeekPositions - index
+                                }
+                            },
+                            onClick = {
+                                val clickedItem = listState.layoutInfo.visibleItemsInfo
+                                    .firstOrNull { it.index == index }
+                                lyricTapRevision += 1
+                                pendingSeekCenteringTargetIndex = index
+                                pendingSeekCenteringDeltaPx = clickedItem?.let { visibleItem ->
+                                    val layoutInfo = listState.layoutInfo
+                                    lyricCenterScrollDelta(
+                                        itemOffset = visibleItem.offset,
+                                        itemSize = visibleItem.size,
+                                        viewportStartOffset = layoutInfo.viewportStartOffset,
+                                        viewportEndOffset = layoutInfo.viewportEndOffset,
+                                        centerOffsetPx = centerOffsetPx,
+                                    )
+                                }
+                                val leavingTime = lyricTimeProvider()
+                                outgoingSeekPositions = (outgoingSeekPositions +
+                                    activeLineIndices.associateWith { leavingTime }) - index
+                                isUserBrowsingLyrics = false
+                                onSeek(line.startTimeMs)
+                            },
+                        ) { wordProgressActiveAlpha, translationAlpha, primaryTextAlpha ->
+                            if (prepared != null) {
+                                TimedLyricLine(
+                                    activeOpacityLimit = activeLyricAlpha,
+                                    line = line,
+                                    translation = selectedTranslations[index],
+                                    prepared = prepared,
+                                    usePlaybackProgress =
+                                        isCurrentLine || preservesOutgoingSeekProgress,
+                                    translationAlpha = translationAlpha,
+                                    activeAlpha = wordProgressActiveAlpha,
+                                    currentTimeProvider = lineTimeProvider,
+                                    normalTextStyle = normalTextStyle,
+                                    translationTextStyle = translationTextStyle,
+                                    romanizationTextStyle = romanizationTextStyle,
+                                    emphasisColor = emphasisColor,
+                                    alignmentProgress = lineAlignmentProgress,
+                                    lineAlignment = lineAlignment,
+                                    translationMotion = translationMotion,
+                                    romanizationMotion = romanizationMotion,
+                                )
+                            } else {
+                                SyncedLyricLine(
+                                    primaryTextAlpha = primaryTextAlpha,
+                                    line = line,
+                                    translation = selectedTranslations[index],
+                                    translationAlpha = translationAlpha,
+                                    normalTextStyle = normalTextStyle,
+                                    translationTextStyle = translationTextStyle,
+                                    romanizationTextStyle = romanizationTextStyle,
+                                    emphasisColor = emphasisColor,
+                                    alignmentProgress = lineAlignmentProgress,
+                                    lineAlignment = lineAlignment,
+                                    translationMotion = translationMotion,
+                                    romanizationMotion = romanizationMotion,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricsLineItem(
+    activeOpacityLimit: Float,
+    pressColor: Color,
+    isFocused: Boolean,
+    usesWordProgress: Boolean,
+    alignmentProgress: State<Float>,
+    endAligned: Boolean,
+    blurRadius: Float,
+    glyphOutset: Dp,
+    visualOutsets: LayerOutsets,
+    onAlphaSettled: (Float) -> Unit,
+    onClick: () -> Unit,
+    content: @Composable (
+        wordProgressActiveAlpha: Float,
+        translationAlpha: Float,
+        primaryTextAlpha: Float,
+    ) -> Unit,
+) {
+    val density = LocalDensity.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1f else 0.98f,
+        animationSpec = if (isFocused) {
+            tween(
+                durationMillis = LYRIC_FOCUS_SCALE_IN_DURATION_MS,
+                easing = LinearOutSlowInEasing,
+            )
+        } else {
+            tween(
+                durationMillis = LYRIC_FOCUS_SCALE_OUT_DURATION_MS,
+                easing = EaseInOut,
+            )
+        },
+        label = "lyricFocusScale",
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (isFocused) 1f else LYRIC_INACTIVE_TEXT_ALPHA,
+        animationSpec = tween(
+            durationMillis = LYRIC_FOCUS_ALPHA_ANIMATION_DURATION_MS,
+            easing = LinearOutSlowInEasing,
+        ),
+        label = "lyricFocusAlpha",
+        finishedListener = { settledAlpha ->
+            onAlphaSettled(settledAlpha)
+        },
+    )
+    val layerAlpha = lyricLineLayerAlpha(
+        lineAlpha = alpha,
+        usesWordProgress = usesWordProgress,
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
+    ) {
+        Box(
+            modifier = Modifier.matchParentSize()
+                .graphicsLayer { this.alpha = 0.6f }
+                .squircleClip(12.dp)
+                .indication(interactionSource, remember(pressColor) { MiuixIndication(pressColor) }),
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    this.alpha = layerAlpha
+                    transformOrigin = TransformOrigin(
+                        pivotFractionX = if (endAligned) 1f else alignmentProgress.value * 0.5f,
+                        pivotFractionY = 1f,
+                    )
+                    compositingStrategy = CompositingStrategy.Offscreen
+                    val blurOutset = with(density) { (blurRadius * 3f).toDp() }
+                    outsets = LayerOutsets(
+                        left = maxOf(glyphOutset, visualOutsets.left) + blurOutset,
+                        right = maxOf(glyphOutset, visualOutsets.right) + blurOutset,
+                        top = maxOf(glyphOutset, visualOutsets.top) + blurOutset,
+                        bottom = maxOf(glyphOutset, visualOutsets.bottom) + blurOutset,
+                    )
+                    if (blurRadius > 0f) {
+                        renderEffect = BlurEffect(
+                            radiusX = blurRadius,
+                            radiusY = blurRadius,
+                            edgeTreatment = TileMode.Clamp,
+                        )
+                    }
+                }
+                .padding(horizontal = LYRIC_ANIMATION_BLEED_DP.dp),
+        ) {
+            content(
+                lyricWordProgressActiveAlpha(
+                    lineAlpha = alpha,
+                    usesWordProgress = usesWordProgress,
+                ),
+                lyricTranslationAlpha(layerAlpha),
+                minOf(alpha, activeOpacityLimit) / alpha.coerceAtLeast(LYRIC_INACTIVE_TEXT_ALPHA),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AuxiliaryLyricText(
+    text: String,
+    style: TextStyle,
+    color: Color,
+    alignmentProgress: State<Float>,
+    lineAlignment: LyricAlignment?,
+    motion: LyricTranslationMotion,
+    lyricFontScale: Float,
+    modifier: Modifier = Modifier,
+) {
+    var textLayout by remember(text) { mutableStateOf<TextLayoutResult?>(null) }
+    Text(
+        text = text,
+        style = style,
+        color = color,
+        textAlign = if (lineAlignment == null) TextAlign.Start else TextAlign.Left,
+        onTextLayout = { textLayout = it },
+        modifier = modifier
+            .fillMaxWidth()
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints.copy(minHeight = 0))
+                val topPadding = (LYRIC_TRANSLATION_GAP_DP * lyricFontScale).dp.roundToPx()
+                val height = ((placeable.height + topPadding) *
+                    motion.expansion.value.coerceIn(0f, 1f)).roundToInt()
+                layout(placeable.width, constraints.constrainHeight(height)) {
+                    placeable.place(0, topPadding)
+                }
+            }
+            .animatedPlayerTextAlignment(textLayout, alignmentProgress,
+                endAligned = lineAlignment == LyricAlignment.END)
+            .graphicsLayer { alpha = motion.opacity.value }
+            .then(if (motion.opacity.value == 0f) Modifier.clearAndSetSemantics { } else Modifier),
+    )
+}
+
+@Composable
+internal fun CompactTimedLyricLine(
+    line: LyricLine,
+    style: TextStyle,
+    color: Color,
+    currentTimeProvider: () -> Long,
+    animationMode: LyricAnimationMode,
+    documentHasTimedWords: Boolean,
+    modifier: Modifier = Modifier,
+    activeOpacityLimit: Float = 1f,
+    centered: Boolean = false,
+    focused: Boolean = true,
+    resetKey: Any? = null,
+    textStartPadding: Dp = 0.dp,
+    textBaseline: Dp? = null,
+) {
+    val density = LocalDensity.current
+    val direction = LocalLayoutDirection.current
+    val measurer = rememberTextMeasurer()
+    val cache = remember(style, color, density, direction) { PreparedLyricLineCache() }
+    val singleLine = remember(line) {
+        if ('\n' !in line.displayText) line else line.copy(
+            text = line.text?.replace('\n', ' '),
+            words = line.words.map { it.copy(text = it.text.replace('\n', ' ')) },
+        )
+    }
+    val prepared = remember(cache, singleLine) {
+        cache.prepare(singleLine, Float.MAX_VALUE, measurer, style, color, density, direction,
+            wordEffects = false)
+    }
+    val preparedBaseline = remember(prepared) {
+        prepared.rows.firstOrNull()?.layouts?.maxOfOrNull { it.position.y + it.firstBaseline } ?: 0f
+    }
+    val alignment = remember { mutableFloatStateOf(0f) }
+    val scroll = remember(singleLine, resetKey) { CompactLyricScroll() }
+    val latestTime = rememberUpdatedState(currentTimeProvider)
+    val usesWordProgress = animationMode.usesWordAnimation(line.words.isNotEmpty(), documentHasTimedWords)
+    val lineHeight = with(density) { compactLyricLineHeight(style).toDp() }
+    val effectScale = with(density) { lyricEffectGeometryScale(style.fontSize.toPx()) }
+    val fadeWidth = with(density) { style.fontSize.toPx() * 0.25f }
+    val textStartPx = with(density) { textStartPadding.toPx() }
+    val textBaselinePx = with(density) { textBaseline?.toPx() }
+    var durationScale by remember { mutableStateOf<MotionDurationScale?>(null) }
+    LaunchedEffect(Unit) { durationScale = coroutineContext[MotionDurationScale] }
+    Box(
+        modifier = modifier.height(lineHeight)
+            .semantics { text = AnnotatedString(line.displayText) }
+            .drawWithCache {
+                onDrawBehind {
+                    val row = prepared.rows.firstOrNull() ?: return@onDrawBehind
+                    val position = latestTime.value()
+                    val cursor = if (!focused) 0f else if (usesWordProgress) {
+                        linePixelPosition(row, position)
+                    } else {
+                        row.width * lyricIntervalProgress(position, line.startTimeMs, line.endTimeMs)
+                    }
+                    val target = textStartPx + compactLyricScrollTarget(
+                        (size.width - textStartPx).coerceAtLeast(0f), row.width, cursor, centered)
+                    val offset = scroll.update(target, position, size.width, row.width,
+                        smooth = durationScale?.scaleFactor != 0f)
+                    clipRect {
+                        val textTop = textBaselinePx?.minus(preparedBaseline)
+                            ?: ((size.height - prepared.heightPx) / 2f)
+                        translate(offset, textTop) {
+                            drawLyricsLine(
+                                rows = prepared.rows,
+                                canvasWidth = row.width,
+                                alignmentProgress = alignment,
+                                endAligned = false,
+                                positionMs = if (usesWordProgress && focused) position else line.endTimeMs,
+                                color = color,
+                                activeAlpha = 1f,
+                                activeOpacityLimit = activeOpacityLimit,
+                                effectScale = effectScale,
+                                fadeWidthPx = fadeWidth,
+                                glyphMotionEnabled = false,
+                                inactiveAlpha = 0.3f,
+                            )
+                        }
+                    }
+                }
+            },
+    )
+}
+
+@Composable
+private fun TimedLyricLine(
+    activeOpacityLimit: Float,
+    line: LyricLine,
+    translation: String?,
+    prepared: PreparedLyricLine,
+    usePlaybackProgress: Boolean,
+    translationAlpha: Float,
+    activeAlpha: Float,
+    currentTimeProvider: () -> Long,
+    normalTextStyle: TextStyle,
+    translationTextStyle: TextStyle,
+    romanizationTextStyle: TextStyle,
+    emphasisColor: Color,
+    alignmentProgress: State<Float>,
+    lineAlignment: LyricAlignment?,
+    translationMotion: LyricTranslationMotion,
+    romanizationMotion: LyricTranslationMotion,
+) {
+    val verticalPadding = lyricTranslationPaddingDp(
+        hasTranslation = translation != null || line.romanization != null,
+        expansion = maxOf(
+            if (translation != null) translationMotion.expansion.value else 0f,
+            if (line.romanization != null) romanizationMotion.expansion.value else 0f,
+        ),
+        lyricFontScale = normalTextStyle.fontSize.value / LYRIC_PRIMARY_FONT_SIZE_SP,
+    ).dp
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = verticalPadding),
+        horizontalAlignment = Alignment.Start,
+    ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val density = LocalDensity.current
+            val rowRenderData = prepared.rows
+            val effectScale = with(density) { lyricEffectGeometryScale(normalTextStyle.fontSize.toPx()) }
+            val fadeWidth = with(density) { lyricForegroundFadeWidthPx(normalTextStyle.fontSize.toPx()) }
+            val totalHeight = prepared.heightPx
+            var motionDurationScale by remember { mutableStateOf<MotionDurationScale?>(null) }
+            LaunchedEffect(Unit) { motionDurationScale = coroutineContext[MotionDurationScale] }
+
+            val latestTimeProvider = rememberUpdatedState(currentTimeProvider)
+            val latestActiveAlpha = rememberUpdatedState(activeAlpha)
+            val latestActiveOpacityLimit = rememberUpdatedState(activeOpacityLimit)
+            val staticCompleted by remember(line, latestTimeProvider) {
+                derivedStateOf { latestTimeProvider.value() >= line.endTimeMs }
+            }
+            val drawTimedLyrics: CacheDrawScope.() -> DrawResult = remember(
+                rowRenderData, emphasisColor, usePlaybackProgress, staticCompleted, lineAlignment,
+            ) {
+                {
+                    onDrawBehind {
+                        drawLyricsLine(
+                            rows = rowRenderData,
+                            canvasWidth = size.width,
+                            alignmentProgress = alignmentProgress,
+                            endAligned = lineAlignment == LyricAlignment.END,
+                            positionMs = if (usePlaybackProgress) {
+                                latestTimeProvider.value()
+                            } else if (staticCompleted) {
+                                line.endTimeMs
+                            } else {
+                                line.startTimeMs
+                            },
+                            color = emphasisColor,
+                            activeAlpha = latestActiveAlpha.value,
+                            activeOpacityLimit = latestActiveOpacityLimit.value,
+                            effectScale = effectScale,
+                            fadeWidthPx = fadeWidth,
+                            glyphMotionEnabled = motionDurationScale?.scaleFactor != 0f,
+                        )
+                    }
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .size(
+                        width = maxWidth,
+                        height = with(density) {
+                            totalHeight.toDp()
+                        },
+                    )
+                    .drawWithCache(drawTimedLyrics),
+            )
+        }
+        line.romanization?.let { romanization ->
+            AuxiliaryLyricText(
+                text = romanization,
+                style = romanizationTextStyle,
+                color = emphasisColor.copy(alpha = translationAlpha),
+                alignmentProgress = alignmentProgress,
+                lineAlignment = lineAlignment,
+                motion = romanizationMotion,
+                lyricFontScale = normalTextStyle.fontSize.value / LYRIC_PRIMARY_FONT_SIZE_SP,
+            )
+        }
+        translation?.let { translation ->
+            AuxiliaryLyricText(
+                text = translation,
+                style = translationTextStyle,
+                color = emphasisColor.copy(alpha = translationAlpha),
+                alignmentProgress = alignmentProgress,
+                lineAlignment = lineAlignment,
+                motion = translationMotion,
+                lyricFontScale = normalTextStyle.fontSize.value / LYRIC_PRIMARY_FONT_SIZE_SP,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SyncedLyricLine(
+    primaryTextAlpha: Float,
+    line: LyricLine,
+    translation: String?,
+    translationAlpha: Float,
+    normalTextStyle: TextStyle,
+    translationTextStyle: TextStyle,
+    romanizationTextStyle: TextStyle,
+    emphasisColor: Color,
+    alignmentProgress: State<Float>,
+    lineAlignment: LyricAlignment?,
+    translationMotion: LyricTranslationMotion,
+    romanizationMotion: LyricTranslationMotion,
+) {
+    var textLayout by remember(line) { mutableStateOf<TextLayoutResult?>(null) }
+    val verticalPadding = lyricTranslationPaddingDp(
+        hasTranslation = translation != null || line.romanization != null,
+        expansion = maxOf(
+            if (translation != null) translationMotion.expansion.value else 0f,
+            if (line.romanization != null) romanizationMotion.expansion.value else 0f,
+        ),
+        lyricFontScale = normalTextStyle.fontSize.value / LYRIC_PRIMARY_FONT_SIZE_SP,
+    ).dp
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = verticalPadding),
+        horizontalAlignment = Alignment.Start,
+    ) {
+        Text(
+            text = line.displayText,
+            modifier = Modifier.fillMaxWidth()
+                .animatedPlayerTextAlignment(textLayout, alignmentProgress,
+                    endAligned = lineAlignment == LyricAlignment.END),
+            style = normalTextStyle,
+            color = emphasisColor.copy(alpha = emphasisColor.alpha * primaryTextAlpha),
+            textAlign = if (lineAlignment == null) TextAlign.Start else TextAlign.Left,
+            onTextLayout = { textLayout = it },
+        )
+        line.romanization?.let { romanization ->
+            AuxiliaryLyricText(
+                text = romanization,
+                style = romanizationTextStyle,
+                color = emphasisColor.copy(alpha = translationAlpha),
+                alignmentProgress = alignmentProgress,
+                lineAlignment = lineAlignment,
+                motion = romanizationMotion,
+                lyricFontScale = normalTextStyle.fontSize.value / LYRIC_PRIMARY_FONT_SIZE_SP,
+            )
+        }
+        translation?.let { translation ->
+            AuxiliaryLyricText(
+                text = translation,
+                style = translationTextStyle,
+                color = emphasisColor.copy(alpha = translationAlpha),
+                alignmentProgress = alignmentProgress,
+                lineAlignment = lineAlignment,
+                motion = translationMotion,
+                lyricFontScale = normalTextStyle.fontSize.value / LYRIC_PRIMARY_FONT_SIZE_SP,
+            )
+        }
+    }
+}
+
+private data class Syllable(
+    val startTimeMs: Long,
+    val endTimeMs: Long,
+    val content: String,
+)
+
+private data class LyricGlyph(
+    val range: IntRange,
+    val bounds: Rect,
+    val sourceIndex: Int,
+    val sourceCount: Int,
+    val visible: Boolean,
+    val motionBounds: Rect = bounds,
+    val glow: LyricGlyphGlow? = null,
+)
+
+private data class SyllableLayout(
+    val syllable: Syllable,
+    val textLayoutResult: TextLayoutResult,
+    val effects: LyricWordEffects,
+    val animationSource: Syllable = syllable,
+    val sourceOffset: Int = 0,
+    val width: Float = textLayoutResult.size.width.toFloat(),
+    val lineEndWidth: Float = width,
+    val position: Offset = Offset.Zero,
+    val glyphs: List<LyricGlyph>,
+    val raster: LyricTextRaster? = null,
+    val firstBaseline: Float = textLayoutResult.firstBaseline,
+) {
+    val glyphStartX = glyphs.minOfOrNull { it.motionBounds.left } ?: 0f
+    val glyphEndX = glyphs.maxOfOrNull { it.motionBounds.right } ?: width
+}
+
+private data class WrappedLine(val syllables: List<SyllableLayout>, val totalWidth: Float)
+
+private class RowRenderData(
+    val layouts: List<SyllableLayout>,
+    val minX: Float,
+    val maxX: Float,
+    val width: Float,
+    val firstStartTimeMs: Long,
+    val lastEndTimeMs: Long,
+    val layerBounds: Rect,
+) {
+    val cursor = LyricTimingCursor(
+        layouts.map { it.syllable.startTimeMs }.toLongArray(),
+        layouts.map { it.syllable.endTimeMs }.toLongArray(),
+    )
+    private var maskAlpha = Float.NaN
+    private var maskWidth = Float.NaN
+    private var maskInactiveAlpha = Float.NaN
+    private var mask: Brush? = null
+
+    fun gradient(activeAlpha: Float, fadeWidth: Float, inactiveAlpha: Float): Brush {
+        if (activeAlpha != maskAlpha || fadeWidth != maskWidth || inactiveAlpha != maskInactiveAlpha) {
+            maskAlpha = activeAlpha
+            maskWidth = fadeWidth
+            maskInactiveAlpha = inactiveAlpha
+            mask = Brush.horizontalGradient(
+                listOf(Color.White.copy(alpha = activeAlpha),
+                    Color.White.copy(alpha = inactiveAlpha)),
+                startX = -fadeWidth / 2f, endX = fadeWidth / 2f,
+            )
+        }
+        return requireNotNull(mask)
+    }
+}
+
+private data class PreparedLyricLine(val rows: List<RowRenderData>, val heightPx: Int, val rasterBytes: Long)
+
+/** Drawing coverage is prepared data; reading descendant alignment lines can place lazy items during measurement. */
+private fun PreparedLyricLine.visualOutsets(
+    widthPx: Float,
+    density: androidx.compose.ui.unit.Density,
+    endAligned: Boolean,
+): LayerOutsets {
+    val bounds = rows.fold(Rect(0f, 0f, widthPx, heightPx.toFloat())) { bounds, row ->
+        val centerOffset = playerTextAlignmentOffset(row.minX, row.maxX, widthPx, 1f, endAligned)
+        bounds.lyricUnion(row.layerBounds)
+            .lyricUnion(row.layerBounds.translate(Offset(centerOffset, 0f)))
+    }
+    return with(density) {
+        LayerOutsets(
+            left = (-bounds.left).coerceAtLeast(0f).toDp(),
+            right = (bounds.right - widthPx).coerceAtLeast(0f).toDp(),
+            top = (-bounds.top).coerceAtLeast(0f).toDp(),
+            bottom = (bounds.bottom - heightPx).coerceAtLeast(0f).toDp(),
+        )
+    }
+}
+
+/** Retain preparation across lazy-item disposal, bounded to a small part of the document. */
+private class PreparedLyricLineCache {
+    private data class Key(val line: LyricLine, val width: Float, val wordEffects: Boolean)
+    private val entries = LinkedHashMap<Key, PreparedLyricLine>(32, 0.75f, true)
+    private var rasterBytes = 0L
+
+    fun prepare(
+        line: LyricLine, width: Float, measurer: TextMeasurer, style: TextStyle,
+        color: Color, density: androidx.compose.ui.unit.Density, direction: LayoutDirection,
+        wordEffects: Boolean = true,
+    ): PreparedLyricLine {
+        val key = Key(line, width, wordEffects)
+        synchronized(entries) { entries[key]?.let { return it } }
+        val syllables = line.animationWords().map {
+            Syllable(it.startTimeMs, it.endTimeMs, it.text + if (it.hasTrailingSpace) " " else "")
+        }
+        val spaceWidth = measurer.measure(" ", style).size.width.toFloat()
+        val measured = measureSyllables(syllables, measurer, style, spaceWidth, width,
+            hasNativeWordTiming = line.words.isNotEmpty() && wordEffects)
+        val wrapped = calculateWrappedLines(measured, width, measurer, style)
+        val height = measurer.measure("M", style).size.height.toFloat()
+        val effectScale = with(density) { lyricEffectGeometryScale(style.fontSize.toPx()) }
+        var remainingBytes = 4L * 1024 * 1024
+        val positioned = calculateStaticLineLayout(wrapped, height).map { row ->
+            row.map { layout ->
+                val raster = prepareLyricTextRaster(layout.textLayoutResult, color, density,
+                    direction, remainingBytes)
+                remainingBytes -= raster?.byteCount ?: 0L
+                val duration = layout.animationSource.endTimeMs - layout.animationSource.startTimeMs
+                val glyphs = layout.glyphs.map { glyph ->
+                    val glow = if (raster != null && layout.effects.glow && glyph.visible) {
+                        prepareLyricGlyphGlow(raster, glyph.bounds.left, glyph.bounds.right,
+                            wordMotion(0.5f, duration).glowRadius * effectScale, color, remainingBytes)
+                    } else null
+                    remainingBytes -= glow?.byteCount ?: 0L
+                    glyph.copy(glow = glow)
+                }
+                layout.copy(raster = raster, glyphs = glyphs)
+            }
+        }
+        val preparedHeight = positioned.flatten().maxOfOrNull {
+            it.position.y + it.textLayoutResult.size.height
+        } ?: 0f
+        val prepared = PreparedLyricLine(calculateRowRenderData(positioned, effectScale),
+            ceil(preparedHeight).toInt(), 4L * 1024 * 1024 - remainingBytes)
+        synchronized(entries) {
+            entries[key]?.let { return it }
+            entries[key] = prepared
+            rasterBytes += prepared.rasterBytes
+            while (entries.size > 32 || rasterBytes > 12L * 1024 * 1024) {
+                val iterator = entries.entries.iterator()
+                rasterBytes -= iterator.next().value.rasterBytes
+                iterator.remove()
+            }
+        }
+        return prepared
+    }
+}
+
+private fun measureSyllables(
+    syllables: List<Syllable>,
+    textMeasurer: TextMeasurer,
+    style: TextStyle,
+    spaceWidth: Float,
+    availableWidthPx: Float,
+    hasNativeWordTiming: Boolean,
+): List<SyllableLayout> = syllables.flatMap { source ->
+    val sourceRanges = lyricGraphemeRanges(source.content)
+    val duration = source.endTimeMs - source.startTimeMs
+    val effects = lyricWordEffects(source.content, duration, hasNativeWordTiming)
+    val chunks = lyricTextChunks(source.content, availableWidthPx) {
+        textMeasurer.measure(it, style).size.width.toFloat()
+    }
+    chunks.map { range ->
+        val syllable = Syllable(
+            startTimeMs = lyricChunkTimeMs(source.startTimeMs, source.endTimeMs,
+                source.content.length, range.first),
+            endTimeMs = lyricChunkTimeMs(source.startTimeMs, source.endTimeMs,
+                source.content.length, range.last + 1),
+            content = source.content.substring(range),
+        )
+        val layoutResult = textMeasurer.measure(syllable.content, style)
+        var layoutWidth = layoutResult.size.width.toFloat()
+        if (syllable.content.endsWith(" ")) {
+            val trimmedContent = syllable.content.trimEnd()
+            val trimmedWidth = textMeasurer.measure(trimmedContent, style).size.width.toFloat()
+            val spaceCount = syllable.content.length - trimmedContent.length
+            layoutWidth = maxOf(layoutWidth, trimmedWidth + spaceWidth * spaceCount)
+        }
+        val glyphs = shapedLyricGlyphs(layoutResult, syllable.content, range.first,
+            sourceRanges, source.content.needsJoinedText())
+        SyllableLayout(
+            syllable = syllable,
+            textLayoutResult = layoutResult,
+            effects = effects,
+            animationSource = source,
+            sourceOffset = range.first,
+            width = layoutWidth,
+            lineEndWidth = textMeasurer.measure(syllable.content.trimEnd(), style).size.width.toFloat(),
+            glyphs = glyphs,
+        )
+    }
+}
+
+private fun shapedLyricGlyphs(
+    layout: TextLayoutResult, content: String, sourceOffset: Int,
+    sourceRanges: List<IntRange>, joined: Boolean,
+): List<LyricGlyph> {
+    if (content.isEmpty()) return emptyList()
+    val ranges = if (joined) listOf(content.indices) else lyricGraphemeRanges(content)
+    val padding = lyricGlyphOutsetPx(layout.size.height.toFloat())
+    val result = mutableListOf<LyricGlyph>()
+    for (range in ranges) {
+        val boxes = range.map(layout::getBoundingBox)
+        val bounds = Rect(boxes.minOf { it.left }, -padding,
+            boxes.maxOf { it.right }, layout.size.height + padding)
+        val sourceIndex = if (joined) 0 else sourceRanges.indexOfFirst { sourceOffset + range.first in it }.coerceAtLeast(0)
+        val glyph = LyricGlyph(range, bounds, sourceIndex, if (joined) 1 else sourceRanges.size,
+            visible = range.any { !content[it].isWhitespace() && !content[it].isPunctuation() })
+        val previous = result.lastOrNull()
+        // Shared ligature bounds must move together instead of slicing a shaped glyph in half.
+        if (previous != null && (bounds.width <= 0f || bounds.left < previous.bounds.right - 0.5f)) {
+            result[result.lastIndex] = previous.copy(range = previous.range.first..range.last,
+                visible = previous.visible || glyph.visible,
+                bounds = Rect(minOf(previous.bounds.left, bounds.left), -padding,
+                    maxOf(previous.bounds.right, bounds.right), layout.size.height + padding),
+                motionBounds = Rect(minOf(previous.motionBounds.left, bounds.left), 0f,
+                    maxOf(previous.motionBounds.right, bounds.right), layout.size.height.toFloat()))
+        } else result += glyph
+    }
+    return result.mapIndexed { index, glyph ->
+        glyph.copy(bounds = Rect(
+            if (index == 0) -padding else glyph.bounds.left,
+            -padding,
+            if (index == result.lastIndex) layout.size.width + padding else result[index + 1].bounds.left,
+            layout.size.height + padding,
+        ))
+    }
+}
+
+internal fun shouldUseWordAnimation(content: String, durationMs: Long): Boolean =
+    lyricWordEffects(content, durationMs).scale
+
+internal const val LYRIC_FLOAT_MAX_OFFSET_PX = 4f
+
+private fun String.needsJoinedText(): Boolean = lyricUsesJoinedGlyphs(this)
+
+private fun Char.isPunctuation(): Boolean = when (Character.getType(this)) {
+    Character.CONNECTOR_PUNCTUATION.toInt(),
+    Character.DASH_PUNCTUATION.toInt(),
+    Character.START_PUNCTUATION.toInt(),
+    Character.END_PUNCTUATION.toInt(),
+    Character.INITIAL_QUOTE_PUNCTUATION.toInt(),
+    Character.FINAL_QUOTE_PUNCTUATION.toInt(),
+    Character.OTHER_PUNCTUATION.toInt(),
+    -> true
+    else -> false
+}
+
+private fun calculateWrappedLines(
+    syllableLayouts: List<SyllableLayout>,
+    availableWidthPx: Float,
+    textMeasurer: TextMeasurer,
+    style: TextStyle,
+): List<WrappedLine> = lyricWrapRanges(
+    contents = syllableLayouts.map { it.syllable.content },
+    widths = syllableLayouts.map { it.width },
+    availableWidthPx = availableWidthPx,
+    lineEndWidths = syllableLayouts.map { it.lineEndWidth },
+).map { range ->
+    trimLineTrailingSpaces(syllableLayouts.subList(range.first, range.last + 1), textMeasurer, style)
+}
+
+private fun trimLineTrailingSpaces(
+    layouts: List<SyllableLayout>,
+    textMeasurer: TextMeasurer,
+    style: TextStyle,
+): WrappedLine {
+    if (layouts.isEmpty()) return WrappedLine(emptyList(), 0f)
+    val processed = layouts.toMutableList()
+    while (processed.lastOrNull()?.syllable?.content?.isBlank() == true) {
+        processed.removeAt(processed.lastIndex)
+    }
+    if (processed.isEmpty()) return WrappedLine(emptyList(), 0f)
+
+    val lastLayout = processed.last()
+    val trimmedContent = lastLayout.syllable.content.trimEnd()
+    if (trimmedContent.length < lastLayout.syllable.content.length) {
+        if (trimmedContent.isEmpty()) {
+            processed.removeAt(processed.lastIndex)
+        } else {
+            val trimmedResult = textMeasurer.measure(trimmedContent, style)
+            processed[processed.lastIndex] = lastLayout.copy(
+                syllable = lastLayout.syllable.copy(content = trimmedContent),
+                textLayoutResult = trimmedResult,
+                width = trimmedResult.size.width.toFloat(),
+                glyphs = shapedLyricGlyphs(trimmedResult, trimmedContent, lastLayout.sourceOffset,
+                    lyricGraphemeRanges(lastLayout.animationSource.content),
+                    lastLayout.animationSource.content.needsJoinedText()),
+            )
+        }
+    }
+    return WrappedLine(
+        syllables = processed,
+        totalWidth = processed.sumOf { it.width.toDouble() }.toFloat(),
+    )
+}
+
+private fun calculateStaticLineLayout(
+    wrappedLines: List<WrappedLine>,
+    lineHeight: Float,
+): List<List<SyllableLayout>> {
+    var currentY = 0f
+    return wrappedLines.map { wrappedLine ->
+        val maxBaseline = wrappedLine.syllables.maxOfOrNull { it.firstBaseline } ?: 0f
+        var currentX = 0f
+        val row = wrappedLine.syllables.map { initialLayout ->
+            val positioned = initialLayout.copy(
+                position = Offset(
+                    x = currentX,
+                    y = currentY + maxBaseline - initialLayout.firstBaseline,
+                ),
+            )
+            currentX += initialLayout.width
+            positioned
+        }
+        currentY += maxOf(lineHeight, row.maxOfOrNull {
+            maxBaseline + it.textLayoutResult.size.height - it.firstBaseline
+        } ?: lineHeight)
+        row
+    }
+}
+
+private fun calculateRowRenderData(
+    lineLayouts: List<List<SyllableLayout>>,
+    effectScale: Float,
+): List<RowRenderData> = lineLayouts.mapNotNull { layouts ->
+    if (layouts.isEmpty()) return@mapNotNull null
+    val minX = layouts.minOf { it.position.x }
+    val maxX = layouts.maxOf { it.position.x + it.width }
+    val width = maxX - minX
+    val minY = layouts.minOf { it.position.y }
+    val height = layouts.maxOf { it.textLayoutResult.size.height }.toFloat()
+    val visualBounds = layouts.fold(Rect(minX, minY, maxX, minY + height)) { rowBounds, layout ->
+        layout.glyphs.fold(rowBounds) { bounds, glyph ->
+            val rasterPadding = layout.raster?.padding?.toFloat()
+            val ink = if (rasterPadding != null) Rect(
+                maxOf(glyph.bounds.left, -rasterPadding), -rasterPadding,
+                minOf(glyph.bounds.right, layout.textLayoutResult.size.width + rasterPadding),
+                layout.textLayoutResult.size.height + rasterPadding,
+            ) else glyph.bounds
+            val coverage = glyph.glow?.let { ink.lyricUnion(it.bounds) } ?: ink
+            val maxScale = if (layout.effects.scale && glyph.visible) wordMotion(0.5f,
+                layout.animationSource.endTimeMs - layout.animationSource.startTimeMs).scale else 1f
+            bounds.lyricUnion(lyricGlyphVisualBounds(coverage,
+                lyricCharacterPivot(Offset(glyph.motionBounds.left, 0f), glyph.motionBounds.width,
+                    layout.textLayoutResult.size.height.toFloat()),
+                maxScale, LYRIC_FLOAT_MAX_OFFSET_PX * effectScale).translate(layout.position))
+        }
+    }
+    RowRenderData(
+        layouts = layouts,
+        minX = minX,
+        maxX = maxX,
+        width = width,
+        firstStartTimeMs = layouts.minOf { it.animationSource.startTimeMs },
+        lastEndTimeMs = layouts.last().syllable.endTimeMs,
+        layerBounds = visualBounds,
+    )
+}
+
+private fun DrawScope.drawLyricsLine(
+    rows: List<RowRenderData>,
+    canvasWidth: Float,
+    alignmentProgress: State<Float>,
+    endAligned: Boolean,
+    positionMs: Long,
+    color: Color,
+    activeAlpha: Float,
+    effectScale: Float,
+    fadeWidthPx: Float,
+    glyphMotionEnabled: Boolean,
+    inactiveAlpha: Float = LYRIC_INACTIVE_TEXT_ALPHA,
+    activeOpacityLimit: Float = 1f,
+) {
+    val motionStrength = lyricLineMotionStrength(activeAlpha)
+    val foregroundAlpha = minOf(activeAlpha, activeOpacityLimit)
+    rows.forEach { row ->
+        val width = minOf(fadeWidthPx, row.width).coerceAtLeast(1f)
+        val fade = lyricFadeBounds(row.minX, row.maxX, linePixelPosition(row, positionMs), width)
+        val offset = playerTextAlignmentOffset(row.minX, row.maxX, canvasWidth, alignmentProgress.value, endAligned)
+        val uniformAlpha = when {
+            positionMs <= row.firstStartTimeMs -> inactiveAlpha
+            positionMs >= row.lastEndTimeMs -> foregroundAlpha
+            foregroundAlpha == inactiveAlpha -> inactiveAlpha
+            else -> null
+        }
+        withTransform({ translate(left = offset) }) {
+            if (uniformAlpha != null) {
+                drawRowText(row.layouts, color, positionMs, motionStrength, effectScale, uniformAlpha,
+                    fade, glyphMotionEnabled)
+            } else {
+                drawIntoCanvas { canvas ->
+                    canvas.saveLayer(row.layerBounds, LyricLayerPaint)
+                    drawRowText(row.layouts, color, positionMs, motionStrength, effectScale, 1f,
+                        fade, glyphMotionEnabled)
+                    val center = (fade.startX + fade.endX) / 2f
+                    val clippedWidth = (fade.endX - fade.startX).coerceAtLeast(0.001f)
+                    translate(left = center) {
+                        drawRect(
+                            brush = row.gradient(foregroundAlpha, clippedWidth, inactiveAlpha),
+                            topLeft = row.layerBounds.topLeft - Offset(center, 0f),
+                            size = row.layerBounds.size,
+                            blendMode = BlendMode.DstIn,
+                        )
+                    }
+                    canvas.restore()
+                }
+            }
+        }
+    }
+}
+
+internal fun DrawScope.drawLyricForeground(
+    textLayoutResult: TextLayoutResult,
+    color: Color,
+    topLeft: Offset = Offset.Zero,
+) {
+    drawText(
+        textLayoutResult = textLayoutResult,
+        color = color,
+        topLeft = topLeft,
+        shadow = Shadow.None,
+    )
+}
+
+internal fun lyricLineMotionStrength(activeAlpha: Float): Float =
+    ((activeAlpha - LYRIC_INACTIVE_TEXT_ALPHA) / (1f - LYRIC_INACTIVE_TEXT_ALPHA)).coerceIn(0f, 1f)
+
+internal fun WordMotion.withLineStrength(strength: Float): WordMotion {
+    val amount = strength.coerceIn(0f, 1f)
+    return copy(
+        scale = 1f + (scale - 1f) * amount,
+        offsetYPx = offsetYPx * amount,
+        glowAlpha = glowAlpha * amount,
+    )
+}
+
+private fun linePixelPosition(row: RowRenderData, positionMs: Long): Float {
+    val index = row.cursor.indexAt(positionMs)
+    val layout = row.layouts.getOrNull(index)
+    return if (layout != null) {
+        layout.position.x + layout.width * lyricIntervalProgress(positionMs,
+            layout.syllable.startTimeMs, layout.syllable.endTimeMs)
+    } else row.maxX
+}
+
+private fun DrawScope.drawRowText(
+    layouts: List<SyllableLayout>,
+    color: Color,
+    positionMs: Long,
+    motionStrength: Float,
+    effectScale: Float,
+    alpha: Float,
+    fade: LyricFadeBounds,
+    glyphMotionEnabled: Boolean,
+) {
+    layouts.forEachIndexed { index, layout ->
+        val source = layout.animationSource
+        val started = positionMs > source.startTimeMs
+        val completed = positionMs >= source.endTimeMs
+        val effectsActive = (layout.effects.scale || layout.effects.glow) && started && !completed
+        val untouched = fade.endX <= layout.position.x + layout.glyphStartX
+        val revealed = fade.startX >= layout.position.x + layout.glyphEndX
+        if ((!effectsActive && (untouched || revealed)) || motionStrength == 0f) {
+            val offset = if (revealed && glyphMotionEnabled)
+                -LYRIC_FLOAT_MAX_OFFSET_PX * effectScale * motionStrength else 0f
+            val padding = lyricGlyphOutsetPx(layout.textLayoutResult.size.height.toFloat())
+            drawLyricRasterOrText(layout.textLayoutResult, layout.raster, color,
+                layout.position + Offset(0f, offset),
+                Rect(-padding, -padding, layout.textLayoutResult.size.width + padding,
+                    layout.textLayoutResult.size.height + padding), alpha)
+        } else {
+            val punctuationDriver = if (layout.syllable.content.trim().all(Char::isPunctuation)) {
+                layouts.subList(0, index).lastOrNull {
+                    it.syllable.content.trim().any { char -> !char.isPunctuation() }
+                }?.animationSource ?: source
+            } else source
+            for (glyph in layout.glyphs) {
+                val raw = if (layout.effects.glow || layout.effects.scale) {
+                    characterMotion(positionMs, punctuationDriver.startTimeMs, punctuationDriver.endTimeMs,
+                        glyph.sourceIndex, glyph.sourceCount)
+                } else WordMotion(1f, 0f, 0f)
+                val glyphScale = if (layout.effects.scale && glyph.visible && glyphMotionEnabled)
+                    raw.scale else 1f
+                val pivotX = layout.position.x + glyph.motionBounds.center.x
+                val revealProgress = lyricGlyphRevealProgress(
+                    pivotX + (layout.position.x + glyph.motionBounds.left - pivotX) * glyphScale,
+                    pivotX + (layout.position.x + glyph.motionBounds.right - pivotX) * glyphScale, fade)
+                val motion = raw.copy(
+                    scale = glyphScale,
+                    offsetYPx = if (glyphMotionEnabled) lyricRevealFloatOffset(revealProgress) * effectScale else 0f,
+                    glowAlpha = if (layout.effects.glow && glyph.visible) raw.glowAlpha else 0f,
+                ).withLineStrength(motionStrength)
+                val position = layout.position + Offset(0f, motion.offsetYPx)
+                withTransform({
+                    scale(motion.scale, motion.scale, lyricCharacterPivot(
+                        position + Offset(glyph.motionBounds.left, 0f), glyph.motionBounds.width,
+                        layout.textLayoutResult.size.height.toFloat()))
+                }) {
+                    glyph.glow?.let { glow ->
+                        if (motion.glowAlpha > 0.001f) glow.draw(this, position, motion.glowAlpha * alpha)
+                    }
+                    drawLyricRasterOrText(layout.textLayoutResult, layout.raster, color,
+                        position, glyph.bounds, alpha)
+                }
+            }
+        }
+    }
+}
+
+internal data class WordMotion(
+    val scale: Float,
+    val offsetYPx: Float,
+    val glowRadius: Float,
+    val glowAlpha: Float = 0f,
+)
+
+internal fun lyricIntervalProgress(
+    positionMs: Long,
+    startTimeMs: Long,
+    endTimeMs: Long,
+): Float {
+    val durationMs = endTimeMs - startTimeMs
+    if (durationMs <= 0L) return if (positionMs >= startTimeMs) 1f else 0f
+    return ((positionMs - startTimeMs).toFloat() / durationMs).coerceIn(0f, 1f)
+}
+
+internal fun characterProgress(
+    positionMs: Long,
+    wordStartTimeMs: Long,
+    wordEndTimeMs: Long,
+    characterIndex: Int,
+    characterCount: Int,
+): Float {
+    val wordDurationMs = (wordEndTimeMs - wordStartTimeMs).coerceAtLeast(0L)
+    val windowFraction = if (characterCount <= 10) 0.68f else 4f / (characterCount + 3)
+    val animationDurationMs = wordDurationMs * windowFraction
+    if (animationDurationMs <= 0f) {
+        return if (positionMs >= wordStartTimeMs) 1f else 0f
+    }
+    val boundedCharacterCount = characterCount.coerceAtLeast(1)
+    val characterRatio = if (boundedCharacterCount > 1) {
+        characterIndex.coerceIn(0, boundedCharacterCount - 1).toFloat() /
+            (boundedCharacterCount - 1)
+    } else {
+        0.5f
+    }
+    val latestStartTimeMs = wordEndTimeMs - animationDurationMs
+    val animationStartTimeMs = wordStartTimeMs +
+        (latestStartTimeMs - wordStartTimeMs) * characterRatio
+    return ((positionMs - animationStartTimeMs) / animationDurationMs).coerceIn(0f, 1f)
+}
+
+internal fun lyricCharacterFloatOffset(
+    positionMs: Long,
+    startTimeMs: Long,
+    endTimeMs: Long,
+    characterIndex: Int,
+    characterCount: Int,
+): Float {
+    val count = characterCount.coerceAtLeast(1)
+    val duration = (endTimeMs - startTimeMs).coerceAtLeast(1L).toFloat()
+    val window = duration * (2f / (count + 1)).coerceAtMost(1f)
+    val ratio = if (count == 1) 0f else characterIndex.coerceIn(0, count - 1).toFloat() / (count - 1)
+    val start = startTimeMs + (duration - window) * ratio
+    val progress = ((positionMs - start) / window).coerceIn(0f, 1f)
+    val eased = (1f - cos(progress * Math.PI).toFloat()) / 2f
+    return -LYRIC_FLOAT_MAX_OFFSET_PX * eased
+}
+
+internal fun characterMotion(
+    positionMs: Long,
+    wordStartTimeMs: Long,
+    wordEndTimeMs: Long,
+    characterIndex: Int,
+    characterCount: Int,
+): WordMotion {
+    val progress = characterProgress(
+        positionMs = positionMs,
+        wordStartTimeMs = wordStartTimeMs,
+        wordEndTimeMs = wordEndTimeMs,
+        characterIndex = characterIndex,
+        characterCount = characterCount,
+    )
+    val motion = wordMotion(progress, wordEndTimeMs - wordStartTimeMs)
+    return motion.copy(
+        offsetYPx = lyricCharacterFloatOffset(
+            positionMs, wordStartTimeMs, wordEndTimeMs, characterIndex, characterCount,
+        ),
+    )
+}
+
+internal fun wordMotion(
+    progress: Float,
+    durationMs: Long,
+): WordMotion {
+    val boundedProgress = progress.coerceIn(0f, 1f)
+    val durationRatio = ((durationMs - 1_000L) / 2_000f).coerceIn(0f, 1f)
+    val intensity = durationRatio * durationRatio * (3f - 2f * durationRatio)
+    val pulse = sin(boundedProgress * Math.PI).toFloat().let { it * it }
+    return WordMotion(
+        scale = 1f + (0.06f + 0.06f * intensity) * pulse,
+        offsetYPx = -LYRIC_FLOAT_MAX_OFFSET_PX *
+            (1f - cos(boundedProgress * Math.PI).toFloat()) / 2f,
+        glowRadius = 7f + 5f * intensity,
+        glowAlpha = (0.42f + 0.2f * intensity) * pulse,
+    )
+}
