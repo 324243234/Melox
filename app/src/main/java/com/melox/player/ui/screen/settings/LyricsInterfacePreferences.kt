@@ -1,5 +1,9 @@
 package com.melox.player.ui.screen.settings
 
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import android.content.Context
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
