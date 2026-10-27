@@ -25,18 +25,15 @@ internal fun rememberPlayerHeaderGestureModifier(
     onTogglePlayPause: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
-    onOpenLyricsSettings: () -> Unit,
 ): Modifier {
     val currentOnTogglePlayPause by rememberUpdatedState(onTogglePlayPause)
     val currentOnPrevious by rememberUpdatedState(onPrevious)
     val currentOnNext by rememberUpdatedState(onNext)
-    val currentOnOpenLyricsSettings by rememberUpdatedState(onOpenLyricsSettings)
     val hapticFeedback = LocalHapticFeedback.current
     val thresholdPx = with(LocalDensity.current) { 48.dp.toPx() }
     val toggleLabel = stringResource(if (playWhenReady) R.string.pause else R.string.play)
     val previousLabel = stringResource(R.string.previous_track)
     val nextLabel = stringResource(R.string.next_track)
-    val settingsLabel = stringResource(R.string.player_settings_open)
     if (!enabled) return Modifier
 
     fun performWithHaptic(action: () -> Unit) {
@@ -59,16 +56,11 @@ internal fun rememberPlayerHeaderGestureModifier(
                     performWithHaptic(currentOnNext)
                     true
                 },
-                CustomAccessibilityAction(settingsLabel) {
-                    performWithHaptic(currentOnOpenLyricsSettings)
-                    true
-                },
             )
         }
         .pointerInput(Unit) {
             detectTapGestures(
                 onDoubleTap = { performWithHaptic(currentOnTogglePlayPause) },
-                onLongPress = { performWithHaptic(currentOnOpenLyricsSettings) },
             )
         }
         .pointerInput(thresholdPx) {

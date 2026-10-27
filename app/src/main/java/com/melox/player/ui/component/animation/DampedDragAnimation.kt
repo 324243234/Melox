@@ -3,6 +3,7 @@
 
 package com.melox.player.ui.component.animation
 
+// Adapted from Kyant0/AndroidLiquidGlass — https://github.com/Kyant0/AndroidLiquidGlass (Apache 2.0).
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
@@ -32,10 +33,6 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.time.TimeSource
 
-/**
- * Keeps the logical tab position, pressed morphology, and normalized drag velocity in sync.
- * Callers translate the dimensionless [value] into pixels for their own layout.
- */
 internal class DampedDragAnimation(
     private val animationScope: CoroutineScope,
     val initialValue: Float,
@@ -46,6 +43,7 @@ internal class DampedDragAnimation(
     val canDrag: (Offset) -> Boolean = { true },
     val onDragStarted: DampedDragAnimation.(position: Offset) -> Unit,
     val onDragStopped: DampedDragAnimation.() -> Unit,
+    val onDragCancelled: DampedDragAnimation.() -> Unit = onDragStopped,
     val onDrag: DampedDragAnimation.(size: IntSize, dragAmount: Offset) -> Unit,
 ) {
 
@@ -90,7 +88,7 @@ internal class DampedDragAnimation(
                 release()
             },
             onDragCancel = {
-                onDragStopped()
+                onDragCancelled()
                 release()
             },
         ) { change, dragAmount ->
@@ -117,7 +115,6 @@ internal class DampedDragAnimation(
         releaseJob?.cancel()
         releaseJob = animationScope.launch {
             withFrameMillis { }
-            // Keep the stretched glass shape visible until the position spring is nearly settled.
             if (value != targetValue) {
                 val threshold = (valueRange.endInclusive - valueRange.start) * 0.025f
                 snapshotFlow { valueAnimation.value }.first { abs(it - valueAnimation.targetValue) < threshold }
@@ -151,7 +148,6 @@ internal class DampedDragAnimation(
 
     private fun updateVelocity() {
         velocityTracker.addPosition(nowMillis(), Offset(value, 0f))
-        // Normalize by the whole logical range so deformation is independent of tab count.
         val span = (valueRange.endInclusive - valueRange.start).coerceAtLeast(1e-6f)
         val targetVelocity = velocityTracker.calculateVelocity().x / span
         animationScope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -167,7 +163,6 @@ internal suspend fun PointerInputScope.inspectDragGestures(
     onDrag: (change: PointerInputChange, dragAmount: Offset) -> Unit,
 ) {
     awaitEachGesture {
-        // Observe the initial pass before descendants can consume the press, then continue normally.
         val initialDown = awaitFirstDown(false, PointerEventPass.Initial)
         val down = awaitFirstDown(false)
         onDragStart(down)
@@ -208,7 +203,6 @@ private suspend inline fun AwaitPointerEventScope.awaitDragOrUp(
         val event = awaitPointerEvent()
         val dragEvent = event.changes.fastFirstOrNull { it.id == pointer } ?: return null
         if (dragEvent.changedToUpIgnoreConsumed()) {
-            // Preserve a multi-touch drag by handing ownership to another pressed pointer.
             val otherDown = event.changes.fastFirstOrNull { it.pressed }
             if (otherDown == null) {
                 return dragEvent

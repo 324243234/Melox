@@ -57,11 +57,13 @@ data class PlaybackUiState(
     val positionUpdateElapsedRealtimeMs: Long = 0L,
     val playbackSpeed: Float = 1f,
     val floatOutputActive: Boolean = false,
+    val audioSessionId: Int = 0,
     val durationMs: Long = 0L,
     val bufferedPositionMs: Long = 0L,
     val playbackMode: PlaybackMode = PlaybackMode.ORDER,
     val errorMessage: String? = null,
     val playbackIteration: Long = 0L,
+    val positionDiscontinuityRevision: Long = 0L,
     val trackChangeDirection: Int = 1,
 ) {
     val currentItem: PlaybackQueueItem?

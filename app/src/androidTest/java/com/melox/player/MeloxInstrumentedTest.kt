@@ -7,6 +7,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.melox.player.data.repository.SettingsRepository
+import com.melox.player.model.LyricAnimationMode
 import com.melox.player.model.NavigationTransitionStyle
 import com.melox.player.model.ThemeMode
 import kotlinx.coroutines.runBlocking
@@ -46,6 +47,9 @@ class MeloxInstrumentedTest {
         try {
             repository.setThemeMode(ThemeMode.DARK)
             repository.setDynamicColorEnabled(true)
+            repository.setShowSongListArtwork(false)
+            repository.setCircularArtwork(true)
+            repository.setShowSongListFileName(true)
             repository.setBlurEnabled(false)
             repository.setProgressiveTopBarBlurEnabled(true)
             repository.setHideBottomBar(true)
@@ -57,6 +61,9 @@ class MeloxInstrumentedTest {
             val restored = repository.loadSettings()
             assertEquals(ThemeMode.DARK, restored.themeMode)
             assertEquals(true, restored.dynamicColorEnabled)
+            assertEquals(false, restored.showSongListArtwork)
+            assertEquals(true, restored.circularArtwork)
+            assertEquals(true, restored.showSongListFileName)
             assertEquals(false, restored.blurEnabled)
             assertEquals(true, restored.progressiveTopBarBlurEnabled)
             assertEquals(true, restored.hideBottomBar)
@@ -70,6 +77,9 @@ class MeloxInstrumentedTest {
         } finally {
             repository.setThemeMode(original.themeMode)
             repository.setDynamicColorEnabled(original.dynamicColorEnabled)
+            repository.setShowSongListArtwork(original.showSongListArtwork)
+            repository.setCircularArtwork(original.circularArtwork)
+            repository.setShowSongListFileName(original.showSongListFileName)
             repository.setBlurEnabled(original.blurEnabled)
             repository.setProgressiveTopBarBlurEnabled(
                 original.progressiveTopBarBlurEnabled,
@@ -79,6 +89,140 @@ class MeloxInstrumentedTest {
             repository.setLiquidGlass(original.liquidGlass)
             repository.setPredictiveBackEnabled(original.predictiveBackEnabled)
             repository.setNavigationTransitionStyle(original.navigationTransitionStyle)
+        }
+    }
+
+    @Test
+    fun audioFocusPreferencesPersistIndependently() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = SettingsRepository(context)
+        val original = repository.loadSettings()
+        try {
+            for (enabled in listOf(false, true)) {
+                for (behavior in com.melox.player.model.TransientAudioFocusBehavior.entries) {
+                    repository.setAudioFocusEnabled(enabled)
+                    repository.setTransientAudioFocusBehavior(behavior)
+                    val restored = SettingsRepository(context).loadSettings()
+                    assertEquals(enabled, restored.audioFocusEnabled)
+                    assertEquals(behavior, restored.transientAudioFocusBehavior)
+                    assertEquals(original.highPrecisionOutput, restored.highPrecisionOutput)
+                }
+            }
+        } finally {
+            repository.setAudioFocusEnabled(original.audioFocusEnabled)
+            repository.setTransientAudioFocusBehavior(original.transientAudioFocusBehavior)
+        }
+    }
+
+    @Test
+    fun playbackBehaviorPreferencesPersistIndependently() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = SettingsRepository(context)
+        val original = repository.loadSettings()
+        try {
+            for (autoPlay in listOf(false, true)) {
+                for (terminate in listOf(false, true)) {
+                    repository.setAutoPlayOnStart(autoPlay)
+                    repository.setTerminateOnTaskRemoved(terminate)
+                    val restored = SettingsRepository(context).loadSettings()
+                    assertEquals(autoPlay, restored.autoPlayOnStart)
+                    assertEquals(terminate, restored.terminateOnTaskRemoved)
+                    assertEquals(original.playbackPauseFade, restored.playbackPauseFade)
+                }
+            }
+        } finally {
+            repository.setAutoPlayOnStart(original.autoPlayOnStart)
+            repository.setTerminateOnTaskRemoved(original.terminateOnTaskRemoved)
+        }
+    }
+
+    @Test
+    fun immersiveAndStatusBarPreferencesPersistIndependently() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = SettingsRepository(context)
+        val original = repository.loadSettings()
+        try {
+            repository.setHideControlsOnLyrics(true)
+            repository.setHideStatusBar(true)
+            repository.setImmersiveMode(true)
+            repository.setImmersiveMode(false)
+            val afterImmersion = SettingsRepository(context).loadSettings()
+            assertEquals(false, afterImmersion.immersiveMode)
+            assertEquals(true, afterImmersion.hideStatusBar)
+            assertEquals(true, afterImmersion.statusBarHidden)
+            assertEquals(true, afterImmersion.hideControlsOnLyrics)
+
+            repository.setImmersiveMode(true)
+            repository.setHideStatusBar(false)
+            val afterStatusBar = SettingsRepository(context).loadSettings()
+            assertEquals(true, afterStatusBar.immersiveMode)
+            assertEquals(false, afterStatusBar.hideStatusBar)
+            assertEquals(true, afterStatusBar.statusBarHidden)
+
+            repository.setImmersiveMode(false)
+            assertEquals(false, SettingsRepository(context).loadSettings().statusBarHidden)
+        } finally {
+            repository.setImmersiveMode(original.immersiveMode)
+            repository.setHideStatusBar(original.hideStatusBar)
+            repository.setHideControlsOnLyrics(original.hideControlsOnLyrics)
+        }
+    }
+
+    @Test
+    fun lyricAnimationModesPersistAndPreserveOtherLyricSettings() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = SettingsRepository(context)
+        val original = repository.loadSettings()
+        try {
+            for (mode in LyricAnimationMode.entries) {
+                repository.setLyricAnimationMode(mode)
+                val restored = SettingsRepository(context).loadSettings()
+                assertEquals(mode, restored.lyricAnimationMode)
+                assertEquals(original.lyricFontScale, restored.lyricFontScale, 0f)
+                assertEquals(original.lyricFontWeight, restored.lyricFontWeight)
+                assertEquals(original.showLyricsTranslation, restored.showLyricsTranslation)
+            }
+        } finally {
+            repository.setLyricAnimationMode(original.lyricAnimationMode)
+        }
+    }
+
+    @Test
+    fun translationLanguagePersistsIndependentlyOfCaptionVisibility() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = SettingsRepository(context)
+        val original = repository.loadSettings()
+        try {
+            for (language in com.melox.player.model.LyricsTranslationLanguage.entries) {
+                repository.setLyricsTranslationLanguage(language)
+                val restored = SettingsRepository(context).loadSettings()
+                assertEquals(language, restored.lyricsTranslationLanguage)
+                assertEquals(original.showLyricsTranslation, restored.showLyricsTranslation)
+                assertEquals(original.showLyricsRomanization, restored.showLyricsRomanization)
+            }
+        } finally {
+            repository.setLyricsTranslationLanguage(original.lyricsTranslationLanguage)
+        }
+    }
+
+    @Test
+    fun romanizationVisibilityPersistsIndependentlyOfTranslation() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = SettingsRepository(context)
+        val original = repository.loadSettings()
+        try {
+            for (romanization in listOf(true, false)) {
+                for (translation in listOf(true, false)) {
+                    repository.setShowLyricsRomanization(romanization)
+                    repository.setShowLyricsTranslation(translation)
+                    val restored = SettingsRepository(context).loadSettings()
+                    assertEquals(romanization, restored.showLyricsRomanization)
+                    assertEquals(translation, restored.showLyricsTranslation)
+                }
+            }
+        } finally {
+            repository.setShowLyricsRomanization(original.showLyricsRomanization)
+            repository.setShowLyricsTranslation(original.showLyricsTranslation)
         }
     }
 

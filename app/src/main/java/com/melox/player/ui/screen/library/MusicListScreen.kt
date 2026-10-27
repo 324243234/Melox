@@ -1,5 +1,7 @@
 package com.melox.player.ui.screen.library
 
+import com.melox.player.ui.component.library.LocalAlphabetIndexBottomPadding
+import com.melox.player.ui.component.library.MusicLocationAction
 import com.melox.player.ui.component.library.PreserveSortScrollPosition
 
 import androidx.compose.foundation.layout.Box
@@ -15,16 +17,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -42,10 +46,15 @@ import com.melox.player.ui.component.library.AlphabetSideBar
 import com.melox.player.ui.component.library.MusicTrackRow
 import com.melox.player.ui.component.library.TrackActionsOverlay
 import com.melox.player.ui.component.library.toggleTrackSelection
+import com.melox.player.ui.component.library.offsetSectionIndices
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.PullToRefresh
+import top.yukonga.miuix.kmp.basic.RefreshState
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Music
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -71,23 +80,48 @@ fun MusicListScreen(
     onExternalEditReturned: (Long) -> Unit,
     showMusicTagEditor: Boolean,
     showLyricoEditor: Boolean,
+    showLunaBeatEditor: Boolean,
     scrollBehavior: ScrollBehavior,
     indexTopPadding: Dp,
     listState: LazyListState,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(),
+    topContentSpacing: Dp = 12.dp,
     showIndex: Boolean = true,
-    indexBottomSpacing: Dp = 12.dp,
     selectionMode: Boolean = false,
     selectedTrackUris: Set<String> = emptySet(),
     onSelectionChange: ((Set<String>) -> Unit)? = null,
     onSelectionModeChange: ((Boolean) -> Unit)? = null,
+    showLocateAction: Boolean = false,
+    currentTrackContentUri: String? = null,
+    miniPlayerBounds: Rect = Rect.Zero,
+    playerContentBounds: Rect = Rect.Zero,
+    leadingItemCount: Int = 0,
+    leadingContent: LazyListScope.() -> Unit = {},
+    emptyContent: (@Composable (Modifier) -> Unit)? = null,
+    onRefresh: (() -> Unit)? = null,
 ) {
     val layoutDirection = LocalLayoutDirection.current
+    val density = LocalDensity.current
+    val locateActionSize = ButtonDefaults.MinHeight
+    val trackIndex = displayedTracks.indexOfFirst { it.contentUri == currentTrackContentUri }
+    val currentIndex = if (trackIndex < 0) -1 else trackIndex + leadingItemCount
+    val listSectionIndexMap = remember(sectionIndexMap, leadingItemCount) {
+        offsetSectionIndices(sectionIndexMap, leadingItemCount)
+    }
+    val locateActionVisible = showLocateAction && currentIndex >= 0 && !selectionMode &&
+        miniPlayerBounds.width > 0f && playerContentBounds.width > 0f
+    val locateBottomPadding = if (locateActionVisible) {
+        with(density) {
+            (playerContentBounds.bottom - miniPlayerBounds.top).coerceAtLeast(0f).toDp()
+        } + 12.dp + locateActionSize
+    } else {
+        0.dp
+    }
     PreserveSortScrollPosition(
         sortKey = sortConfig,
         query = query,
-        itemCount = displayedTracks.size,
+        itemCount = displayedTracks.size + leadingItemCount,
         scrollState = listState,
     ) {
         listState.requestScrollToItem(
@@ -98,13 +132,10 @@ fun MusicListScreen(
     var selectedTrack by remember { mutableStateOf<MusicTrack?>(null) }
     val listContentPadding = PaddingValues(
         start = contentPadding.calculateStartPadding(layoutDirection),
-        top = contentPadding.calculateTopPadding() + 12.dp,
+        top = contentPadding.calculateTopPadding() + topContentSpacing,
         end = contentPadding.calculateEndPadding(layoutDirection),
-        bottom = contentPadding.calculateBottomPadding() + 12.dp,
+        bottom = maxOf(contentPadding.calculateBottomPadding(), locateBottomPadding) + 12.dp,
     )
-    val showScrollTop by remember {
-        derivedStateOf { scrollBehavior.state.collapsedFraction > 0.01f }
-    }
     val sections = remember(sortConfig.descending) {
         if (sortConfig.descending) AlphabetSections.asReversed() else AlphabetSections
     }
@@ -120,26 +151,36 @@ fun MusicListScreen(
         }
     }
 
-    Box(
-        modifier = modifier.fillMaxSize(),
-    ) {
+    val listContent: @Composable () -> Unit = {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .scrollEndHaptic()
                 .overScrollVertical()
-                .nestedScroll(scrollBehavior.nestedScrollConnection),
+                .then(
+                    if (onRefresh == null) {
+                        Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
+                    } else {
+                        Modifier
+                    },
+                ),
             state = listState,
             contentPadding = listContentPadding,
             overscrollEffect = null,
         ) {
-            if (displayedTracks.isEmpty()) {
+            leadingContent()
+            if (displayedTracks.isEmpty() && leadingItemCount == 0) {
                 item(key = "empty_music") {
-                    EmptyMusicState(
-                        scanStatus = scanStatus,
-                        query = query,
-                        modifier = Modifier.fillParentMaxSize(),
-                    )
+                    val emptyModifier = Modifier.fillParentMaxSize()
+                    if (emptyContent != null) {
+                        emptyContent(emptyModifier)
+                    } else {
+                        EmptyMusicState(
+                            scanStatus = scanStatus,
+                            query = query,
+                            modifier = emptyModifier,
+                        )
+                    }
                 }
             } else {
                 itemsIndexed(
@@ -179,6 +220,31 @@ fun MusicListScreen(
                 }
             }
         }
+    }
+
+    Box(
+        modifier = modifier.fillMaxSize(),
+    ) {
+        if (onRefresh != null) {
+            val pullToRefreshState = rememberPullToRefreshState()
+            PullToRefresh(
+                isRefreshing = shouldKeepMusicPullRefreshing(scanStatus, pullToRefreshState.refreshState),
+                onRefresh = onRefresh,
+                modifier = Modifier.fillMaxSize(),
+                pullToRefreshState = pullToRefreshState,
+                contentPadding = listContentPadding,
+                topAppBarScrollBehavior = scrollBehavior,
+                refreshTexts = listOf(
+                    stringResource(R.string.music_pull_to_refresh),
+                    stringResource(R.string.music_release_to_refresh),
+                    stringResource(R.string.music_refreshing),
+                    stringResource(R.string.music_refresh_complete),
+                ),
+                content = listContent,
+            )
+        } else {
+            listContent()
+        }
 
         if (
             showIndex &&
@@ -191,8 +257,8 @@ fun MusicListScreen(
             query.isBlank()
         ) {
             AlphabetSideBar(
-                sectionIndexMap = sectionIndexMap,
-                itemCount = displayedTracks.size,
+                sectionIndexMap = listSectionIndexMap,
+                itemCount = displayedTracks.size + leadingItemCount,
                 scrollStateKey = listState,
                 isAtTarget = { targetIndex ->
                     listState.firstVisibleItemIndex == targetIndex &&
@@ -200,10 +266,9 @@ fun MusicListScreen(
                 },
                 scrollToItem = listState::scrollToItem,
                 sections = sections,
-                showScrollTop = showScrollTop,
                 onTargetIndexChanged = { targetIndex, restoreLargeTitle ->
                     val topBarState = scrollBehavior.state
-                    if (restoreLargeTitle) {
+                    if (restoreLargeTitle && !scrollBehavior.isPinned) {
                         topBarState.heightOffset = 0f
                         topBarState.contentOffset = 0f
                     } else if (topBarState.heightOffsetLimit != -Float.MAX_VALUE) {
@@ -216,10 +281,20 @@ fun MusicListScreen(
                     .padding(
                         top = indexTopPadding + 4.dp,
                         end = contentPadding.calculateEndPadding(layoutDirection),
-                        bottom = contentPadding.calculateBottomPadding() +
-                            indexBottomSpacing,
+                        bottom = LocalAlphabetIndexBottomPadding.current,
                     )
                     .fillMaxHeight()
+            )
+        }
+        if (showLocateAction) {
+            MusicLocationAction(
+                visible = locateActionVisible,
+                currentIndex = currentIndex,
+                listState = listState,
+                scrollBehavior = scrollBehavior,
+                miniPlayerBounds = miniPlayerBounds,
+                playerContentBounds = playerContentBounds,
+                contentPadding = contentPadding,
             )
         }
     }
@@ -236,8 +311,15 @@ fun MusicListScreen(
         onExternalEditReturned = onExternalEditReturned,
         showMusicTagEditor = showMusicTagEditor,
         showLyricoEditor = showLyricoEditor,
+        showLunaBeatEditor = showLunaBeatEditor,
     )
 }
+
+// Only a real pull may open the native indicator; startup scans stay silent.
+internal fun shouldKeepMusicPullRefreshing(
+    scanStatus: ScanStatus,
+    refreshState: RefreshState,
+): Boolean = scanStatus is ScanStatus.Scanning && refreshState != RefreshState.Idle
 
 internal fun resolveMusicPlaybackSelection(
     displayedTracks: List<MusicTrack>,
@@ -323,7 +405,7 @@ internal fun MusicLibraryEmptyMessage(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            tint = MiuixTheme.colorScheme.disabledOnSecondaryVariant,
             modifier = Modifier.size(48.dp),
         )
         Spacer(Modifier.height(12.dp))

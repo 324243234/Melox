@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -36,6 +38,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.melox.player.R
 import com.melox.player.model.AppSettings
+import com.melox.player.model.MIN_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT
 import com.melox.player.model.MAX_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT
 import com.melox.player.model.MAX_CUSTOM_BACKGROUND_DIM_PERCENT
 import com.melox.player.model.normalizeCustomBackgroundBlurPercent
@@ -92,7 +95,7 @@ internal fun MainBackgroundScreen(
     var blurPercent by remember(settings.customBackgroundId) { mutableIntStateOf(settings.customBackgroundBlurPercent) }
     var dimPercent by remember(settings.customBackgroundId) { mutableIntStateOf(settings.customBackgroundDimPercent) }
     var cardBlurPercent by remember(settings.customBackgroundId) { mutableIntStateOf(settings.customBackgroundCardBlurPercent) }
-    var cardOpacityPercent by remember(settings.customBackgroundId) { mutableIntStateOf(settings.customBackgroundCardOpacityPercent) }
+    var cardOpacityPercent by remember(settings.customBackgroundId) { mutableIntStateOf(normalizeCustomBackgroundCardOpacityPercent(settings.customBackgroundCardOpacityPercent)) }
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             scope.launch {
@@ -107,7 +110,8 @@ internal fun MainBackgroundScreen(
             }
         }
     }
-    val topBarBackdrop = rememberBlurBackdrop()
+    var topBarBackdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val topBarBackdrop = rememberBlurBackdrop(captureCoordinates = { topBarBackdropCaptureCoordinates })
     PageScaffold(
         topBar = {
             BlurredBar(
@@ -130,7 +134,7 @@ internal fun MainBackgroundScreen(
     ) { padding ->
         Box(
             modifier = Modifier.fillMaxSize()
-                .then(topBarBackdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
+                .then(topBarBackdrop?.let { Modifier.onGloballyPositioned { coordinates -> topBarBackdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier),
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize()
@@ -212,8 +216,8 @@ internal fun MainBackgroundScreen(
                                 title = stringResource(R.string.settings_background_card_opacity),
                                 value = cardOpacityPercent.toFloat(),
                                 valueText = stringResource(R.string.settings_percent_value, cardOpacityPercent),
-                                valueRange = 0f..MAX_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT.toFloat(),
-                                steps = MAX_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT - 1,
+                                valueRange = MIN_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT.toFloat()..MAX_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT.toFloat(),
+                                steps = MAX_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT - MIN_CUSTOM_BACKGROUND_CARD_OPACITY_PERCENT - 1,
                                 onValueChange = { value ->
                                     val percent = normalizeCustomBackgroundCardOpacityPercent(value.roundToInt())
                                     if (percent != cardOpacityPercent) {

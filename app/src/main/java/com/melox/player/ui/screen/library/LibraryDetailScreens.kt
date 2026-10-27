@@ -22,6 +22,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,15 +55,17 @@ import com.melox.player.data.library.displayArtistName
 import com.melox.player.model.MusicTrack
 import com.melox.player.ui.component.BlurredBar
 import com.melox.player.ui.component.LocalCustomPageBackground
+import com.melox.player.ui.component.LocalTopBarBlurSettings
 import com.melox.player.ui.component.topBarContainerColor
 import com.melox.player.ui.component.tabSelectedContainerColor
 import com.melox.player.ui.component.miuixBarColor
 import com.melox.player.ui.component.rememberBlurBackdrop
+import com.melox.player.ui.component.stableTopAppBarInsets
 import com.melox.player.ui.component.library.ArtistArtwork
 import com.melox.player.ui.component.library.ArtistListItem
 import com.melox.player.ui.component.library.MusicTrackDescriptionMode
 import com.melox.player.ui.component.library.MusicTrackRow
-import com.melox.player.ui.component.library.PlaybackArtwork
+import com.melox.player.ui.component.library.TrackArtwork
 import com.melox.player.ui.component.library.SelectionActionsAnimatedContent
 import com.melox.player.ui.component.library.SelectionNavigationIconAnimatedContent
 import com.melox.player.ui.component.library.TrackActionsOverlay
@@ -108,15 +112,21 @@ fun AlbumDetailScreen(
     onExternalEditReturned: (Long) -> Unit,
     showMusicTagEditor: Boolean,
     showLyricoEditor: Boolean,
+    showLunaBeatEditor: Boolean,
 ) {
     val scrollBehavior = MiuixScrollBehavior()
-    val backdrop = rememberBlurBackdrop()
+    var backdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val backdrop = rememberBlurBackdrop(captureCoordinates = { backdropCaptureCoordinates })
     val layoutDirection = LocalLayoutDirection.current
     val pagerState = rememberPagerState(pageCount = { 2 })
     val scope = rememberCoroutineScope()
     val hasWallpaper = LocalCustomPageBackground.current != null
     val tabRowBackgroundColor = topBarContainerColor(hasWallpaper, backdrop != null, MiuixTheme.colorScheme.surface)
-    val tabSelectedColor = tabSelectedContainerColor(hasWallpaper, false, MiuixTheme.colorScheme.surfaceContainer)
+    val tabSelectedColor = tabSelectedContainerColor(
+        hasWallpaper = hasWallpaper,
+        progressiveBlurActive = backdrop != null && LocalTopBarBlurSettings.current.progressiveEnabled,
+        fallbackColor = MiuixTheme.colorScheme.surfaceContainer,
+    )
     val trackSections = remember(album.tracks) { buildAlbumDiscSections(album.tracks) }
     val orderedTracks = remember(trackSections) { trackSections.flatMap(AlbumDiscSection::tracks) }
     val orderedTrackIndices = remember(orderedTracks) {
@@ -170,6 +180,7 @@ fun AlbumDetailScreen(
                     } else {
                         ""
                     },
+                    modifier = Modifier.stableTopAppBarInsets(backdrop.miuixBarColor()),
                     color = backdrop.miuixBarColor(),
                     scrollBehavior = scrollBehavior,
                     navigationIcon = {
@@ -227,7 +238,7 @@ fun AlbumDetailScreen(
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                                    .padding(start = 16.dp, end = 16.dp, bottom = 1.dp),
                                 insideMargin = PaddingValues(0.dp),
                                 colors = CardDefaults.defaultColors(
                                     color = tabRowBackgroundColor,
@@ -258,7 +269,7 @@ fun AlbumDetailScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(backdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
+                .then(backdrop?.let { Modifier.onGloballyPositioned { coordinates -> backdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier),
         ) {
             HorizontalPager(
                 state = pagerState,
@@ -276,7 +287,7 @@ fun AlbumDetailScreen(
                             .nestedScroll(scrollBehavior.nestedScrollConnection),
                         contentPadding = PaddingValues(
                             start = padding.calculateStartPadding(layoutDirection),
-                            top = padding.calculateTopPadding() + 4.dp,
+                            top = padding.calculateTopPadding() + 12.dp,
                             end = padding.calculateEndPadding(layoutDirection),
                             bottom = maxOf(
                                 padding.calculateBottomPadding(),
@@ -382,6 +393,7 @@ fun AlbumDetailScreen(
             onExternalEditReturned = onExternalEditReturned,
             showMusicTagEditor = showMusicTagEditor,
             showLyricoEditor = showLyricoEditor,
+            showLunaBeatEditor = showLunaBeatEditor,
         )
     }
 }
@@ -443,16 +455,22 @@ fun ArtistDetailScreen(
     onExternalEditReturned: (Long) -> Unit,
     showMusicTagEditor: Boolean,
     showLyricoEditor: Boolean,
+    showLunaBeatEditor: Boolean,
 ) {
     val scrollBehavior = MiuixScrollBehavior()
-    val backdrop = rememberBlurBackdrop()
+    var backdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val backdrop = rememberBlurBackdrop(captureCoordinates = { backdropCaptureCoordinates })
     val layoutDirection = LocalLayoutDirection.current
     val albums = remember(artist.tracks) { buildAlbumGroups(artist.tracks) }
     val pagerState = rememberPagerState(pageCount = { 2 })
     val scope = rememberCoroutineScope()
     val hasWallpaper = LocalCustomPageBackground.current != null
     val tabRowBackgroundColor = topBarContainerColor(hasWallpaper, backdrop != null, MiuixTheme.colorScheme.surface)
-    val tabSelectedColor = tabSelectedContainerColor(hasWallpaper, false, MiuixTheme.colorScheme.surfaceContainer)
+    val tabSelectedColor = tabSelectedContainerColor(
+        hasWallpaper = hasWallpaper,
+        progressiveBlurActive = backdrop != null && LocalTopBarBlurSettings.current.progressiveEnabled,
+        fallbackColor = MiuixTheme.colorScheme.surfaceContainer,
+    )
     var selectedTrack by remember { mutableStateOf<MusicTrack?>(null) }
     var selectedTrackUris by remember(artist.key) {
         mutableStateOf<Set<String>>(emptySet())
@@ -498,6 +516,7 @@ fun ArtistDetailScreen(
                     } else {
                         ""
                     },
+                    modifier = Modifier.stableTopAppBarInsets(backdrop.miuixBarColor()),
                     color = backdrop.miuixBarColor(),
                     scrollBehavior = scrollBehavior,
                     navigationIcon = {
@@ -555,7 +574,7 @@ fun ArtistDetailScreen(
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                                    .padding(start = 16.dp, end = 16.dp, bottom = 1.dp),
                                 insideMargin = PaddingValues(0.dp),
                                 colors = CardDefaults.defaultColors(
                                     color = tabRowBackgroundColor,
@@ -586,7 +605,7 @@ fun ArtistDetailScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(backdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
+                .then(backdrop?.let { Modifier.onGloballyPositioned { coordinates -> backdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier),
         ) {
             HorizontalPager(
                 state = pagerState,
@@ -603,7 +622,7 @@ fun ArtistDetailScreen(
                             .nestedScroll(scrollBehavior.nestedScrollConnection),
                         contentPadding = PaddingValues(
                             start = padding.calculateStartPadding(layoutDirection),
-                            top = padding.calculateTopPadding(),
+                            top = padding.calculateTopPadding() + 12.dp,
                             end = padding.calculateEndPadding(layoutDirection),
                             bottom = maxOf(
                                 padding.calculateBottomPadding(),
@@ -651,7 +670,7 @@ fun ArtistDetailScreen(
                             .nestedScroll(scrollBehavior.nestedScrollConnection),
                         contentPadding = PaddingValues(
                             start = padding.calculateStartPadding(layoutDirection) + 16.dp,
-                            top = padding.calculateTopPadding() + 8.dp,
+                            top = padding.calculateTopPadding() + 12.dp,
                             end = padding.calculateEndPadding(layoutDirection) + 16.dp,
                             bottom = maxOf(
                                 padding.calculateBottomPadding(),
@@ -685,6 +704,7 @@ fun ArtistDetailScreen(
             onExternalEditReturned = onExternalEditReturned,
             showMusicTagEditor = showMusicTagEditor,
             showLyricoEditor = showLyricoEditor,
+            showLunaBeatEditor = showLunaBeatEditor,
         )
     }
 }
@@ -704,12 +724,13 @@ private fun AlbumDetailHeader(album: AlbumGroup) {
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PlaybackArtwork(
+            TrackArtwork(
                 contentUri = cover?.contentUri.orEmpty(),
                 dateModifiedEpochSeconds = cover?.dateModifiedEpochSeconds ?: 0L,
                 fileSizeBytes = cover?.fileSizeBytes ?: 0L,
                 size = coverSize,
                 cornerRadius = 14.dp,
+                showLoadingBackground = true,
             )
             Column(
                 modifier = Modifier.weight(1f),

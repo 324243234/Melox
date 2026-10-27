@@ -38,6 +38,8 @@ fun SettingsScreen(
     onDefaultHomePageChange: (DefaultHomePage) -> Unit,
     onOpenThemeSettings: () -> Unit,
     onOpenLyricsSettings: () -> Unit,
+    onOpenPlaybackBehavior: () -> Unit,
+    onOpenAudioOutput: () -> Unit,
     onOpenAbout: () -> Unit,
     onOpenScanSettings: () -> Unit,
     onOpenStatistics: () -> Unit,
@@ -96,6 +98,21 @@ fun SettingsScreen(
                 ArrowPreference(
                     title = stringResource(R.string.settings_music_statistics_title),
                     onClick = onOpenStatistics,
+                )
+            }
+        }
+        item(key = "playback_title") {
+            SmallTitle(text = stringResource(R.string.settings_section_playback))
+        }
+        item(key = "playback") {
+            SettingsCard {
+                ArrowPreference(
+                    title = stringResource(R.string.settings_audio_output_title),
+                    onClick = onOpenAudioOutput,
+                )
+                ArrowPreference(
+                    title = stringResource(R.string.settings_playback_behavior_title),
+                    onClick = onOpenPlaybackBehavior,
                 )
             }
         }

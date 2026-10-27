@@ -22,7 +22,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -89,7 +88,6 @@ internal fun BlurredArtworkBackground(
     animate: Boolean,
     modifier: Modifier = Modifier,
     animateArtworkTransition: Boolean = true,
-    onStatusBarBackgroundDarkChanged: (Boolean) -> Unit = {},
 ) {
     val targetLayer = remember(resource.blurredCacheKey, resource.blurredArtwork) {
         resource.blurredArtwork?.let { bitmap ->
@@ -103,14 +101,6 @@ internal fun BlurredArtworkBackground(
         targetLayer = targetLayer,
         animateTransition = animateArtworkTransition,
     )
-    val currentOnStatusBarBackgroundDarkChanged by rememberUpdatedState(
-        onStatusBarBackgroundDarkChanged,
-    )
-
-    LaunchedEffect(Unit) {
-        currentOnStatusBarBackgroundDarkChanged(true)
-    }
-
     Box(
         modifier = modifier
             .background(MissingArtworkBackgroundColor)

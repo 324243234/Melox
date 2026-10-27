@@ -73,7 +73,7 @@ Melox 是一款基于 Jetpack Compose、Miuix 和 AndroidX Media3 构建的 Andr
 
 ## 支持格式与权限
 
-- 支持 AAC、ALAC、FLAC、M4A、MP3、MP4、WAV等常见本地音频格式；
+- 支持 AAC、ALAC、FLAC、M4A、MP3、MP4、WAV等常见本地音频格式
 - 首次扫描需授予音乐读取权限：Android 13 及以上为“音乐和音频”，Android 12 及以下为存储读取权限
 - 使用自定义文件夹时，需通过系统文件夹选择器授予目标文件夹及其子目录的访问权限
 - 当前 APK 仅提供 `arm64-v8a`
@@ -88,4 +88,4 @@ Melox 是一款基于 Jetpack Compose、Miuix 和 AndroidX Media3 构建的 Andr
 - [Miuix](https://github.com/compose-miuix-ui/miuix) - UI 组件与设计体系
 - [AndroidX Media3](https://developer.android.com/media/media3) - 本地媒体播放与系统媒体会话
 
-Melox 仍在持续开发中，欢迎通过 [Issues](https://github.com/Inefy-03/Melox/issues) 反馈问题或提交 [Pull Request](https://github.com/Inefy-03/Melox/pulls)。
+Melox 仍在持续开发中，欢迎通过 [Issues](https://github.com/Inefy-03/Melox/issues) 反馈问题或提交 [Pull Request](https://github.com/Inefy-03/Melox/pulls)

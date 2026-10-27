@@ -18,6 +18,8 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberOverscrollEffect
+import androidx.compose.foundation.withoutVisualEffect
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,9 +49,9 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -67,11 +70,11 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
@@ -96,18 +99,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.geometry.Rect
+import com.melox.player.model.LyricsTranslationLanguage
+import com.melox.player.model.LyricAnimationMode
 import com.melox.player.R
 import com.melox.player.data.library.ArtistGroup
 import com.melox.player.data.library.displayArtistName
 import com.melox.player.model.MusicTrack
 import com.melox.player.model.LyricsUiState
-import com.melox.player.model.LyricsDocument
 import com.melox.player.model.PlaybackMode
 import com.melox.player.model.PlaybackBackgroundStyle
 import com.melox.player.model.PlaybackQueueItem
 import com.melox.player.model.PlaybackUiState
 import com.melox.player.model.withTrackMetadata
 import com.melox.player.ui.isMiuixWideLayout
+import com.melox.player.ui.component.liquid.rememberCombinedBackdrop
 import com.melox.player.ui.component.library.PlaybackArtworkFrame
 import com.melox.player.ui.component.library.PLAYBACK_ARTWORK_SHADOW_BLUR_RADIUS
 import com.melox.player.ui.component.library.TrackActionsOverlay
@@ -130,6 +135,10 @@ import com.melox.player.ui.component.playback.fittedArtworkRect
 import kotlin.math.abs
 import kotlin.math.roundToLong
 import kotlin.math.roundToInt
+import top.yukonga.miuix.kmp.blur.Backdrop
+import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -167,7 +176,7 @@ internal fun PlayerContentPager(
     lyricsPagingEnabled: Boolean,
     lyricFontScale: Float,
     lyricFontWeight: Int,
-    forceWordByWordLyrics: Boolean,
+    lyricAnimationMode: LyricAnimationMode,
     lyricBlurEnabled: Boolean,
     centerLyrics: Boolean,
     lyricCenterOffsetY: Dp,
@@ -176,25 +185,56 @@ internal fun PlayerContentPager(
     resumeFollowRequestKey: Int,
     seekRequestKey: Int,
     seekPositionMs: Long,
-    artworkContent: @Composable () -> Unit,
+    artworkContent: @Composable (overscrollModifier: Modifier) -> Unit,
     modifier: Modifier = Modifier,
+    activeLyricAlpha: Float = 1f,
+    showLyricsRomanization: Boolean = true,
+    lyricsTranslationLanguage: LyricsTranslationLanguage = LyricsTranslationLanguage.AUTO,
+    playerActive: Boolean = true,
+    positionDiscontinuityRevision: Long = 0L,
+    lyricsBottomContent: (@Composable (Backdrop?) -> Unit)? = null,
+    lyricsBackground: Backdrop? = null,
+    lyricsBackdrop: LayerBackdrop? = null,
+    artworkAlignment: Alignment = Alignment.Center,
+    lyricsViewportTopInset: Dp = 0.dp,
+    lyricsViewportBottomInset: Dp = 0.dp,
+    immersiveMode: Boolean = false,
 ) {
+    val immersiveAlpha = playerChromeAlpha(immersiveMode)
+    val overscrollEffect = rememberOverscrollEffect()
+    val pagerOverscroll = remember(overscrollEffect) {
+        overscrollEffect?.let(::PlayerPagerOverscroll)
+    }
+    val eventOverscrollEffect = remember(overscrollEffect) {
+        overscrollEffect?.withoutVisualEffect()
+    }
     HorizontalPager(
         state = pagerState,
         userScrollEnabled = lyricsPagingEnabled,
+        overscrollEffect = eventOverscrollEffect,
         modifier = modifier.clipToBounds(),
         beyondViewportPageCount = 1,
         verticalAlignment = Alignment.CenterVertically,
         key = { it },
     ) { page ->
+        val overscrollModifier = pagerOverscroll?.run {
+            Modifier.visualModifier(page == pagerState.currentPage)
+        } ?: Modifier
         Box(
             modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center,
+            contentAlignment = if (page == 0) artworkAlignment else Alignment.Center,
         ) {
             if (page == 0) {
-                artworkContent()
+                artworkContent(overscrollModifier)
             } else {
+                val lyricBackdrop = lyricsBackdrop ?: if (lyricsBackground != null && lyricsBottomContent != null) {
+                    rememberLayerBackdrop()
+                } else null
+                val actionBackdrop = if (lyricsBackground != null && lyricBackdrop != null) {
+                    rememberCombinedBackdrop(lyricsBackground, lyricBackdrop)
+                } else null
                 SyncedLyrics(
+                    activeLyricAlpha = activeLyricAlpha,
                     lyrics = lyrics,
                     positionMs = positionMs,
                     positionUpdateElapsedRealtimeMs = positionUpdateElapsedRealtimeMs,
@@ -202,28 +242,138 @@ internal fun PlayerContentPager(
                     playbackSpeed = playbackSpeed,
                     previewPositionMs = previewPositionMs,
                     isPlaying = isPlaying,
-                    active = lyricsActive,
+                    active = lyricsActive && playerActive,
+                    playerActive = playerActive,
+                    positionDiscontinuityRevision = positionDiscontinuityRevision,
                     onSeek = onSeek,
                     contentWidth = contentWidth,
                     controlColor = controlColor,
                     emphasisControlColor = emphasisControlColor,
                     lyricFontScale = lyricFontScale,
                     lyricFontWeight = lyricFontWeight,
-                    forceWordByWordLyrics = forceWordByWordLyrics,
+                    lyricAnimationMode = lyricAnimationMode,
                     lyricBlurEnabled = lyricBlurEnabled,
                     centerLyrics = centerLyrics,
                     lyricCenterOffsetY = lyricCenterOffsetY,
                     showLyricsTranslation = showLyricsTranslation,
+                    showLyricsRomanization = showLyricsRomanization,
+                    lyricsTranslationLanguage = lyricsTranslationLanguage,
                     showBottomFade = showBottomFade,
+                    applyEdgeFade = lyricsViewportTopInset == 0.dp && lyricsViewportBottomInset == 0.dp,
                     resumeFollowRequestKey = resumeFollowRequestKey,
                     seekRequestKey = seekRequestKey,
                     seekPositionMs = seekPositionMs,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().then(overscrollModifier).then(
+                        if (lyricBackdrop != null) Modifier.layerBackdrop(lyricBackdrop)
+                        else Modifier,
+                    ).then(
+                        if (lyricsViewportTopInset > 0.dp || lyricsViewportBottomInset > 0.dp) {
+                            Modifier.portraitLyricViewport(
+                                topInset = lyricsViewportTopInset,
+                                bottomInset = lyricsViewportBottomInset,
+                                showBottomFade = showBottomFade,
+                                immersiveMode = immersiveMode,
+                                immersiveAlpha = immersiveAlpha,
+                            )
+                        } else Modifier,
+                    ),
                 )
+                lyricsBottomContent?.let { content ->
+                    Box(
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                            .fillMaxWidth().padding(bottom = lyricsViewportBottomInset),
+                    ) { content(actionBackdrop) }
+                }
             }
         }
     }
 }
+
+internal fun Modifier.portraitLyricViewport(
+    topInset: Dp,
+    bottomInset: Dp,
+    showBottomFade: Boolean,
+    immersiveMode: Boolean,
+    immersiveAlpha: State<Float>,
+): Modifier = graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithCache {
+        val top = topInset.toPx().coerceIn(0f, size.height)
+        val bottom = (size.height - bottomInset.toPx()).coerceIn(top, size.height)
+        val fade = lyricEdgeFadeHeights(showBottomFade).first.dp.toPx()
+        fun edgeAlpha(y: Float, start: Float, end: Float): Float {
+            val extent = (end - start).coerceAtLeast(0f)
+            if (extent == 0f || y < start || y > end) return 0f
+            val band = minOf(fade, extent / 2f).coerceAtLeast(1f)
+            val enter = ((y - start) / band).coerceIn(0f, 1f)
+            val exit = if (showBottomFade) ((end - y) / band).coerceIn(0f, 1f) else 1f
+            return minOf(enter, exit)
+        }
+        val normalBand = minOf(fade, (bottom - top) / 2f)
+        val fullBand = minOf(fade, size.height / 2f)
+        val stops = listOf(0f, top, top + normalBand, bottom - normalBand, bottom,
+            fullBand, size.height - fullBand, size.height).distinct().sorted()
+        val normal = stops.map { edgeAlpha(it, top, bottom) }
+        val full = stops.map { edgeAlpha(it, 0f, size.height) }
+        onDrawWithContent {
+            drawContent()
+            val alpha = immersiveAlpha.value
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colorStops = stops.mapIndexed { index, y ->
+                        y / size.height.coerceAtLeast(1f) to
+                            Color.Black.copy(alpha = normal[index] * (1f - alpha) + full[index] * alpha)
+                    }.toTypedArray(),
+                ),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+    }
+    .pointerInput(topInset, bottomInset, immersiveMode) {
+        if (immersiveMode) return@pointerInput
+        val top = topInset.toPx()
+        val bottom = size.height - bottomInset.toPx()
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            if (down.position.y < top || down.position.y >= bottom) {
+                down.consume()
+                do {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    event.changes.forEach { it.consume() }
+                } while (event.changes.any { it.pressed })
+            }
+        }
+    }
+
+@Composable
+internal fun rememberLyricDocumentTransition(
+    lyrics: LyricsUiState,
+): Pair<LyricsUiState.Available?, State<Float>> {
+    var displayedLyrics by remember { mutableStateOf<LyricsUiState.Available?>(null) }
+    val alpha = remember { Animatable(0f) }
+    LaunchedEffect(lyrics) {
+        when (lyrics) {
+            LyricsUiState.Loading -> {
+                if (displayedLyrics != null && alpha.value > 0f) alpha.animateTo(0f, tween(180))
+            }
+            LyricsUiState.Unavailable -> {
+                if (displayedLyrics != null) {
+                    if (alpha.value > 0f) alpha.animateTo(0f, tween(180))
+                    displayedLyrics = null
+                }
+            }
+            is LyricsUiState.Available -> {
+                if (displayedLyrics != lyrics) {
+                    if (displayedLyrics != null && alpha.value > 0f) alpha.animateTo(0f, tween(180))
+                    displayedLyrics = lyrics
+                    alpha.snapTo(0f)
+                }
+                alpha.animateTo(1f, tween(240))
+            }
+        }
+    }
+    return displayedLyrics to alpha.asState()
+}
+
 @Composable
 internal fun SyncedLyrics(
     lyrics: LyricsUiState,
@@ -240,7 +390,7 @@ internal fun SyncedLyrics(
     emphasisControlColor: Color,
     lyricFontScale: Float,
     lyricFontWeight: Int,
-    forceWordByWordLyrics: Boolean,
+    lyricAnimationMode: LyricAnimationMode,
     lyricBlurEnabled: Boolean,
     centerLyrics: Boolean,
     lyricCenterOffsetY: Dp,
@@ -250,9 +400,15 @@ internal fun SyncedLyrics(
     seekRequestKey: Int,
     seekPositionMs: Long,
     modifier: Modifier = Modifier,
+    activeLyricAlpha: Float = 1f,
+    showLyricsRomanization: Boolean = true,
+    lyricsTranslationLanguage: LyricsTranslationLanguage = LyricsTranslationLanguage.AUTO,
+    playerActive: Boolean = true,
+    positionDiscontinuityRevision: Long = 0L,
+    applyEdgeFade: Boolean = true,
 ) {
-    var displayedDocument by remember { mutableStateOf<LyricsDocument?>(null) }
-    val lyricsAlpha = remember { Animatable(0f) }
+    val (displayedLyrics, lyricsAlpha) = rememberLyricDocumentTransition(lyrics)
+    val displayedDocument = displayedLyrics?.document
     var unavailableTextLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val alignmentProgress = animateFloatAsState(
         targetValue = if (centerLyrics) 1f else 0f,
@@ -260,76 +416,42 @@ internal fun SyncedLyrics(
         label = "unavailableLyricsAlignment",
     )
 
-    LaunchedEffect(lyrics) {
-        when (lyrics) {
-            LyricsUiState.Loading -> {
-                if (displayedDocument != null) {
-                    lyricsAlpha.animateTo(
-                        targetValue = 0f,
-                        animationSpec = tween(180),
-                    )
-                }
-            }
-
-            LyricsUiState.Unavailable -> {
-                if (displayedDocument != null) {
-                    lyricsAlpha.animateTo(
-                        targetValue = 0f,
-                        animationSpec = tween(180),
-                    )
-                    displayedDocument = null
-                }
-            }
-
-            is LyricsUiState.Available -> {
-                val incomingDocument = lyrics.document
-                if (displayedDocument != incomingDocument) {
-                    if (displayedDocument != null) {
-                        lyricsAlpha.animateTo(
-                            targetValue = 0f,
-                            animationSpec = tween(180),
-                        )
-                    }
-                    displayedDocument = incomingDocument
-                    lyricsAlpha.snapTo(0f)
-                }
-                lyricsAlpha.animateTo(
-                    targetValue = 1f,
-                    animationSpec = tween(240),
-                )
-            }
-        }
-    }
-
     Box(
         modifier = modifier,
         contentAlignment = Alignment.Center,
     ) {
         if (displayedDocument != null) {
-            displayedDocument?.let { document ->
+            displayedDocument.let { document ->
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer { alpha = lyricsAlpha.value },
                 ) {
                     LyricsView(
+                        activeLyricAlpha = activeLyricAlpha,
                         document = document,
                         positionMs = positionMs,
                         positionUpdateElapsedRealtimeMs = positionUpdateElapsedRealtimeMs,
                         playbackIteration = playbackIteration,
                         playbackSpeed = playbackSpeed,
                         previewPositionMs = previewPositionMs,
-                        isPlaying = isPlaying && active,
+                        isPlaying = isPlaying,
+                        active = active,
+                        playerActive = playerActive,
+                        positionDiscontinuityRevision = positionDiscontinuityRevision,
                         onSeek = onSeek,
                         contentWidth = contentWidth,
                         lyricFontScale = lyricFontScale,
                         lyricFontWeight = lyricFontWeight,
-                        forceWordByWordLyrics = forceWordByWordLyrics,
+                        lyricAnimationMode = lyricAnimationMode,
                         lyricBlurEnabled = lyricBlurEnabled,
                         centerLyrics = centerLyrics,
                         centerOffsetY = lyricCenterOffsetY,
                         showLyricsTranslation = showLyricsTranslation,
+                        showLyricsRomanization = showLyricsRomanization,
+                        lyricsTranslationLanguage = lyricsTranslationLanguage,
                         showBottomFade = showBottomFade,
+                        applyEdgeFade = applyEdgeFade,
                         resumeFollowRequestKey = resumeFollowRequestKey,
                         seekRequestKey = seekRequestKey,
                         seekPositionMs = seekPositionMs,
@@ -343,6 +465,7 @@ internal fun SyncedLyrics(
             Text(
                 text = stringResource(R.string.lyrics_unavailable),
                 modifier = Modifier.width(contentWidth)
+                    .offset(y = lyricCenterOffsetY)
                     .animatedPlayerTextAlignment(unavailableTextLayout, alignmentProgress),
                 style = MiuixTheme.textStyles.title3.copy(
                     fontSize = (LYRIC_PRIMARY_FONT_SIZE_SP * lyricFontScale).sp,

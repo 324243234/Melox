@@ -87,13 +87,31 @@ internal fun playerLyricsAreActive(
 internal fun usesWidePlayerLayout(windowWidth: Dp, windowHeight: Dp): Boolean =
     playerLayout(windowWidth, windowHeight) == PlayerLayout.WIDE_TWO_PANE
 
+internal fun playerHidesSystemNavigation(layout: PlayerLayout, fullPlayerVisible: Boolean): Boolean =
+    fullPlayerVisible && layout == PlayerLayout.COMPACT_LANDSCAPE
+
+internal const val COMPACT_LANDSCAPE_ARTWORK_WEIGHT = 0.45f
+internal val COMPACT_LANDSCAPE_LYRICS_EXTENSION = 12.dp
+
+internal fun compactLandscapeLyricsToggleStart(paneWidth: Dp, buttonWidth: Dp): Dp {
+    val gap = ((paneWidth - buttonWidth * 5f) / 6f).coerceAtLeast(0.dp)
+    return (paneWidth - gap - buttonWidth).coerceAtLeast(0.dp)
+}
+
+internal fun compactLandscapeArtworkPaneWidth(availableWidth: Dp): Dp =
+    availableWidth.coerceAtLeast(0.dp) * COMPACT_LANDSCAPE_ARTWORK_WEIGHT
+
+internal fun compactLandscapeHeaderTop(
+    availableHeight: Dp,
+    headerHeight: Dp,
+    controlsHeight: Dp,
+): Dp = ((availableHeight - headerHeight -
+    COMPACT_LANDSCAPE_HEADER_TO_CONTROLS_SPACING - controlsHeight) / 2f).coerceAtLeast(0.dp)
+
 internal fun compactLandscapeArtworkSize(
     paneWidth: Dp,
     availableHeight: Dp,
-): Dp = fitPlayerArtworkSize(
-    preferredSize = paneWidth.coerceAtLeast(0.dp),
-    availableHeight = availableHeight,
-)
+): Dp = minOf(paneWidth, availableHeight).coerceAtLeast(0.dp)
 
 internal fun compactLandscapePaneContentWidth(paneWidth: Dp): Dp =
     playerContentWidth(paneWidth, PLAYER_PORTRAIT_CONTENT_MAX_WIDTH)

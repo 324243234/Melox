@@ -12,6 +12,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -24,6 +26,8 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.melox.player.model.LyricsTranslationLanguage
+import com.melox.player.model.LyricAnimationMode
 import com.melox.player.R
 import com.melox.player.model.AppSettings
 import com.melox.player.model.LyricsSidecarFormatPriority
@@ -58,8 +62,11 @@ internal fun LyricsSettingsScreen(
     onLyricsSourcePriorityChange: (LyricsSourcePriority) -> Unit,
     onLyricsSidecarFormatPriorityChange: (LyricsSidecarFormatPriority) -> Unit,
     onOpenLyricsInterface: () -> Unit,
+    onShowMiniPlayerLyricsChange: (Boolean) -> Unit,
+    onShowArtworkLyricsChange: (Boolean) -> Unit,
     onShowMusicTagEditorChange: (Boolean) -> Unit,
     onShowLyricoEditorChange: (Boolean) -> Unit,
+    onShowLunaBeatEditorChange: (Boolean) -> Unit,
 ) {
     var sourcePriority by remember(settings.lyricsSourcePriority) {
         mutableStateOf(settings.lyricsSourcePriority)
@@ -67,11 +74,20 @@ internal fun LyricsSettingsScreen(
     var formatPriority by remember(settings.lyricsSidecarFormatPriority) {
         mutableStateOf(settings.lyricsSidecarFormatPriority)
     }
+    var showMiniPlayerLyrics by remember(settings.showMiniPlayerLyrics) {
+        mutableStateOf(settings.showMiniPlayerLyrics)
+    }
+    var showArtworkLyrics by remember(settings.showArtworkLyrics) {
+        mutableStateOf(settings.showArtworkLyrics)
+    }
     var showMusicTagEditor by remember(settings.showMusicTagEditor) {
         mutableStateOf(settings.showMusicTagEditor)
     }
     var showLyricoEditor by remember(settings.showLyricoEditor) {
         mutableStateOf(settings.showLyricoEditor)
+    }
+    var showLunaBeatEditor by remember(settings.showLunaBeatEditor) {
+        mutableStateOf(settings.showLunaBeatEditor)
     }
     LyricsSettingsPage(
         titleRes = R.string.settings_lyrics_title,
@@ -80,6 +96,9 @@ internal fun LyricsSettingsScreen(
         scrollBehavior = scrollBehavior,
         onBack = onBack,
     ) {
+        item(key = "lyrics_priorities_title") {
+            SmallTitle(text = stringResource(R.string.lyrics_priority_section))
+        }
         item(key = "lyrics_priorities") {
             Card(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -130,13 +149,36 @@ internal fun LyricsSettingsScreen(
                 )
             }
         }
+        item(key = "lyrics_display_title") {
+            SmallTitle(
+                text = stringResource(R.string.lyrics_display_section),
+                modifier = Modifier.padding(top = 12.dp),
+            )
+        }
         item(key = "lyrics_interface") {
             Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 12.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
             ) {
                 ArrowPreference(
                     title = stringResource(R.string.settings_lyrics_interface_title),
                     onClick = onOpenLyricsInterface,
+                )
+                SwitchPreference(
+                    title = stringResource(R.string.lyrics_mini_player),
+                    checked = showMiniPlayerLyrics,
+                    onCheckedChange = {
+                        showMiniPlayerLyrics = it
+                        onShowMiniPlayerLyricsChange(it)
+                    },
+                )
+                SwitchPreference(
+                    title = stringResource(R.string.lyrics_artwork_page),
+                    summary = stringResource(R.string.lyrics_artwork_page_summary),
+                    checked = showArtworkLyrics,
+                    onCheckedChange = {
+                        showArtworkLyrics = it
+                        onShowArtworkLyricsChange(it)
+                    },
                 )
             }
         }
@@ -164,6 +206,14 @@ internal fun LyricsSettingsScreen(
                         onShowLyricoEditorChange(it)
                     },
                 )
+                SwitchPreference(
+                    title = stringResource(R.string.lyrics_editor_luna_beat),
+                    checked = showLunaBeatEditor,
+                    onCheckedChange = {
+                        showLunaBeatEditor = it
+                        onShowLunaBeatEditorChange(it)
+                    },
+                )
             }
         }
     }
@@ -172,6 +222,7 @@ internal fun LyricsSettingsScreen(
 @Composable
 internal fun LyricsInterfaceSettingsScreen(
     settings: AppSettings,
+    centerLyricsEnabled: Boolean,
     bottomContentPadding: Dp,
     listState: LazyListState,
     scrollBehavior: ScrollBehavior,
@@ -179,10 +230,12 @@ internal fun LyricsInterfaceSettingsScreen(
     onLeftAlignPlayerTitleChange: (Boolean) -> Unit,
     onCenterLyricsChange: (Boolean) -> Unit,
     onShowLyricsTranslationChange: (Boolean) -> Unit,
+    onShowLyricsRomanizationChange: (Boolean) -> Unit,
+    onLyricsTranslationLanguageChange: (LyricsTranslationLanguage) -> Unit,
     onLyricFontScaleChange: (Float) -> Unit,
     onLyricFontWeightChange: (Int) -> Unit,
     onLyricBlurEnabledChange: (Boolean) -> Unit,
-    onForceWordByWordLyricsChange: (Boolean) -> Unit,
+    onLyricAnimationModeChange: (LyricAnimationMode) -> Unit,
     onHideControlsOnLyricsChange: (Boolean) -> Unit,
 ) {
     var leftAlignTitle by remember(settings.leftAlignPlayerTitle) {
@@ -192,11 +245,17 @@ internal fun LyricsInterfaceSettingsScreen(
     var translation by remember(settings.showLyricsTranslation) {
         mutableStateOf(settings.showLyricsTranslation)
     }
+    var translationLanguage by remember(settings.lyricsTranslationLanguage) {
+        mutableStateOf(settings.lyricsTranslationLanguage)
+    }
+    var romanization by remember(settings.showLyricsRomanization) {
+        mutableStateOf(settings.showLyricsRomanization)
+    }
     var fontScale by remember(settings.lyricFontScale) { mutableFloatStateOf(settings.lyricFontScale) }
     var fontWeight by remember(settings.lyricFontWeight) { mutableIntStateOf(settings.lyricFontWeight) }
     var blur by remember(settings.lyricBlurEnabled) { mutableStateOf(settings.lyricBlurEnabled) }
-    var forceWordByWord by remember(settings.forceWordByWordLyrics) {
-        mutableStateOf(settings.forceWordByWordLyrics)
+    var animationMode by remember(settings.lyricAnimationMode) {
+        mutableStateOf(settings.lyricAnimationMode)
     }
     var hideControls by remember(settings.hideControlsOnLyrics) {
         mutableStateOf(settings.hideControlsOnLyrics)
@@ -212,11 +271,11 @@ internal fun LyricsInterfaceSettingsScreen(
             LyricsInterfacePreferences(
                 leftAlignPlayerTitle = leftAlignTitle,
                 centerLyrics = centerLyrics,
-                showLyricsTranslation = translation,
+                centerLyricsEnabled = centerLyricsEnabled,
                 lyricFontScale = fontScale,
                 lyricFontWeight = fontWeight,
                 lyricBlurEnabled = blur,
-                forceWordByWordLyrics = forceWordByWord,
+                lyricAnimationMode = animationMode,
                 hideControlsOnLyrics = hideControls,
                 onLeftAlignPlayerTitleChange = {
                     leftAlignTitle = it
@@ -226,10 +285,6 @@ internal fun LyricsInterfaceSettingsScreen(
                     centerLyrics = it
                     onCenterLyricsChange(it)
                 },
-                onShowLyricsTranslationChange = {
-                    translation = it
-                    onShowLyricsTranslationChange(it)
-                },
                 onLyricFontScalePreview = { fontScale = it },
                 onLyricFontScaleCommit = { onLyricFontScaleChange(fontScale) },
                 onLyricFontWeightPreview = { fontWeight = it },
@@ -238,9 +293,9 @@ internal fun LyricsInterfaceSettingsScreen(
                     blur = it
                     onLyricBlurEnabledChange(it)
                 },
-                onForceWordByWordLyricsChange = {
-                    forceWordByWord = it
-                    onForceWordByWordLyricsChange(it)
+                onLyricAnimationModeChange = {
+                    animationMode = it
+                    onLyricAnimationModeChange(it)
                 },
                 onHideControlsOnLyricsChange = {
                     hideControls = it
@@ -248,6 +303,27 @@ internal fun LyricsInterfaceSettingsScreen(
                 },
                 modifier = Modifier.padding(horizontal = 12.dp),
             )
+        }
+        item(key = "lyrics_translation_preferences") {
+            Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(top = 12.dp)) {
+                LyricsTranslationPreferences(
+                    showLyricsTranslation = translation,
+                    showLyricsRomanization = romanization,
+                    lyricsTranslationLanguage = translationLanguage,
+                    onShowLyricsTranslationChange = {
+                        translation = it
+                        onShowLyricsTranslationChange(it)
+                    },
+                    onLyricsTranslationLanguageChange = {
+                        translationLanguage = it
+                        onLyricsTranslationLanguageChange(it)
+                    },
+                    onShowLyricsRomanizationChange = {
+                        romanization = it
+                        onShowLyricsRomanizationChange(it)
+                    },
+                )
+            }
         }
     }
 }
@@ -262,7 +338,8 @@ private fun LyricsSettingsPage(
     content: LazyListScope.() -> Unit,
 ) {
     val layoutDirection = LocalLayoutDirection.current
-    val topBarBackdrop = rememberBlurBackdrop()
+    var topBarBackdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val topBarBackdrop = rememberBlurBackdrop(captureCoordinates = { topBarBackdropCaptureCoordinates })
     PageScaffold(
         topBar = {
             BlurredBar(
@@ -288,7 +365,7 @@ private fun LyricsSettingsPage(
     ) { padding ->
         Box(
             modifier = Modifier.fillMaxSize()
-                .then(topBarBackdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
+                .then(topBarBackdrop?.let { Modifier.onGloballyPositioned { coordinates -> topBarBackdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier),
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize()

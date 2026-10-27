@@ -12,6 +12,68 @@ import org.junit.Test
 
 class LyricsParserTest {
     @Test
+    fun suppliedJapaneseLyricsSeparateAllRomanizationsWithoutChangingWordTiming() {
+        val sample = javaClass.getResource("/lyrics/uchiage-hanabi.lrc")!!.readText()
+        val document = LyricsParser.parse(sample, LyricsSource.SIDECAR)!!
+        val romanized = document.lines.filter { it.romanizations.isNotEmpty() }
+
+        assertEquals(44, romanized.size)
+        for (line in romanized) {
+            for (language in com.melox.player.model.LyricsTranslationLanguage.entries) {
+                assertEquals(line.translation, line.translationFor(language, "zh-CN"))
+            }
+        }
+        assertTrue(romanized.all { it.translation != null && it.romanizations.single().language == "ja-Latn" })
+        assertTrue(romanized.all { it.romanization.orEmpty() !in it.translation.orEmpty() })
+        val first = romanized.first()
+        assertEquals(19_953L, first.startTimeMs)
+        assertEquals("a no hi mi wa ta shi ta na gi sa wo", first.romanization)
+        assertEquals("如今我仍在回想", first.translation)
+        val primaryOnly = sample.lineSequence().first { it.startsWith("[00:19.953]") }
+        val original = LyricsParser.parse(
+            "$primaryOnly\n[00:24.936]Next", LyricsSource.SIDECAR,
+        )!!.lines.first()
+        assertEquals(original.displayText, first.displayText)
+        assertEquals(original.words, first.words)
+        assertEquals(original.endTimeMs, first.endTimeMs)
+        assertTrue(first.romanizations.single().words.isEmpty())
+    }
+
+    @Test
+    fun japaneseRomanizationKeepsTranslationOrderAndWorksWithoutTranslation() {
+        for (auxiliaries in listOf(
+            "[00:01.000]君の名は\n[00:01.000]ki mi no na wa",
+            "[00:01.000]君の名は\n[00:01.000]你的名字\n[00:01.000]ki mi no na wa",
+            "[00:01.000]君の名は\nki mi no na wa\n你的名字",
+            "[00:01.000]君の名は\n[00:01.000]ki mi no na wa\n你的名字",
+        )) {
+            val line = LyricsParser.parse(auxiliaries, LyricsSource.EMBEDDED)!!.lines.single()
+            assertEquals("君の名は", line.displayText)
+            assertEquals("ki mi no na wa", line.romanization)
+            assertEquals("你的名字".takeIf { it in auxiliaries }, line.translation)
+        }
+    }
+
+    @Test
+    fun ordinaryTranslationsAndTimingMetadataAreNotClassifiedAsRomanization() {
+        for ((primary, auxiliary) in listOf(
+            "あの日" to "I remember that day",
+            "あの日" to "i remember that day",
+            "あの日" to "(9899,154)",
+            "主歌词" to "a no hi mi wa ta shi ta",
+            "あの日" to "中文翻译",
+            "あの日" to "ka ${"a".repeat(4_096)}b no",
+        )) {
+            val line = LyricsParser.parse(
+                "[00:01.000]$primary\n[00:01.000]$auxiliary", LyricsSource.SIDECAR,
+            )!!.lines.single()
+            assertTrue(line.romanizations.isEmpty())
+            assertNull(line.romanization)
+            assertEquals(auxiliary, line.translation)
+        }
+    }
+
+    @Test
     fun splAcceptsUpToSixFractionalDigits() {
         val line = LyricsParser.parse(
             "[1:02.123456]First[1:03.654321]",
@@ -186,14 +248,14 @@ class LyricsParserTest {
     }
 
     @Test
-    fun ttmlTailAlsoContinuesToTheFollowingLine() {
+    fun ttmlRetainsExplicitTailAndLineEndBeforeTheFollowingLine() {
         val doc = LyricsParser.parse(
             "<tt><body><p begin='1s' end='4s'><span begin='1s' end='2s'>First </span><span begin='2s' end='4s'>tail</span></p><p begin='7s' end='8s'>Next</p></body></tt>",
             LyricsSource.SIDECAR,
         )!!
         assertEquals(2_000L, doc.lines.first().words.first().endTimeMs)
-        assertEquals(7_000L, doc.lines.first().words.last().endTimeMs)
-        assertEquals(7_000L, doc.lines.first().endTimeMs)
+        assertEquals(4_000L, doc.lines.first().words.last().endTimeMs)
+        assertEquals(4_000L, doc.lines.first().endTimeMs)
     }
 
     @Test
@@ -319,7 +381,7 @@ class LyricsParserTest {
                 <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
                   <body><div>
                     <p begin="00:00:10.000" end="00:00:12.000" ttm:agent="v1">
-                      <span begin="00:00:10.000" end="00:00:10.500">Hello</span>
+                      <span begin="00:00:10.000" end="00:00:10.500">Hello </span>
                       <span begin="00:00:10.500" end="00:00:12.000">world</span>
                       <span ttm:role="x-translation">你好世界</span>
                     </p>

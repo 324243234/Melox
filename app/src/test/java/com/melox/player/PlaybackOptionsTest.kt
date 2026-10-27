@@ -26,6 +26,10 @@ class PlaybackOptionsTest {
         assertEquals(600, settings.sleepTimerSeconds)
         assertEquals(false, settings.autoExtendSleepTimer)
         assertEquals(false, settings.playbackPauseFade)
+        assertEquals(true, settings.audioFocusEnabled)
+        assertEquals(com.melox.player.model.TransientAudioFocusBehavior.DUCK, settings.transientAudioFocusBehavior)
+        assertEquals(false, settings.autoPlayOnStart)
+        assertEquals(false, settings.terminateOnTaskRemoved)
         assertEquals(0.95f, normalizePlaybackSpeed(0.95f))
         assertEquals(1f, normalizePlaybackSpeed(1.37f))
     }

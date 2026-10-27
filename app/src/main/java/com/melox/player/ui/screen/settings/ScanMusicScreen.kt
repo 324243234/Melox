@@ -22,11 +22,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -40,6 +44,7 @@ import com.melox.player.R
 import com.melox.player.model.AppSettings
 import com.melox.player.model.ScanStatus
 import com.melox.player.ui.component.AdaptiveTopAppBar
+import com.melox.player.ui.component.expandedTopBarBottomContentGap
 import com.melox.player.ui.component.BlurredBar
 import com.melox.player.ui.component.miuixBarColor
 import com.melox.player.ui.component.rememberBlurBackdrop
@@ -65,6 +70,7 @@ import top.yukonga.miuix.kmp.menu.OverlayIconDropdownMenu
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.theme.LocalContentColor
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
@@ -81,11 +87,13 @@ fun ScanMusicScreen(
     scanStatus: ScanStatus,
     bottomContentPadding: Dp,
     onBack: () -> Unit,
+    onSongListPullToRefreshChange: (Boolean) -> Unit,
     onRefreshOnStartChange: (Boolean) -> Unit,
     onSkipShortAudioChange: (Boolean) -> Unit,
     onAddCustomFolder: (Uri) -> Unit,
     onRemoveCustomFolder: (String) -> Unit,
     onOpenBlockedFolders: () -> Unit,
+    onOpenHiddenSongs: () -> Unit,
     onStartScan: () -> Unit,
     onClearMusicLibrary: () -> Unit,
 ) {
@@ -93,7 +101,11 @@ fun ScanMusicScreen(
     val layoutDirection = LocalLayoutDirection.current
     val isScanning = scanStatus is ScanStatus.Scanning
     val scrollBehavior = MiuixScrollBehavior()
-    val topBarBackdrop = rememberBlurBackdrop()
+    var topBarBackdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val topBarBackdrop = rememberBlurBackdrop(captureCoordinates = { topBarBackdropCaptureCoordinates })
+    var songListPullToRefreshChecked by remember(settings.songListPullToRefresh) {
+        mutableStateOf(settings.songListPullToRefresh)
+    }
     var refreshOnStartChecked by remember(settings.refreshLibraryOnStart) {
         mutableStateOf(settings.refreshLibraryOnStart)
     }
@@ -160,7 +172,36 @@ fun ScanMusicScreen(
                                 imageVector = MiuixIcons.More,
                                 contentDescription = stringResource(R.string.scan_clear_library),
                                 modifier = Modifier.size(24.dp),
+                                tint = if (isScanning) MiuixTheme.colorScheme.disabledOnSurface
+                                else LocalContentColor.current,
                             )
+                        }
+                    },
+                    bottomContent = {
+                        Button(
+                            onClick = onStartScan,
+                            enabled = !isScanning,
+                            minHeight = 46.dp,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp)
+                                .padding(
+                                    top = expandedTopBarBottomContentGap(scrollBehavior, 12.dp),
+                                    bottom = 6.dp,
+                                ),
+                            colors = ButtonDefaults.buttonColorsPrimary(),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = stringResource(R.string.scan_start),
+                                    modifier = Modifier.alpha(if (isScanning) 0f else 1f),
+                                )
+                                if (isScanning) {
+                                    InfiniteProgressIndicator(
+                                        color = MiuixTheme.colorScheme.disabledOnPrimaryButton,
+                                    )
+                                }
+                            }
                         }
                     },
                 )
@@ -170,7 +211,7 @@ fun ScanMusicScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(topBarBackdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
+                .then(topBarBackdrop?.let { Modifier.onGloballyPositioned { coordinates -> topBarBackdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier),
         ) {
             LazyColumn(
                 modifier = Modifier
@@ -189,34 +230,11 @@ fun ScanMusicScreen(
                 ),
                 overscrollEffect = null,
             ) {
-                item(key = "scan_title") {
-                    SmallTitle(text = stringResource(R.string.scan_music_card_title))
-                }
-                item(key = "scan_options") {
-                    ScanCard {
-                        SwitchPreference(
-                            checked = refreshOnStartChecked,
-                            onCheckedChange = { checked ->
-                                refreshOnStartChecked = checked
-                                onRefreshOnStartChange(checked)
-                            },
-                            title = stringResource(R.string.scan_refresh_on_start),
-                        )
-                        SwitchPreference(
-                            checked = skipShortAudioChecked,
-                            onCheckedChange = { checked ->
-                                skipShortAudioChecked = checked
-                                onSkipShortAudioChange(checked)
-                            },
-                            title = stringResource(R.string.scan_skip_short_audio),
-                        )
-                    }
-                }
                 item(key = "custom_folder_title") {
                     SmallTitle(text = stringResource(R.string.scan_custom_folder_title))
                 }
                 item(key = "custom_folders") {
-                    ScanCard(bottomPadding = 0.dp) {
+                    ScanCard {
                         ArrowPreference(
                             title = stringResource(R.string.scan_add_custom_folder),
                             onClick = {
@@ -235,33 +253,49 @@ fun ScanMusicScreen(
                         }
                     }
                 }
-                item(key = "start_scan") {
-                    Button(
-                        onClick = onStartScan,
-                        enabled = !isScanning,
-                        minHeight = 46.dp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp)
-                            .padding(top = 16.dp),
-                        colors = ButtonDefaults.buttonColorsPrimary(),
-                    ) {
-                        if (isScanning) {
-                            InfiniteProgressIndicator(
-                                color = MiuixTheme.colorScheme.disabledOnPrimaryButton,
-                            )
-                        } else {
-                            Text(
-                                text = stringResource(R.string.scan_start),
-                            )
-                        }
+                item(key = "scan_title") {
+                    SmallTitle(text = stringResource(R.string.scan_music_card_title))
+                }
+                item(key = "scan_options") {
+                    ScanCard {
+                        SwitchPreference(
+                            checked = songListPullToRefreshChecked,
+                            onCheckedChange = { checked ->
+                                songListPullToRefreshChecked = checked
+                                onSongListPullToRefreshChange(checked)
+                            },
+                            title = stringResource(R.string.scan_song_list_pull_to_refresh),
+                        )
+                        SwitchPreference(
+                            checked = refreshOnStartChecked,
+                            onCheckedChange = { checked ->
+                                refreshOnStartChecked = checked
+                                onRefreshOnStartChange(checked)
+                            },
+                            title = stringResource(R.string.scan_refresh_on_start),
+                        )
+                        SwitchPreference(
+                            checked = skipShortAudioChecked,
+                            onCheckedChange = { checked ->
+                                skipShortAudioChecked = checked
+                                onSkipShortAudioChange(checked)
+                            },
+                            title = stringResource(R.string.scan_skip_short_audio),
+                        )
                     }
                 }
+                item(key = "hidden_title") {
+                    SmallTitle(text = stringResource(R.string.scan_hidden_card_title))
+                }
                 item(key = "blocked_folders") {
-                    ScanCard(topPadding = 16.dp, bottomPadding = 0.dp) {
+                    ScanCard(bottomPadding = 0.dp) {
                         ArrowPreference(
                             title = stringResource(R.string.scan_blocked_folder_title),
                             onClick = onOpenBlockedFolders,
+                        )
+                        ArrowPreference(
+                            title = stringResource(R.string.scan_hidden_songs_title),
+                            onClick = onOpenHiddenSongs,
                         )
                     }
                 }
@@ -381,7 +415,6 @@ private fun CustomFolderRow(
 
 @Composable
 private fun ScanCard(
-    topPadding: Dp = 0.dp,
     bottomPadding: Dp = 12.dp,
     content: @Composable () -> Unit,
 ) {
@@ -389,7 +422,7 @@ private fun ScanCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
-            .padding(top = topPadding, bottom = bottomPadding),
+            .padding(bottom = bottomPadding),
         content = { content() },
     )
 }

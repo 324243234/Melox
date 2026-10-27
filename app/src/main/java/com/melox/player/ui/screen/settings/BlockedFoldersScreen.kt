@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,12 +59,14 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 @Composable
 fun BlockedFoldersScreen(
     paths: List<String>,
+    displayPaths: Map<String, String>,
     bottomContentPadding: Dp,
     onBack: () -> Unit,
     onUnblock: (String) -> Unit,
 ) {
     val scrollBehavior = MiuixScrollBehavior()
-    val backdrop = rememberBlurBackdrop()
+    var backdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val backdrop = rememberBlurBackdrop(captureCoordinates = { backdropCaptureCoordinates })
     val layoutDirection = LocalLayoutDirection.current
     var pendingPath by remember { mutableStateOf<String?>(null) }
     val sortedPaths = remember(paths) {
@@ -94,7 +98,7 @@ fun BlockedFoldersScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(backdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
+                .then(backdrop?.let { Modifier.onGloballyPositioned { coordinates -> backdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier),
         ) {
             LazyColumn(
                 modifier = Modifier
@@ -121,7 +125,7 @@ fun BlockedFoldersScreen(
                     }
                 } else {
                     items(sortedPaths, key = { it }) { path ->
-                        BlockedFolderRow(path = path, onRemove = { pendingPath = path })
+                        BlockedFolderRow(path = path, displayPath = displayPaths[path] ?: path, onRemove = { pendingPath = path })
                     }
                 }
             }
@@ -132,7 +136,7 @@ fun BlockedFoldersScreen(
         title = stringResource(R.string.scan_remove_blocked_folder_title),
         summary = stringResource(
             R.string.scan_remove_blocked_folder_message,
-            pendingPath.orEmpty(),
+            displayPaths[pendingPath] ?: pendingPath.orEmpty(),
         ),
         enableWindowDim = true,
         onDismissRequest = { pendingPath = null },
@@ -158,7 +162,7 @@ fun BlockedFoldersScreen(
 }
 
 @Composable
-private fun BlockedFolderRow(path: String, onRemove: () -> Unit) {
+private fun BlockedFolderRow(path: String, displayPath: String, onRemove: () -> Unit) {
     val normalized = path.trimEnd('/').ifEmpty { "/" }
     Row(
         modifier = Modifier
@@ -184,11 +188,9 @@ private fun BlockedFolderRow(path: String, onRemove: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = normalized,
+                text = displayPath,
                 style = MiuixTheme.textStyles.footnote1.copy(fontSize = 12.sp),
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
         IconButton(onClick = onRemove) {

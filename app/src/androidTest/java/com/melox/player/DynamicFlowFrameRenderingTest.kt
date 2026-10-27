@@ -2,7 +2,10 @@ package com.melox.player
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Canvas
+import androidx.compose.ui.unit.IntSize
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.melox.player.ui.component.playback.DynamicFlowBackgroundState
 import com.melox.player.ui.component.playback.DynamicFlowFrameBufferPool
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -13,6 +16,52 @@ import kotlin.math.abs
 
 @RunWith(AndroidJUnit4::class)
 class DynamicFlowFrameRenderingTest {
+    @Test
+    fun resizePreparesTheCorrectPixelsBeforeDrawingWithoutAdvancingTheClock() {
+        val cover = cover()
+        val pool = DynamicFlowFrameBufferPool()
+        val state = DynamicFlowBackgroundState().apply { elapsedMillis = 17_000L }
+        var renderCount = 0
+        state.setViewportRenderer { size, _ ->
+            renderCount++
+            render(pool, cover, state.displayedFrame, size.width, size.height, 123, state.elapsedMillis)
+        }
+        for (size in listOf(IntSize(156, 70), IntSize(70, 156), IntSize(156, 70))) {
+            state.prepareViewport(size, 420)
+            val frame = requireNotNull(state.displayedFrame)
+            val expected = render(DynamicFlowFrameBufferPool(), cover, null,
+                size.width, size.height, 123, 17_000L)
+            assertArrayEquals("The first resized frame must use current geometry", pixels(expected), pixels(frame))
+            assertEquals(17_000L, state.elapsedMillis)
+            val count = renderCount
+            state.prepareViewport(size, 420)
+            assertEquals("Ordinary draws must reuse the prepared frame", count, renderCount)
+        }
+        assertEquals(3, renderCount)
+    }
+
+    @Test
+    fun outgoingTransitionFramesCropUniformlyWhenTheAspectRatioChanges() {
+        val oldFrame = Bitmap.createBitmap(80, 40, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.BLUE)
+            for (y in 0 until height) for (x in 0 until 20) {
+                setPixel(x, y, Color.RED)
+                setPixel(width - 1 - x, y, Color.GREEN)
+            }
+        }
+        val state = DynamicFlowBackgroundState()
+        state.publishFrame(oldFrame)
+        state.beginTransition(Bitmap.createBitmap(40, 80, Bitmap.Config.ARGB_8888))
+        val output = Bitmap.createBitmap(40, 80, Bitmap.Config.ARGB_8888)
+        state.drawTo(Canvas(output), 40f, 80f)
+        assertTrue("The old landscape frame must be cropped, not squeezed", pixels(output).all { it == Color.BLUE })
+        state.freezeTransition()
+        assertEquals(40, requireNotNull(state.displayedFrame).width)
+        assertEquals(80, requireNotNull(state.displayedFrame).height)
+        state.drawTo(Canvas(output), 40f, 80f)
+        assertTrue("Interrupted fading must preserve the new viewport's crop", pixels(output).all { it == Color.BLUE })
+    }
+
     private fun cover() = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888).apply {
         for (y in 0 until height) {
             for (x in 0 until width) {

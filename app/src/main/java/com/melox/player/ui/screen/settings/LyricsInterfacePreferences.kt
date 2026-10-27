@@ -8,6 +8,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.melox.player.model.LyricsTranslationLanguage
+import com.melox.player.model.LyricAnimationMode
 import com.melox.player.R
 import com.melox.player.ui.screen.playback.DEFAULT_LYRIC_FONT_SCALE
 import com.melox.player.ui.screen.playback.LYRICS_FONT_WEIGHT_STEP_COUNT
@@ -21,30 +23,31 @@ import kotlin.math.roundToInt
 import com.melox.player.ui.component.PageCard as Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
 internal fun LyricsInterfacePreferences(
     leftAlignPlayerTitle: Boolean,
     centerLyrics: Boolean,
-    showLyricsTranslation: Boolean,
+    centerLyricsEnabled: Boolean,
     lyricFontScale: Float,
     lyricFontWeight: Int,
     lyricBlurEnabled: Boolean,
-    forceWordByWordLyrics: Boolean,
+    lyricAnimationMode: LyricAnimationMode,
     hideControlsOnLyrics: Boolean,
     onLeftAlignPlayerTitleChange: (Boolean) -> Unit,
     onCenterLyricsChange: (Boolean) -> Unit,
-    onShowLyricsTranslationChange: (Boolean) -> Unit,
     onLyricFontScalePreview: (Float) -> Unit,
     onLyricFontScaleCommit: () -> Unit,
     onLyricFontWeightPreview: (Int) -> Unit,
     onLyricFontWeightCommit: () -> Unit,
     onLyricBlurEnabledChange: (Boolean) -> Unit,
-    onForceWordByWordLyricsChange: (Boolean) -> Unit,
+    onLyricAnimationModeChange: (LyricAnimationMode) -> Unit,
     onHideControlsOnLyricsChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     cardColor: Color = MiuixTheme.colorScheme.surfaceContainer,
+    usePageMaterial: Boolean = true,
     showHideControls: Boolean = true,
 ) {
     Column(
@@ -54,6 +57,7 @@ internal fun LyricsInterfacePreferences(
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.defaultColors(color = cardColor),
+            usePageMaterial = usePageMaterial,
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 SwitchPreference(
@@ -63,13 +67,10 @@ internal fun LyricsInterfacePreferences(
                 )
                 SwitchPreference(
                     title = stringResource(R.string.lyrics_center),
+                    summary = if (centerLyricsEnabled) null else stringResource(R.string.lyrics_center_duet_unavailable),
                     checked = centerLyrics,
+                    enabled = centerLyricsEnabled,
                     onCheckedChange = onCenterLyricsChange,
-                )
-                SwitchPreference(
-                    title = stringResource(R.string.lyrics_translation),
-                    checked = showLyricsTranslation,
-                    onCheckedChange = onShowLyricsTranslationChange,
                 )
                 TappableSliderPreference(
                     value = lyricFontScale,
@@ -106,18 +107,23 @@ internal fun LyricsInterfacePreferences(
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.defaultColors(color = cardColor),
+            usePageMaterial = usePageMaterial,
         ) {
-            SwitchPreference(
-                title = stringResource(R.string.lyrics_force_word_by_word),
-                summary = stringResource(R.string.lyrics_force_word_by_word_summary),
-                checked = forceWordByWordLyrics,
-                onCheckedChange = onForceWordByWordLyricsChange,
+            val modes = LyricAnimationMode.entries
+            OverlayDropdownPreference(
+                items = modes.map { lyricAnimationModeLabel(it) },
+                selectedIndex = modes.indexOf(lyricAnimationMode).coerceAtLeast(0),
+                title = stringResource(R.string.lyrics_word_animation),
+                onSelectedIndexChange = { index ->
+                    modes.getOrNull(index)?.let(onLyricAnimationModeChange)
+                },
             )
         }
         if (showHideControls) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.defaultColors(color = cardColor),
+                usePageMaterial = usePageMaterial,
             ) {
                 SwitchPreference(
                     title = stringResource(R.string.lyrics_hide_controls),
@@ -127,5 +133,59 @@ internal fun LyricsInterfacePreferences(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun lyricAnimationModeLabel(mode: LyricAnimationMode): String = stringResource(
+    when (mode) {
+        LyricAnimationMode.CURRENT_LINE -> R.string.lyrics_animation_current_line
+        LyricAnimationMode.EXTEND_TO_ALL -> R.string.lyrics_animation_extend_to_all
+        LyricAnimationMode.ALWAYS -> R.string.lyrics_animation_always
+        LyricAnimationMode.NEVER -> R.string.lyrics_animation_never
+    },
+)
+
+@Composable
+private fun lyricsTranslationLanguageLabel(language: LyricsTranslationLanguage): String = stringResource(
+    when (language) {
+        LyricsTranslationLanguage.AUTO -> R.string.lyrics_translation_language_auto
+        LyricsTranslationLanguage.CHINESE -> R.string.lyrics_translation_language_chinese
+        LyricsTranslationLanguage.ENGLISH -> R.string.lyrics_translation_language_english
+        LyricsTranslationLanguage.ALL -> R.string.lyrics_translation_language_all
+    },
+)
+
+@Composable
+internal fun LyricsTranslationPreferences(
+    showLyricsTranslation: Boolean,
+    showLyricsRomanization: Boolean,
+    lyricsTranslationLanguage: LyricsTranslationLanguage,
+    onShowLyricsTranslationChange: (Boolean) -> Unit,
+    onShowLyricsRomanizationChange: (Boolean) -> Unit,
+    onLyricsTranslationLanguageChange: (LyricsTranslationLanguage) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        SwitchPreference(
+            title = stringResource(R.string.lyrics_translation),
+            checked = showLyricsTranslation,
+            onCheckedChange = onShowLyricsTranslationChange,
+        )
+        val translationLanguages = LyricsTranslationLanguage.entries
+        OverlayDropdownPreference(
+            title = stringResource(R.string.lyrics_translation_language),
+            items = translationLanguages.map { lyricsTranslationLanguageLabel(it) },
+            selectedIndex = translationLanguages.indexOf(lyricsTranslationLanguage),
+            enabled = showLyricsTranslation,
+            onSelectedIndexChange = { index ->
+                translationLanguages.getOrNull(index)?.let(onLyricsTranslationLanguageChange)
+            },
+        )
+        SwitchPreference(
+            title = stringResource(R.string.lyrics_romanization),
+            checked = showLyricsRomanization,
+            onCheckedChange = onShowLyricsRomanizationChange,
+        )
     }
 }

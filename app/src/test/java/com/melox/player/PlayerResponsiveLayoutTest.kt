@@ -4,6 +4,9 @@ import androidx.compose.ui.unit.dp
 import com.melox.player.ui.screen.playback.PLAYER_PORTRAIT_CONTENT_MAX_WIDTH
 import com.melox.player.ui.screen.playback.PlayerLayout
 import com.melox.player.ui.screen.playback.compactLandscapeArtworkSize
+import com.melox.player.ui.screen.playback.compactLandscapeArtworkPaneWidth
+import com.melox.player.ui.screen.playback.compactLandscapeHeaderTop
+import com.melox.player.ui.screen.playback.compactLandscapeLyricsToggleStart
 import com.melox.player.ui.screen.playback.compactLandscapePaneContentWidth
 import com.melox.player.ui.screen.playback.compactLandscapeSidePadding
 import com.melox.player.ui.screen.playback.compactLandscapePlayerSpacing
@@ -22,6 +25,7 @@ import com.melox.player.ui.screen.playback.playerArtworkAlignmentContentSize
 import com.melox.player.ui.screen.playback.playerArtworkSizeForContent
 import com.melox.player.ui.screen.playback.playerHeaderTopPadding
 import com.melox.player.ui.screen.playback.playerLayout
+import com.melox.player.ui.screen.playback.playerHidesSystemNavigation
 import com.melox.player.ui.screen.playback.playerLyricsAreActive
 import com.melox.player.ui.screen.playback.playerPrimaryControlLayout
 import com.melox.player.ui.screen.playback.playerUnboundedContentWidth
@@ -181,16 +185,36 @@ class PlayerResponsiveLayoutTest {
     }
 
     @Test
+    fun systemNavigationOnlyHidesForTheVisibleCompactLandscapePlayer() {
+        assertTrue(playerHidesSystemNavigation(PlayerLayout.COMPACT_LANDSCAPE, true))
+        assertFalse(playerHidesSystemNavigation(PlayerLayout.COMPACT_LANDSCAPE, false))
+        assertFalse(playerHidesSystemNavigation(PlayerLayout.PORTRAIT, true))
+        assertFalse(playerHidesSystemNavigation(PlayerLayout.WIDE_TWO_PANE, true))
+    }
+
+    @Test
     fun compactLandscapeKeepsFullArtworkAndUsesPortraitContentInset() {
         assertEquals(250.dp, compactLandscapeArtworkSize(
             paneWidth = 250.dp,
             availableHeight = 300.dp,
         ))
         assertEquals(194.dp, compactLandscapePaneContentWidth(250.dp))
-        assertEquals(148.dp, compactLandscapeArtworkSize(
+        assertEquals(180.dp, compactLandscapeArtworkSize(
             paneWidth = 250.dp,
             availableHeight = 180.dp,
         ))
+    }
+
+    @Test
+    fun compactLandscapeGivesTextMoreWidthAndAnchorsTheHeaderToControls() {
+        val artworkPane = compactLandscapeArtworkPaneWidth(800.dp)
+        assertEquals(360.dp, artworkPane)
+        assertEquals(440.dp, 800.dp - artworkPane)
+        assertEquals(320.dp, compactLandscapeArtworkSize(artworkPane, 320.dp))
+        assertEquals(56.dp, compactLandscapeHeaderTop(400.dp, 52.dp, 200.dp))
+        assertEquals(0.dp, compactLandscapeHeaderTop(200.dp, 52.dp, 200.dp))
+        assertEquals(360.dp, compactLandscapeLyricsToggleStart(440.dp, 40.dp))
+        assertEquals(260.dp, compactLandscapeLyricsToggleStart(320.dp, 40.dp))
     }
 
     @Test

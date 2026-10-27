@@ -1,0 +1,16 @@
+--- a/DefaultAudioSink.java
++++ b/DefaultAudioSink.java
+@@ -760,2 +760,2 @@
+-        pipelineProcessors.add(audioProcessorChain.getAudioProcessors());
+-      }
++      }
++      pipelineProcessors.add(audioProcessorChain.getAudioProcessors());
+@@ -1718,5 +1718,3 @@
+-    //   would require decoding/re-encoding; and
+-    // - when outputting float PCM audio, because SonicAudioProcessor outputs 16-bit integer PCM.
+-    return !tunneling
+-        && configuration.isPcm()
+-        && !shouldUseFloatOutput(configuration.inputFormat.pcmEncoding);
++    //   would require decoding/re-encoding.
++    // Melox installs a PCM chain whose Sonic supports both integer and float samples.
++    return !tunneling && configuration.isPcm();

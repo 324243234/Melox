@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
@@ -32,7 +31,6 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.ArrowRight
-import top.yukonga.miuix.kmp.icon.extended.Music
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -131,14 +129,6 @@ internal fun ArtistArtwork(
             modifier = modifier
                 .size(size)
                 .background(MiuixTheme.colorScheme.secondaryContainer, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = MiuixIcons.Music,
-                contentDescription = null,
-                modifier = Modifier.size(size / 2f),
-                tint = MiuixTheme.colorScheme.onSecondaryContainer,
-            )
-        }
+        )
     }
 }

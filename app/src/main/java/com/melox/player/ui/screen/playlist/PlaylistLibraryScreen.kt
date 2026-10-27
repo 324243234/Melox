@@ -20,6 +20,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -77,7 +79,8 @@ fun PlaylistLibraryScreen(
     onMovePlaylists: (List<String>) -> Boolean,
 ) {
     val scrollBehavior = MiuixScrollBehavior()
-    val backdrop = rememberBlurBackdrop()
+    var backdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val backdrop = rememberBlurBackdrop(captureCoordinates = { backdropCaptureCoordinates })
     val layoutDirection = LocalLayoutDirection.current
     val gridState = rememberLazyGridState()
     var draftPlaylists by remember { mutableStateOf(playlists) }
@@ -143,7 +146,7 @@ fun PlaylistLibraryScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(backdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
+                .then(backdrop?.let { Modifier.onGloballyPositioned { coordinates -> backdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier),
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val gridContentPadding = PaddingValues(
@@ -288,7 +291,7 @@ internal fun PlaylistEmptyMessage(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            tint = MiuixTheme.colorScheme.disabledOnSecondaryVariant,
             modifier = Modifier.size(48.dp),
         )
         Spacer(Modifier.height(12.dp))

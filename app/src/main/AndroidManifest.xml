@@ -22,8 +22,10 @@
         tools:node="remove" />
 
     <queries>
+        <package android:name="com.miui.misound" />
         <package android:name="com.xjcheng.musictageditor" />
         <package android:name="com.lonx.lyrico" />
+        <package android:name="com.example.LyricBox" />
         <intent>
             <action android:name="com.lonx.lyrico.action.EDIT_TAG" />
             <data android:mimeType="audio/*" />
@@ -48,7 +50,7 @@
             android:name=".MainActivity"
             android:configChanges="fontScale|locale|layoutDirection|orientation|screenSize|uiMode"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

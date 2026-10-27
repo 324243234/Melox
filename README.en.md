@@ -83,4 +83,4 @@ Melox is an Android local music player built with Jetpack Compose, Miuix, and An
 - [Miuix](https://github.com/compose-miuix-ui/miuix) - UI components and design system
 - [AndroidX Media3](https://developer.android.com/media/media3) - local playback and system media sessions
 
-Melox is under active development. Report issues through [Issues](https://github.com/Inefy-03/Melox/issues) or submit a [Pull Request](https://github.com/Inefy-03/Melox/pulls).
+Melox is under active development. Report issues through [Issues](https://github.com/Inefy-03/Melox/issues) or submit a [Pull Request](https://github.com/Inefy-03/Melox/pulls)

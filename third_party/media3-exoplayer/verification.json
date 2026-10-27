@@ -1,0 +1,12 @@
+{
+  "changedClasses": [
+    "androidx/media3/exoplayer/audio/DefaultAudioSink.class"
+  ],
+  "changedMethods": [
+    "  public void configure(androidx.media3.exoplayer.audio.AudioSink$AudioSinkConfig) throws androidx.media3.exoplayer.audio.AudioSink$ConfigurationException;",
+    "  private boolean shouldApplyAudioProcessorPlaybackParameters();"
+  ],
+  "allOtherClassesAndMethodsUnchanged": true,
+  "allOtherAarEntriesUnchanged": true,
+  "aarSha256": "18ea09106f47c5f4770546101c224a225816a2e6d0805d3f9b3fc28d20ebbd1e"
+}

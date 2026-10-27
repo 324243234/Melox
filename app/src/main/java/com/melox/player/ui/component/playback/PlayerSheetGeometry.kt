@@ -28,6 +28,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Outline
@@ -68,9 +70,21 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 import androidx.compose.runtime.saveable.Saver
 import top.yukonga.miuix.kmp.squircle.squircleClip
+import top.yukonga.miuix.kmp.squircle.addSquircleRect
 import top.yukonga.miuix.kmp.squircle.squircleBorder
 import top.yukonga.miuix.kmp.basic.DividerDefaults
 import top.yukonga.miuix.kmp.utils.getRoundedCorner
+
+internal fun scaledMiniPlayerBounds(bounds: Rect, playerBounds: Rect, scale: Float): Rect {
+    if (!bounds.isUsable() || !playerBounds.isUsable()) return bounds
+    val center = playerBounds.center
+    return Rect(
+        left = center.x + (bounds.left - center.x) * scale,
+        top = center.y + (bounds.top - center.y) * scale,
+        right = center.x + (bounds.right - center.x) * scale,
+        bottom = center.y + (bounds.bottom - center.y) * scale,
+    )
+}
 
 internal fun sharedContainerRect(
     source: Rect,
@@ -86,11 +100,24 @@ internal fun sharedContainerRect(
     )
 }
 
+internal fun playbackArtworkBounds(
+    bounds: Rect,
+    bitmapWidth: Int,
+    bitmapHeight: Int,
+    circular: Boolean,
+): Rect = if (circular) bounds else fittedArtworkRect(bounds, bitmapWidth, bitmapHeight)
+
+internal fun playerSheetUsesFullPlayerStatusBar(
+    progress: Float,
+): Boolean = progress >= 0.96f
+
 internal fun Modifier.playerSheetHostLayer(
     hostBounds: Rect,
     inputBounds: Rect?,
     miniPlayerBounds: Rect?,
     residentTranslationY: Float = 0f,
+    inputCornerRadiusPx: Float = 0f,
+    squircleEnabled: Boolean = false,
 ): Modifier = graphicsLayer {
     // Keep recording coordinates stable; only the separate input surface moves.
     translationY = residentTranslationY
@@ -99,23 +126,40 @@ internal fun Modifier.playerSheetHostLayer(
         PlayerSheetInputShape(
             bounds = inputBounds.translate(-hostBounds.topLeft),
             excludedBounds = miniPlayerBounds?.translate(-hostBounds.topLeft),
+            cornerRadiusPx = inputCornerRadiusPx,
+            squircleEnabled = squircleEnabled,
         )
     } else {
         RectangleShape
     }
 }
 
-private class PlayerSheetInputShape(
+internal class PlayerSheetInputShape(
     private val bounds: Rect,
     private val excludedBounds: Rect?,
+    private val cornerRadiusPx: Float = 0f,
+    private val squircleEnabled: Boolean = false,
 ) : Shape {
     override fun createOutline(
         size: Size,
         layoutDirection: LayoutDirection,
         density: Density,
     ): Outline {
-        val excluded = excludedBounds ?: return Outline.Rectangle(bounds)
-        val outer = Path().apply { addRect(bounds) }
+        if (!bounds.isUsable()) return Outline.Rectangle(Rect.Zero)
+        val radius = cornerRadiusPx.coerceIn(0f, minOf(bounds.width, bounds.height) / 2f)
+        val roundedBounds = RoundRect(bounds, CornerRadius(radius))
+        if (!squircleEnabled && excludedBounds == null) {
+            return if (radius > 0f) Outline.Rounded(roundedBounds) else Outline.Rectangle(bounds)
+        }
+        val outer = Path().apply {
+            if (squircleEnabled) {
+                addSquircleRect(bounds.width, bounds.height, radius)
+                translate(bounds.topLeft)
+            } else {
+                addRoundRect(roundedBounds)
+            }
+        }
+        val excluded = excludedBounds ?: return Outline.Generic(outer)
         val inner = Path().apply { addRect(excluded) }
         return Outline.Generic(Path.combine(PathOperation.Difference, outer, inner))
     }
@@ -163,6 +207,12 @@ internal data class SharedContainerCornerRadii(
             )
     }
 }
+
+internal fun sharedContainerSourceCornerRadius(
+    nominalRadius: Float,
+    sourceWidth: Float,
+    sourceHeight: Float,
+): Float = minOf(nominalRadius, sourceWidth / 2f, sourceHeight / 2f).coerceAtLeast(0f)
 
 internal fun sharedContainerCornerRadii(
     source: SharedContainerCornerRadii,

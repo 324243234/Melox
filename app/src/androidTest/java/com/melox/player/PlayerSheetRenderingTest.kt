@@ -11,11 +11,16 @@ import android.view.PixelCopy
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -28,6 +33,7 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.platform.ComposeView
@@ -37,19 +43,167 @@ import androidx.compose.ui.zIndex
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.melox.player.ui.component.liquid.rememberCombinedBackdrop
 import com.melox.player.ui.component.playback.PlayerSheetDragInputOverlay
 import com.melox.player.ui.component.playback.PlayerSheetTransitionState
 import com.melox.player.ui.component.playback.recordPlayerLayer
 import com.melox.player.ui.component.playback.recordMiniPlayerLayer
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 
 @RunWith(AndroidJUnit4::class)
 class PlayerSheetRenderingTest {
+    @Test
+    fun expandedRoundTripPreparesCurrentFramesBeforeCollapsing() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val transition = PlayerSheetTransitionState(initialProgress = 1f)
+        val landscape = mutableStateOf(false)
+        val viewport = mutableStateOf(IntSize.Zero)
+        val readyWindows = LinkedBlockingQueue<IntSize>()
+        val intermediate = CountDownLatch(1)
+        val collapsed = CountDownLatch(1)
+
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                activity.setContentView(ComposeView(activity).apply {
+                    setContent {
+                        val miniLayer = rememberGraphicsLayer()
+                        val fullLayer = rememberGraphicsLayer()
+                        val window = viewport.value
+                        LaunchedEffect(transition.sharedLayersReady, window) {
+                            if (transition.sharedLayersReady) readyWindows.offer(window)
+                        }
+                        LaunchedEffect(transition.animationRequest, transition.canSettle) {
+                            if (transition.canSettle && !transition.isDragging) {
+                                withFrameNanos { }
+                                transition.animateToTarget()
+                            }
+                        }
+                        LaunchedEffect(transition.isMounted) {
+                            if (!transition.isMounted) collapsed.countDown()
+                        }
+                        BoxWithConstraints(Modifier.fillMaxSize()) {
+                            val edge = minOf(maxWidth, maxHeight)
+                            Box(Modifier.size(
+                                width = if (landscape.value) edge else edge / 2,
+                                height = if (landscape.value) edge / 2 else edge,
+                            ).onSizeChanged {
+                                viewport.value = it
+                                transition.updateWindowSize(it)
+                                transition.updateFullPlayerBounds(
+                                    Rect(0f, 0f, it.width.toFloat(), it.height.toFloat()), it,
+                                )
+                            }) {
+                                Canvas(Modifier.fillMaxSize().recordPlayerLayer(
+                                    layer = fullLayer,
+                                    drawInPlace = transition.fullPlayerDrawsInPlace,
+                                    recordingGeneration = transition.currentFrameRecordingGeneration,
+                                    recordInPlace = transition.fullPlayerFramesNeedRecording,
+                                    onRecorded = { generation, size ->
+                                        transition.markFullFrameRecorded(window, generation, size)
+                                    },
+                                )) { drawRect(Color.Green) }
+                                Canvas(Modifier.align(Alignment.BottomCenter)
+                                    .fillMaxWidth().height(64.dp)
+                                    .onGloballyPositioned {
+                                        transition.updateMiniPlayerBounds(it.boundsInRoot(), window)
+                                    }
+                                    .recordMiniPlayerLayer(
+                                        layer = miniLayer,
+                                        drawInPlace = !transition.isMounted || !transition.sharedLayersReady,
+                                        drawLiveGlass = false,
+                                        recordingGeneration = transition.currentFrameRecordingGeneration,
+                                        onRecorded = { generation, size ->
+                                            transition.markMiniFrameRecorded(window, generation, size)
+                                        },
+                                    )) { drawRect(Color.Magenta) }
+                                Canvas(Modifier.fillMaxSize()) {
+                                    if (transition.sharedLayersReady && transition.isTransitionActive) {
+                                        drawLayer(fullLayer)
+                                        if (transition.progress in 0.1f..0.9f && fullLayer.size == window) {
+                                            intermediate.countDown()
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                })
+            }
+            repeat(3) { step ->
+                if (step > 0) {
+                    instrumentation.waitForIdleSync()
+                    readyWindows.clear()
+                    scenario.onActivity { landscape.value = step == 1 }
+                }
+                val readyWindow = readyWindows.poll(5, TimeUnit.SECONDS)
+                assertTrue("Expanded viewport $step did not prepare current frames", readyWindow != null)
+                scenario.onActivity {
+                    assertEquals(viewport.value, readyWindow)
+                    assertTrue(transition.fullPlayerDrawsInPlace)
+                    assertTrue(transition.sharedLayersReady)
+                    assertEquals(1f, transition.progress, 0f)
+                }
+            }
+            scenario.onActivity { transition.close() }
+            assertTrue("Resized player skipped drawable collapse frames", intermediate.await(5, TimeUnit.SECONDS))
+            assertTrue("Resized player did not finish collapsing", collapsed.await(5, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test
+    fun inPlacePreparationDrawsOnceAtFullOpacityThenReturnsToLiveDrawing() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val preparing = mutableStateOf(true)
+        val firstDraw = CountDownLatch(1)
+        var recordings = 0
+        var contentDraws = 0
+        var preparedRecordings = 0
+        lateinit var view: ComposeView
+
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                view = ComposeView(activity).apply {
+                    setContent {
+                        val layer = rememberGraphicsLayer()
+                        Canvas(Modifier.fillMaxSize().recordPlayerLayer(
+                            layer = layer,
+                            drawInPlace = true,
+                            recordInPlace = preparing.value,
+                            onRecorded = { _, _ ->
+                                recordings++
+                                firstDraw.countDown()
+                            },
+                        )) {
+                            contentDraws++
+                            drawRect(Color.Green)
+                            drawRect(Color.Magenta, Offset(0f, size.height / 2f),
+                                Size(size.width, size.height / 2f))
+                        }
+                        SideEffect { if (preparing.value) layer.alpha = 0f }
+                    }
+                }
+                activity.setContentView(view)
+            }
+            assertTrue(firstDraw.await(5, TimeUnit.SECONDS))
+            assertCompleteFrame(scenario, view)
+            scenario.onActivity {
+                assertEquals(recordings, contentDraws)
+                preparedRecordings = recordings
+                preparing.value = false
+            }
+            assertCompleteFrame(scenario, view)
+            scenario.onActivity { assertEquals(preparedRecordings, recordings) }
+        }
+    }
+
     @Test
     fun visibleMiniPlayerBootstrapsSharedRecordingReadiness() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -94,6 +248,7 @@ class PlayerSheetRenderingTest {
                                 .recordMiniPlayerLayer(
                                     layer = miniLayer,
                                     drawInPlace = !transition.isMounted || !transition.sharedLayersReady,
+                                    drawLiveGlass = false,
                                     recordingGeneration = transition.currentFrameRecordingGeneration,
                                     onRecorded = { generation, size ->
                                         transition.markMiniFrameRecorded(window, generation, size)
@@ -311,6 +466,72 @@ class PlayerSheetRenderingTest {
                 tap(view, size.width * 0.5f, size.height * 0.7f)
                 assertEquals(1, pageTaps)
                 assertEquals(0, hiddenControlTaps)
+            }
+        }
+    }
+
+    @Test
+    fun backgroundAndMovingForegroundRemainSampleableDuringOffscreenHandoff() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val live = mutableStateOf(true)
+        val foregroundOffset = mutableStateOf(0f)
+        val firstDraw = CountDownLatch(1)
+        lateinit var view: ComposeView
+
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                view = ComposeView(activity).apply {
+                    setContent {
+                        val frame = rememberGraphicsLayer()
+                        val backgroundFrame = rememberGraphicsLayer()
+                        val background = rememberLayerBackdrop()
+                        val foreground = rememberLayerBackdrop()
+                        val combined = rememberCombinedBackdrop(background, foreground)
+                        val sampleCoordinates = remember { mutableStateOf<LayoutCoordinates?>(null) }
+                        Box(Modifier.fillMaxSize()) {
+                            Box(Modifier.fillMaxSize().recordPlayerLayer(
+                                layer = frame,
+                                drawInPlace = live.value,
+                            )) {
+                                Canvas(Modifier.fillMaxSize().recordPlayerLayer(
+                                    layer = backgroundFrame,
+                                    drawInPlace = live.value,
+                                    backdrop = background,
+                                )) { drawRect(Color.Green) }
+                                Canvas(Modifier.fillMaxSize().layerBackdrop(foreground)) {
+                                    drawRect(
+                                        Color.Magenta,
+                                        topLeft = Offset(0f, size.height * (0.5f + foregroundOffset.value)),
+                                        size = Size(size.width, size.height),
+                                    )
+                                }
+                                Canvas(Modifier.fillMaxSize().onGloballyPositioned {
+                                    sampleCoordinates.value = it
+                                }) {
+                                    with(combined) {
+                                        drawBackdrop(this@Canvas, sampleCoordinates.value)
+                                    }
+                                }
+                            }
+                            Canvas(Modifier.fillMaxSize()) {
+                                if (!live.value) drawLayer(frame)
+                                firstDraw.countDown()
+                            }
+                        }
+                    }
+                }
+                activity.setContentView(view)
+            }
+            assertTrue(firstDraw.await(5, TimeUnit.SECONDS))
+            instrumentation.waitForIdleSync()
+            assertCompleteFrame(scenario, view)
+            for (inPlace in listOf(false, true, false, true)) {
+                scenario.onActivity {
+                    live.value = inPlace
+                    foregroundOffset.value = if (inPlace) 0.08f else -0.08f
+                }
+                instrumentation.waitForIdleSync()
+                assertCompleteFrame(scenario, view)
             }
         }
     }

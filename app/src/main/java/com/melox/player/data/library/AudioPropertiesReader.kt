@@ -31,6 +31,31 @@ internal data class LocalAudioProperties(
 internal class AudioPropertiesReader(
     private val contentResolver: ContentResolver,
 ) {
+    fun readTags(contentUri: String): LocalAudioTags? {
+        val tags = try {
+            contentResolver.openFileDescriptor(contentUri.toUri(), "r")?.use { descriptor ->
+                TagLib.getMetadata(descriptor.dup().detachFd(), false)
+                    ?.propertyMap?.let(::parseAudioTagProperties)
+            }
+        } catch (exception: Exception) {
+            Log.w(TAG, "Unable to read audio tags for $contentUri", exception)
+            null
+        } catch (error: LinkageError) {
+            Log.e(TAG, "TagLib is unavailable for $contentUri", error)
+            null
+        }
+        val wav = contentResolver.readWavMetadata(contentUri)?.tags ?: return tags
+        return LocalAudioTags(
+            title = wav.title ?: tags?.title,
+            artist = wav.artist ?: tags?.artist,
+            album = wav.album ?: tags?.album,
+            albumArtist = wav.albumArtist ?: tags?.albumArtist,
+            year = wav.year ?: tags?.year,
+            trackNumber = wav.trackNumber ?: tags?.trackNumber,
+            discNumber = wav.discNumber ?: tags?.discNumber,
+        )
+    }
+
     fun read(contentUri: String): LocalAudioProperties? {
         val properties = readNativeProperties(contentUri)
         val wav = contentResolver.readWavMetadata(contentUri) ?: return properties

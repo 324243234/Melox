@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,9 +47,10 @@ import com.melox.player.R
 import com.melox.player.ui.component.BlurredBar
 import com.melox.player.ui.component.effect.AboutEffectBackground
 import com.melox.player.ui.component.rememberBlurBackdrop
+import com.melox.player.ui.component.stableTopAppBarInsets
 import com.melox.player.ui.component.PageCard as Card
-import com.melox.player.ui.component.LocalCustomPageBackground
 import com.melox.player.ui.component.LocalTopBarWallpaperVisible
+import com.melox.player.ui.component.LocalCustomPageBackground
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -72,6 +75,7 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 @Composable
 fun AboutScreen(
     bottomContentPadding: Dp,
+    customBackgroundSelected: Boolean,
     onBack: () -> Unit,
     onOpenSponsor: () -> Unit,
 ) {
@@ -97,8 +101,10 @@ fun AboutScreen(
     val collapsed by remember {
         derivedStateOf { scrollProgress == 1f }
     }
-    val topBarBackdrop = rememberBlurBackdrop()
-    val barBackdrop = if (collapsed) topBarBackdrop else null
+    var topBarBackdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val topBarBackdrop = rememberBlurBackdrop(captureCoordinates = { topBarBackdropCaptureCoordinates })
+    val hasCustomBackground = customBackgroundSelected || LocalCustomPageBackground.current != null
+    val barBackdrop = if (collapsed || hasCustomBackground) topBarBackdrop else null
     val barColor = if (collapsed && barBackdrop == null) {
         MiuixTheme.colorScheme.surface
     } else {
@@ -112,10 +118,12 @@ fun AboutScreen(
                 blurEnabled = barBackdrop != null,
                 scrollBehavior = scrollBehavior,
             ) {
+                val topBarColor = if (LocalTopBarWallpaperVisible.current) Color.Transparent else barColor
                 SmallTopAppBar(
                     title = stringResource(R.string.settings_about_title),
+                    modifier = Modifier.stableTopAppBarInsets(topBarColor),
                     scrollBehavior = scrollBehavior,
-                    color = if (LocalTopBarWallpaperVisible.current) Color.Transparent else barColor,
+                    color = topBarColor,
                     titleColor = MiuixTheme.colorScheme.onSurface.copy(
                         alpha = ((scrollProgress - 0.35f) / 0.65f).coerceIn(0f, 1f),
                     ),
@@ -134,7 +142,7 @@ fun AboutScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(topBarBackdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
+                .then(topBarBackdrop?.let { Modifier.onGloballyPositioned { coordinates -> topBarBackdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier),
         ) {
             AboutContent(
                 padding = padding,
@@ -142,6 +150,7 @@ fun AboutScreen(
                 scrollBehavior = scrollBehavior,
                 scrollProgress = { scrollProgress },
                 bottomContentPadding = bottomContentPadding,
+                customBackgroundSelected = customBackgroundSelected,
                 onOpenSponsor = onOpenSponsor,
             )
         }
@@ -155,6 +164,7 @@ private fun AboutContent(
     scrollBehavior: top.yukonga.miuix.kmp.basic.ScrollBehavior,
     scrollProgress: () -> Float,
     bottomContentPadding: Dp,
+    customBackgroundSelected: Boolean,
     onOpenSponsor: () -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
@@ -162,7 +172,8 @@ private fun AboutContent(
     val layoutDirection = LocalLayoutDirection.current
     val versionName = BuildConfig.VERSION_NAME.ifBlank { "1.0.0" }
     var headerHeight by remember { mutableStateOf(190.dp) }
-    val contentBackdrop = rememberBlurBackdrop()
+    var contentBackdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val contentBackdrop = rememberBlurBackdrop(captureCoordinates = { contentBackdropCaptureCoordinates })
     val customBackgroundVisible = LocalCustomPageBackground.current != null
     val isDark = MiuixTheme.colorScheme.surface.luminance() < 0.5f
     val logoBlend = remember(isDark) {
@@ -196,8 +207,9 @@ private fun AboutContent(
 
     AboutEffectBackground(
         modifier = Modifier.fillMaxSize(),
+        useCustomBackground = customBackgroundSelected,
         backgroundModifier =
-            contentBackdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier,
+            contentBackdrop?.let { Modifier.onGloballyPositioned { coordinates -> contentBackdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier,
         alpha = { 1f - scrollProgress() },
     ) {
         AboutHeader(
@@ -219,7 +231,8 @@ private fun AboutContent(
                 .nestedScroll(scrollBehavior.nestedScrollConnection),
             contentPadding = PaddingValues(
                 start = padding.calculateStartPadding(layoutDirection),
-                top = padding.calculateTopPadding(),
+                top = padding.calculateTopPadding() +
+                    if (customBackgroundSelected || customBackgroundVisible) 12.dp else 0.dp,
                 end = padding.calculateEndPadding(layoutDirection),
                 bottom = maxOf(
                     padding.calculateBottomPadding(),

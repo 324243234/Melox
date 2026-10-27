@@ -10,11 +10,11 @@ import android.os.SystemClock
 import android.util.AtomicFile
 import android.util.LruCache
 import android.util.Size
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
@@ -22,7 +22,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -35,7 +34,6 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativePaint
@@ -51,6 +49,9 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.melox.player.data.library.readEmbeddedArtworkData
+import com.melox.player.ui.component.playback.ArtworkFlipLayer
+import com.melox.player.ui.screen.playback.rememberArtworkBlend
+import com.melox.player.ui.screen.playback.ArtworkBlend
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
@@ -65,12 +66,11 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.squircle.addSquircleRect
 import top.yukonga.miuix.kmp.squircle.isSquircleEnabled
 import top.yukonga.miuix.kmp.squircle.squircleClip
+import top.yukonga.miuix.kmp.squircle.squircleBackground
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 private val ArtworkSize = 48.dp
@@ -86,14 +86,16 @@ fun TrackArtwork(
     modifier: Modifier = Modifier,
     size: Dp = ArtworkSize,
     cornerRadius: Dp = ArtworkCornerRadius,
+    showLoadingBackground: Boolean = false,
 ) {
-    val placeholderArtworkResId = currentPlaceholderArtworkResId()
-    val bitmap = rememberArtworkBitmap(
+    val placeholderArtworkResId = PLACEHOLDER_ARTWORK_RES_ID
+    val artwork = rememberArtworkBitmapLoadState(
         contentUri = contentUri,
         dateModifiedEpochSeconds = dateModifiedEpochSeconds,
         fileSizeBytes = fileSizeBytes,
         size = size,
     )
+    val bitmap = rememberRetainedArtworkBitmap(artwork)
 
     if (bitmap != null) {
         Image(
@@ -105,10 +107,17 @@ fun TrackArtwork(
             contentScale = ContentScale.Crop,
             filterQuality = FilterQuality.High,
         )
+    } else if (showLoadingBackground && artwork.isLoading) {
+        Box(
+            modifier = modifier
+                .size(size)
+                .squircleBackground(MiuixTheme.colorScheme.secondaryContainer, cornerRadius),
+        )
     } else {
         Image(
             painter = painterResource(placeholderArtworkResId),
             contentDescription = null,
+            alpha = 0.3f,
             modifier = modifier
                 .size(size)
                 .squircleClip(cornerRadius),
@@ -131,16 +140,24 @@ fun PlaybackArtwork(
     bitmapCrossfadeDurationMillis: Int = 0,
     bitmapCrossfadeEasing: Easing = LinearEasing,
     rectangularCornerRadiusReduction: Dp = 0.dp,
+    circular: Boolean = false,
+    flipAnimationEnabled: Boolean = false,
+    transitionDirection: Int = 1,
+    foreground: Boolean = false,
 ) {
-    val artworkBitmap = rememberArtworkBitmap(
+    val artwork = rememberArtworkBitmapLoadState(
         contentUri = contentUri,
         dateModifiedEpochSeconds = dateModifiedEpochSeconds,
         fileSizeBytes = fileSizeBytes,
         size = requestSize,
+        foreground = foreground,
     )
-    val bitmap = artworkBitmap ?: rememberPlaceholderArtworkBitmap(
-        PLACEHOLDER_ARTWORK_REQUEST_SIZE,
-    )
+    val placeholder = if (artwork.bitmap == null) {
+        rememberPlaceholderArtworkBitmapLoadState(PLACEHOLDER_ARTWORK_REQUEST_SIZE)
+    } else null
+    val bitmap = artwork.bitmap ?: placeholder?.bitmap
+    val targetReady = !artwork.isLoading &&
+        (artwork.bitmap != null || placeholder?.isLoading == false)
     if (bitmapCrossfadeDurationMillis > 0) {
         PlaybackArtworkStackedFade(
             targetBitmap = bitmap,
@@ -151,6 +168,11 @@ fun PlaybackArtwork(
             modifier = modifier,
             contentScale = contentScale,
             rectangularCornerRadiusReduction = rectangularCornerRadiusReduction,
+            circular = circular,
+            flipAnimationEnabled = flipAnimationEnabled,
+            transitionDirection = transitionDirection,
+            contentKey = contentUri,
+            targetReady = targetReady,
         )
     } else {
         PlaybackArtworkFrame(
@@ -160,6 +182,7 @@ fun PlaybackArtwork(
             modifier = modifier,
             contentScale = contentScale,
             rectangularCornerRadiusReduction = rectangularCornerRadiusReduction,
+            circular = circular,
         )
     }
 }
@@ -174,86 +197,84 @@ private fun PlaybackArtworkStackedFade(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     rectangularCornerRadiusReduction: Dp = 0.dp,
+    circular: Boolean = false,
+    flipAnimationEnabled: Boolean,
+    transitionDirection: Int,
+    contentKey: Any?,
+    targetReady: Boolean,
 ) {
-    var outgoingBitmap by remember { mutableStateOf(targetBitmap) }
-    var incomingBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var hasIncomingLayer by remember { mutableStateOf(false) }
-    val outgoingAlpha = remember { Animatable(1f) }
-    val incomingAlpha = remember { Animatable(1f) }
+    val blend = rememberArtworkBlend(
+        targetBitmap = targetBitmap,
+        animate = true,
+        durationMillis = durationMillis,
+        contentKey = contentKey,
+        sameContentDurationMillis = 100,
+        transitionDirection = transitionDirection,
+        flipAnimationEnabled = flipAnimationEnabled,
+        targetReady = targetReady,
+        easing = easing,
+    )
+    PlaybackArtworkBlend(blend, size, cornerRadius, modifier, contentScale,
+        rectangularCornerRadiusReduction, circular)
+}
 
-    LaunchedEffect(targetBitmap) {
-        if (targetBitmap === outgoingBitmap && !hasIncomingLayer) return@LaunchedEffect
-
-        if (hasIncomingLayer) {
-            outgoingBitmap = incomingBitmap
-        }
-        incomingAlpha.snapTo(0f)
-        outgoingAlpha.snapTo(1f)
-        incomingBitmap = targetBitmap
-        hasIncomingLayer = true
-        coroutineScope {
-            launch {
-                outgoingAlpha.animateTo(
-                    targetValue = 0f,
-                    animationSpec = tween(
-                        durationMillis = durationMillis,
-                        easing = easing,
-                    ),
-                )
-            }
-            launch {
-                incomingAlpha.animateTo(
-                    targetValue = 1f,
-                    animationSpec = tween(
-                        durationMillis = durationMillis,
-                        easing = easing,
-                    ),
-                )
-            }
-        }
-        outgoingBitmap = targetBitmap
-        hasIncomingLayer = false
-        incomingBitmap = null
-        outgoingAlpha.snapTo(1f)
-    }
-
-    Box(modifier = modifier.size(size)) {
-        if (hasIncomingLayer) {
-            // The two layers crossfade together so a rectangular incoming image
-            // cannot reveal an unchanged outgoing image in its letterbox area.
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { alpha = outgoingAlpha.value },
-            ) {
+@Composable
+internal fun PlaybackArtworkBlend(
+    blend: ArtworkBlend,
+    size: Dp,
+    cornerRadius: Dp,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Crop,
+    rectangularCornerRadiusReduction: Dp = 0.dp,
+    circular: Boolean = false,
+    placeholderAlpha: Float = 1f,
+) {
+    Box(modifier.size(size), contentAlignment = Alignment.Center) {
+        val flip = blend.flipState
+        if (flip != null) {
+            ArtworkFlipLayer(flip, Modifier.fillMaxSize(),
+                contentScale = if (circular) ContentScale.Crop else contentScale) { face, blur ->
                 PlaybackArtworkFrame(
-                    bitmap = outgoingBitmap,
+                    bitmap = face,
                     size = size,
                     cornerRadius = cornerRadius,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = contentScale,
                     rectangularCornerRadiusReduction = rectangularCornerRadiusReduction,
+                    circular = circular,
+                    artworkAlpha = if (flip.visibleIsPlaceholder) placeholderAlpha else 1f,
+                    artworkEffect = blur,
                 )
             }
+        } else if (blend.frames.isEmpty()) {
             PlaybackArtworkFrame(
-                bitmap = incomingBitmap,
-                size = size,
-                cornerRadius = cornerRadius,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { alpha = incomingAlpha.value },
-                contentScale = contentScale,
-                rectangularCornerRadiusReduction = rectangularCornerRadiusReduction,
-            )
-        } else {
-            PlaybackArtworkFrame(
-                bitmap = outgoingBitmap,
+                bitmap = null,
                 size = size,
                 cornerRadius = cornerRadius,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = contentScale,
                 rectangularCornerRadiusReduction = rectangularCornerRadiusReduction,
+                circular = circular,
+                artworkAlpha = if (blend.isPlaceholder) placeholderAlpha else 1f,
             )
+        } else {
+            blend.frames.forEach { frame ->
+                PlaybackArtworkFrame(
+                    bitmap = frame.value,
+                    size = size,
+                    cornerRadius = cornerRadius,
+                    modifier = Modifier.fillMaxSize().graphicsLayer {
+                        alpha = frame.alpha * if (frame.isPlaceholder) {
+                            placeholderAlpha.coerceIn(0f, 1f)
+                        } else {
+                            1f
+                        }
+                    },
+                    contentScale = contentScale,
+                    rectangularCornerRadiusReduction = rectangularCornerRadiusReduction,
+                    circular = circular,
+                )
+            }
         }
     }
 }
@@ -272,7 +293,10 @@ internal fun PlaybackArtworkFrame(
     artworkShadowAlpha: Float = artworkAlpha,
     onContentBoundsChanged: ((Rect) -> Unit)? = null,
     rectangularCornerRadiusReduction: Dp = 0.dp,
+    circular: Boolean = false,
+    artworkEffect: Modifier = Modifier,
 ) {
+    val resolvedContentScale = if (circular) ContentScale.Crop else contentScale
     if (bitmap != null) {
         val resolvedCornerRadius = playbackArtworkCornerRadius(
             cornerRadius = cornerRadius,
@@ -280,8 +304,8 @@ internal fun PlaybackArtworkFrame(
             bitmapHeight = bitmap.height,
             rectangularReduction = rectangularCornerRadiusReduction,
         )
-        val imageSize = remember(bitmap.width, bitmap.height, size, contentScale) {
-            if (contentScale == ContentScale.Fit) {
+        val imageSize = remember(bitmap.width, bitmap.height, size, resolvedContentScale) {
+            if (resolvedContentScale == ContentScale.Fit) {
                 fittedArtworkSize(bitmap = bitmap, bound = size)
             } else {
                 DpSize(size, size)
@@ -293,20 +317,25 @@ internal fun PlaybackArtworkFrame(
                 onContentBoundsChanged?.invoke(coordinates.boundsInParent())
             }
             .let { baseModifier ->
-                if (useSquircleClip) {
+                if (useSquircleClip || circular) {
                     val shadowModifier = if (drawArtworkShadow) {
                         baseModifier.playbackArtworkShadow(
                             cornerRadius = resolvedCornerRadius,
                             alpha = artworkShadowAlpha,
+                            circular = circular,
                         )
                     } else {
                         baseModifier
                     }
                     shadowModifier
                         .graphicsLayer { alpha = artworkAlpha.coerceIn(0f, 1f) }
-                        .squircleClip(resolvedCornerRadius)
+                        .playbackArtworkClip(resolvedCornerRadius, circular)
+                        .then(artworkEffect)
                 } else {
-                    baseModifier.squircleClip(resolvedCornerRadius)
+                    baseModifier
+                        .graphicsLayer { alpha = artworkAlpha.coerceIn(0f, 1f) }
+                        .playbackArtworkClip(resolvedCornerRadius, circular)
+                        .then(artworkEffect)
                 }
             }
         Box(
@@ -317,17 +346,18 @@ internal fun PlaybackArtworkFrame(
                 bitmap = bitmap.asImageBitmap(),
                 contentDescription = null,
                 modifier = imageModifier,
-                contentScale = contentScale,
+                contentScale = resolvedContentScale,
                 filterQuality = FilterQuality.High,
             )
         }
     } else {
-        val placeholderArtworkResId = currentPlaceholderArtworkResId()
+        val placeholderArtworkResId = PLACEHOLDER_ARTWORK_RES_ID
         val placeholderModifier = if (drawArtworkShadow) {
             modifier.size(size)
                 .playbackArtworkShadow(
                     cornerRadius = cornerRadius,
                     alpha = artworkShadowAlpha,
+                    circular = circular,
                 )
         } else {
             modifier.size(size)
@@ -342,25 +372,23 @@ internal fun PlaybackArtworkFrame(
         Image(
             painter = painterResource(placeholderArtworkResId),
             contentDescription = null,
-            modifier = fadedPlaceholderModifier.squircleClip(cornerRadius),
+            modifier = fadedPlaceholderModifier.playbackArtworkClip(cornerRadius, circular),
             contentScale = ContentScale.Crop,
         )
     }
 }
 
+internal val PLACEHOLDER_ARTWORK_RES_ID = R.drawable.ic_album_placeholder
+
 @Composable
-internal fun currentPlaceholderArtworkResId(): Int = if (
-    MiuixTheme.colorScheme.surface.luminance() < 0.5f
-) {
-    R.drawable.ic_album_placeholder_dark
-} else {
-    R.drawable.ic_album_placeholder_light
-}
+internal fun Modifier.playbackArtworkClip(cornerRadius: Dp, circular: Boolean): Modifier =
+    if (circular) clip(CircleShape) else squircleClip(cornerRadius)
 
 @Composable
 internal fun Modifier.playbackArtworkShadow(
     cornerRadius: Dp,
     alpha: Float,
+    circular: Boolean = false,
 ): Modifier {
     val resolvedAlpha = alpha.coerceIn(0f, 1f)
     if (resolvedAlpha == 0f) return this
@@ -371,7 +399,9 @@ internal fun Modifier.playbackArtworkShadow(
             height = size.height,
         )
         val shadowPath = Path().apply {
-            addSquircleRect(
+            if (circular) {
+                addOval(Rect(0f, 0f, shadowBounds.width, shadowBounds.height))
+            } else addSquircleRect(
                 width = shadowBounds.width,
                 height = shadowBounds.height,
                 cornerRadius = cornerRadius.toPx(),
@@ -440,6 +470,15 @@ private const val PLAYBACK_ARTWORK_SHADOW_HORIZONTAL_OFFSET_FRACTION = 0.01f
 private const val PLAYBACK_ARTWORK_SHADOW_VERTICAL_OFFSET_FRACTION = 0.01f
 internal val PLAYBACK_ARTWORK_SHADOW_BLUR_RADIUS = 16.dp
 
+internal data class ArtworkBitmapLoadState(val bitmap: Bitmap?, val isLoading: Boolean)
+
+@Composable
+private fun rememberRetainedArtworkBitmap(artwork: ArtworkBitmapLoadState): Bitmap? {
+    return rememberRetainedArtworkValue(
+        result = if (artwork.isLoading) null else ArtworkLoadResult(artwork.bitmap),
+    )
+}
+
 /** Loads a cached artwork bitmap for surfaces that need their own rendering treatment. */
 @Composable
 internal fun rememberArtworkBitmap(
@@ -447,8 +486,26 @@ internal fun rememberArtworkBitmap(
     dateModifiedEpochSeconds: Long,
     fileSizeBytes: Long,
     size: Dp,
+    foreground: Boolean = false,
     onLoadCompleted: (Boolean) -> Unit = {},
-): Bitmap? {
+): Bitmap? = rememberRetainedArtworkBitmap(rememberArtworkBitmapLoadState(
+    contentUri = contentUri,
+    dateModifiedEpochSeconds = dateModifiedEpochSeconds,
+    fileSizeBytes = fileSizeBytes,
+    size = size,
+    foreground = foreground,
+    onLoadCompleted = onLoadCompleted,
+))
+
+@Composable
+internal fun rememberArtworkBitmapLoadState(
+    contentUri: String,
+    dateModifiedEpochSeconds: Long,
+    fileSizeBytes: Long,
+    size: Dp,
+    foreground: Boolean = false,
+    onLoadCompleted: (Boolean) -> Unit = {},
+): ArtworkBitmapLoadState {
     val targetSizePx = normalizeArtworkTargetSize(
         with(LocalDensity.current) { size.roundToPx() },
     )
@@ -458,6 +515,7 @@ internal fun rememberArtworkBitmap(
         fileSizeBytes = fileSizeBytes,
         targetSizePx = targetSizePx,
         onLoadCompleted = onLoadCompleted,
+        foreground = foreground,
     )
 }
 
@@ -468,12 +526,12 @@ internal fun rememberArtworkBitmapPixels(
     dateModifiedEpochSeconds: Long,
     fileSizeBytes: Long,
     targetSizePx: Int,
-): Bitmap? = rememberArtworkBitmapForTargetSize(
+): Bitmap? = rememberRetainedArtworkBitmap(rememberArtworkBitmapForTargetSize(
     contentUri = contentUri,
     dateModifiedEpochSeconds = dateModifiedEpochSeconds,
     fileSizeBytes = fileSizeBytes,
     targetSizePx = normalizeArtworkTargetSize(targetSizePx),
-)
+))
 
 @Composable
 internal fun rememberFullPlayerArtworkBitmapPixels(
@@ -498,13 +556,8 @@ internal fun rememberFullPlayerArtworkBitmapPixels(
             targetSizePx = normalizedTargetSizePx,
         )
     }
-    var retainedBitmap by remember(contentUri) { mutableStateOf<Bitmap?>(null) }
-    val bitmap = produceState<Bitmap?>(
-        initialValue = retainedBitmap,
-        key1 = cacheKey,
-        key2 = enabled,
-    ) {
-        value = if (enabled) {
+    val result = rememberArtworkLoad(cacheKey to enabled) {
+        if (enabled) {
             loadFullPlayerArtworkBitmap(
                 context = context,
                 contentUri = contentUri,
@@ -515,11 +568,8 @@ internal fun rememberFullPlayerArtworkBitmapPixels(
         } else {
             null
         }
-    }.value
-    LaunchedEffect(bitmap, enabled) {
-        retainedBitmap = if (enabled) bitmap ?: retainedBitmap else null
     }
-    return bitmap ?: retainedBitmap
+    return rememberRetainedArtworkValue(result, contentKey = contentUri, enabled = enabled)
 }
 
 @Composable
@@ -528,8 +578,9 @@ private fun rememberArtworkBitmapForTargetSize(
     dateModifiedEpochSeconds: Long,
     fileSizeBytes: Long,
     targetSizePx: Int,
+    foreground: Boolean = false,
     onLoadCompleted: (Boolean) -> Unit = {},
-): Bitmap? {
+): ArtworkBitmapLoadState {
     val context = LocalContext.current.applicationContext
     val cacheKey = createArtworkCacheKey(
         contentUri = contentUri,
@@ -537,48 +588,27 @@ private fun rememberArtworkBitmapForTargetSize(
         fileSizeBytes = fileSizeBytes,
         targetSizePx = targetSizePx,
     )
-    var retainedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     val initialResult = remember(cacheKey) {
         ArtworkCache.getCached(
             context = context,
             key = cacheKey,
             includeDisk = false,
-        )
+        )?.let { ArtworkLoadResult(it) }
     }
-    val result = produceState<ArtworkResult?>(
-            initialValue = initialResult ?: retainedBitmap
-                ?.takeIf { contentUri.isNotBlank() }
-                ?.let(ArtworkResult::Loaded),
-            key1 = cacheKey,
-        ) {
-            val cached = ArtworkCache.get(cacheKey)
-            if (cached != null) {
-                value = cached
-            } else {
-                value = ArtworkCache.getOrLoad(context, cacheKey) {
-                    loadArtworkThumbnail(
-                        context = context,
-                        contentUri = contentUri,
-                        targetSizePx = targetSizePx,
-                    )
-                }
-            }
-        }.value
-    LaunchedEffect(result, contentUri) {
-        onLoadCompleted(result != null)
-        retainedBitmap = when {
-            contentUri.isBlank() -> null
-            result is ArtworkResult.Loaded -> result.bitmap
-            result == ArtworkResult.Missing -> null
-            else -> retainedBitmap
+    val result = rememberArtworkLoad(cacheKey, initialResult) {
+        ArtworkCache.getOrLoad(context, cacheKey, foreground = foreground) {
+            loadArtworkThumbnail(
+                context = context,
+                contentUri = contentUri,
+                targetSizePx = targetSizePx,
+            )
         }
-    }
-    return when (result) {
-        is ArtworkResult.Loaded -> result.bitmap
-        ArtworkResult.Missing,
-        null,
-        -> null
-    }
+    }?.value
+    LaunchedEffect(result, contentUri) { onLoadCompleted(result != null) }
+    return ArtworkBitmapLoadState(
+        bitmap = (result as? ArtworkResult.Loaded)?.bitmap,
+        isLoading = result == null,
+    )
 }
 
 internal suspend fun prefetchArtwork(
@@ -601,6 +631,7 @@ internal suspend fun loadArtworkBitmap(
     dateModifiedEpochSeconds: Long,
     fileSizeBytes: Long,
     targetSizePx: Int,
+    foreground: Boolean = false,
 ): Bitmap? {
     if (contentUri.isBlank()) return null
     val normalizedTargetSizePx = normalizeArtworkTargetSize(targetSizePx)
@@ -610,7 +641,11 @@ internal suspend fun loadArtworkBitmap(
         fileSizeBytes = fileSizeBytes,
         targetSizePx = normalizedTargetSizePx,
     )
-    return when (val result = ArtworkCache.getOrLoad(context.applicationContext, cacheKey) {
+    return when (val result = ArtworkCache.getOrLoad(
+        context.applicationContext,
+        cacheKey,
+        foreground = foreground,
+    ) {
         loadArtworkThumbnail(
             context = context.applicationContext,
             contentUri = contentUri,
@@ -624,6 +659,13 @@ internal suspend fun loadArtworkBitmap(
 
 internal fun getArtworkBitmapFromMemoryCache(cacheKey: String): Bitmap? =
     (ArtworkCache.get(cacheKey) as? ArtworkResult.Loaded)?.bitmap
+
+internal fun getArtworkLoadResultFromMemoryCache(cacheKey: String): ArtworkLoadResult<Bitmap?>? =
+    when (val result = ArtworkCache.get(cacheKey)) {
+        is ArtworkResult.Loaded -> ArtworkLoadResult(result.bitmap)
+        ArtworkResult.Missing -> ArtworkLoadResult(null)
+        null -> null
+    }
 
 internal suspend fun loadArtworkBitmapFromCache(
     context: Context,
@@ -655,6 +697,7 @@ internal suspend fun loadFullPlayerArtworkBitmap(
         context = context.applicationContext,
         key = cacheKey,
         useDiskCache = false,
+        foreground = true,
     ) {
         loadEmbeddedArtworkThumbnail(
             context = context.applicationContext,
@@ -684,9 +727,15 @@ internal suspend fun loadCachedArtworkDerivative(
 }.getOrNull()
 
 @Composable
-internal fun rememberPlaceholderArtworkBitmap(size: Dp): Bitmap? {
+internal fun rememberPlaceholderArtworkBitmap(size: Dp): Bitmap? =
+    rememberRetainedArtworkBitmap(rememberPlaceholderArtworkBitmapLoadState(size))
+
+@Composable
+internal fun rememberPlaceholderArtworkBitmapLoadState(
+    size: Dp,
+    drawableResId: Int = PLACEHOLDER_ARTWORK_RES_ID,
+): ArtworkBitmapLoadState {
     val context = LocalContext.current.applicationContext
-    val drawableResId = currentPlaceholderArtworkResId()
     val targetSizePx = normalizeArtworkTargetSize(
         with(LocalDensity.current) { size.roundToPx() },
     )
@@ -696,19 +745,20 @@ internal fun rememberPlaceholderArtworkBitmap(size: Dp): Bitmap? {
             context = context,
             key = cacheKey,
             includeDisk = false,
-        )
+        )?.let { ArtworkLoadResult(it) }
     }
-    val result = produceState<ArtworkResult?>(
-        initialValue = initialResult,
-        key1 = cacheKey,
-    ) {
-        value = loadPlaceholderArtworkBitmap(
+    val result = rememberArtworkLoad(cacheKey, initialResult) {
+        loadPlaceholderArtworkBitmap(
             context = context,
             drawableResId = drawableResId,
             targetSizePx = targetSizePx,
-        )?.let { bitmap -> ArtworkResult.Loaded(bitmap) } ?: ArtworkResult.Missing
-    }.value
-    return (result as? ArtworkResult.Loaded)?.bitmap
+        )
+            ?.let { ArtworkResult.Loaded(it) } ?: ArtworkResult.Missing
+    }?.value
+    return ArtworkBitmapLoadState(
+        bitmap = (result as? ArtworkResult.Loaded)?.bitmap,
+        isLoading = result == null,
+    )
 }
 
 internal suspend fun loadPlaceholderArtworkBitmap(
@@ -732,7 +782,7 @@ internal suspend fun loadPlaceholderArtworkBitmap(
 private fun placeholderArtworkCacheKey(
     drawableResId: Int,
     targetSizePx: Int,
-): String = "album-placeholder-v2-$drawableResId-$targetSizePx"
+): String = "album-placeholder-v5-$drawableResId-$targetSizePx"
 
 private fun decodePlaceholderArtwork(
     context: Context,
@@ -992,8 +1042,13 @@ private object ArtworkCache {
             (value.byteCount / 1024).coerceAtLeast(1)
     }
     private val missingKeys = LruCache<String, Boolean>(MAX_MEMORY_MISSING_ENTRIES)
-    private val inFlight = ConcurrentHashMap<String, Deferred<ArtworkResult>>()
+    private class Request(
+        val priority: ArtworkDecodeLimiter.Request,
+        val result: Deferred<ArtworkResult>,
+    )
+    private val inFlight = ConcurrentHashMap<String, Request>()
     private val loaderScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val decodeLimiter = ArtworkDecodeLimiter()
 
     @Synchronized
     fun trim() {
@@ -1022,11 +1077,13 @@ private object ArtworkCache {
         context: Context,
         key: String,
         useDiskCache: Boolean = true,
+        foreground: Boolean = false,
         loader: () -> ArtworkExtractionResult,
     ): ArtworkResult {
         get(key)?.let { return it }
 
-        val newRequest = loaderScope.async(start = CoroutineStart.LAZY) {
+        val priority = decodeLimiter.request(foreground)
+        val newRequest = Request(priority, loaderScope.async(start = CoroutineStart.LAZY) {
             try {
                 if (useDiskCache) {
                     ArtworkDiskCache.get(context, key)?.let { cachedResult ->
@@ -1035,7 +1092,7 @@ private object ArtworkCache {
                     }
                 }
 
-                when (val extracted = loader()) {
+                when (val extracted = decodeLimiter.decode(priority) { loader() }) {
                     is ArtworkExtractionResult.Loaded -> {
                         val result = ArtworkResult.Loaded(extracted.bitmap)
                         remember(key, result)
@@ -1055,13 +1112,14 @@ private object ArtworkCache {
             } finally {
                 inFlight.remove(key)
             }
-        }
+        })
         val request = inFlight.putIfAbsent(key, newRequest) ?: newRequest
         if (request !== newRequest) {
-            newRequest.cancel()
+            newRequest.result.cancel()
         }
-        request.start()
-        return request.await()
+        if (foreground) request.priority.promote()
+        request.result.start()
+        return request.result.await()
     }
 
     @Synchronized

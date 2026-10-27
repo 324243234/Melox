@@ -1,0 +1,7 @@
+{
+  "baseVersion": "1.12.0",
+  "patchVersion": "1.12.0-melox",
+  "aarSha256": "3d2d83c96546c380cbc582329ece0da74a4f9267d52c6dead69c2272bfce0313",
+  "pomSha256": "aabfd1a533c2de912fda349dd062a89148e6d02dcaf62c89befc62a13f09e199",
+  "targetClassSha256": "9806de08a9297e34213f4f024bec6c68312f326b54cda31a1ca0993f49f81543"
+}

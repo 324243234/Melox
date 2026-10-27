@@ -90,10 +90,10 @@ fun TrackSelectionActions(
                     },
                 ),
                 modifier = Modifier.size(24.dp),
-                tint = if (allSelected) {
-                    MiuixTheme.colorScheme.primary
-                } else {
-                    LocalContentColor.current
+                tint = when {
+                    !enabled -> MiuixTheme.colorScheme.disabledOnSurface
+                    allSelected -> MiuixTheme.colorScheme.primary
+                    else -> LocalContentColor.current
                 },
             )
         }
@@ -113,12 +113,16 @@ fun TrackSelectionActions(
                     imageVector = MiuixIcons.Delete,
                     contentDescription = contentDescription,
                     modifier = Modifier.size(24.dp),
+                    tint = if (enabled && actionEnabled) LocalContentColor.current
+                    else MiuixTheme.colorScheme.disabledOnSurface,
                 )
             } else {
                 Icon(
                     imageVector = MiuixIcons.AddCircle,
                     contentDescription = contentDescription,
                     modifier = Modifier.size(24.dp),
+                    tint = if (enabled && actionEnabled) LocalContentColor.current
+                    else MiuixTheme.colorScheme.disabledOnSurface,
                 )
             }
         }

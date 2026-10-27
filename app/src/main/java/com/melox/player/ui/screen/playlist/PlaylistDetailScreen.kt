@@ -21,9 +21,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -32,11 +33,11 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
@@ -60,8 +61,13 @@ import com.melox.player.ui.LibrarySearchBar
 import com.melox.player.ui.LibrarySearchButton
 import com.melox.player.ui.component.AdaptiveTopAppBar
 import com.melox.player.ui.component.BlurredBar
+import com.melox.player.ui.component.library.LocalAlphabetIndexBottomPadding
+import com.melox.player.ui.component.library.fixedAlphabetIndexTopPadding
+import com.melox.player.ui.component.library.rememberSearchTopBarScrollBehavior
 import com.melox.player.ui.component.library.AlphabetSections
 import com.melox.player.ui.component.library.AlphabetSideBar
+import com.melox.player.ui.component.library.ShufflePlayButton
+import com.melox.player.ui.component.library.MusicLocationAction
 import com.melox.player.ui.component.library.MusicTrackRow
 import com.melox.player.ui.component.library.PreserveSortScrollPosition
 import com.melox.player.ui.component.library.SelectionActionsAnimatedContent
@@ -82,7 +88,6 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
 import top.yukonga.miuix.kmp.basic.ListPopupDefaults
-import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import com.melox.player.ui.component.PageScaffold
 import top.yukonga.miuix.kmp.basic.Text
@@ -110,6 +115,7 @@ fun PlaylistDetailScreen(
     selectionExitRequest: Int,
     onSelectionModeChange: (Boolean) -> Unit,
     onTrackClick: (List<MusicTrack>, Int) -> Unit,
+    onShufflePlay: (List<MusicTrack>) -> Unit,
     onPlayNext: (MusicTrack) -> Unit,
     onAppendToQueue: (MusicTrack) -> Unit,
     onAddToPlaylist: (MusicTrack) -> Unit,
@@ -118,30 +124,26 @@ fun PlaylistDetailScreen(
     onExternalEditReturned: (Long) -> Unit,
     showMusicTagEditor: Boolean,
     showLyricoEditor: Boolean,
+    showLunaBeatEditor: Boolean,
     onRename: (String) -> Unit,
     onDelete: () -> Unit,
     onRemoveEntries: (Set<String>) -> Unit,
     onMoveEntry: (List<String>) -> Boolean,
+    sortConfig: PlaylistSortConfig,
+    onSortConfigChange: (PlaylistSortConfig) -> Unit,
+    currentTrackContentUri: String? = null,
+    miniPlayerBounds: Rect = Rect.Zero,
+    playerContentBounds: Rect = Rect.Zero,
 ) {
     var query by rememberSaveable(playlist.id) { mutableStateOf("") }
     var searchVisible by rememberSaveable(playlist.id) { mutableStateOf(false) }
     var searchFocused by remember(playlist.id) { mutableStateOf(false) }
-    val scrollBehavior = MiuixScrollBehavior()
-    val backdrop = rememberBlurBackdrop()
+    val scrollBehavior = rememberSearchTopBarScrollBehavior(searchVisible)
+    var backdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val backdrop = rememberBlurBackdrop(captureCoordinates = { backdropCaptureCoordinates })
     val listState = rememberLazyListState()
-    val layoutDirection = LocalLayoutDirection.current
     val density = LocalDensity.current
-    var bottomContentHeightPx by remember { mutableIntStateOf(0) }
-    var sortFieldOrdinal by rememberSaveable(playlist.id) {
-        mutableIntStateOf(PlaylistSortField.CUSTOM.ordinal)
-    }
-    var sortDescending by rememberSaveable(playlist.id) { mutableStateOf(false) }
-    val sortConfig = PlaylistSortConfig(
-        field = PlaylistSortField.entries.getOrElse(sortFieldOrdinal) {
-            PlaylistSortField.CUSTOM
-        },
-        descending = sortDescending,
-    )
+    val layoutDirection = LocalLayoutDirection.current
     val resolvedTracks = remember(playlist, libraryTracks, readableContentUris) {
         resolvePlaylistTracks(playlist, libraryTracks, readableContentUris)
     }
@@ -174,9 +176,6 @@ fun PlaylistDetailScreen(
     }
     var reorderScrollTopPadding by remember { mutableStateOf(0.dp) }
     var reorderScrollBottomPadding by remember { mutableStateOf(0.dp) }
-    var fixedExpandedBarPadding by remember(playlist.id, density) {
-        mutableStateOf<Dp?>(null)
-    }
     val reorderEnabled =
         selectionMode && sortConfig.field == PlaylistSortField.CUSTOM && query.isBlank()
     val currentOnMoveEntry by rememberUpdatedState(onMoveEntry)
@@ -206,6 +205,18 @@ fun PlaylistDetailScreen(
         customDraftTracks
     } else {
         persistedDisplayedTracks
+    }
+    val currentIndex = displayedTracks.indexOfFirst { item ->
+        item.available && item.track.contentUri == currentTrackContentUri
+    }
+    val locateActionVisible = currentIndex >= 0 && !selectionMode &&
+        miniPlayerBounds.width > 0f && playerContentBounds.width > 0f
+    val locateBottomPadding = if (locateActionVisible) {
+        with(density) {
+            (playerContentBounds.bottom - miniPlayerBounds.top).coerceAtLeast(0f).toDp()
+        } + 12.dp + ButtonDefaults.MinHeight
+    } else {
+        0.dp
     }
     val displayedEntryIds = displayedTracks.map { item -> item.entry.id }
     PreserveSortScrollPosition(sortConfig, query, displayedTracks.size, listState) {
@@ -237,9 +248,6 @@ fun PlaylistDetailScreen(
     }
     val sections = remember(sortConfig.descending) {
         if (sortConfig.descending) AlphabetSections.asReversed() else AlphabetSections
-    }
-    val showScrollTop by remember {
-        derivedStateOf { scrollBehavior.state.collapsedFraction > 0.01f }
     }
 
     fun finishDraggedEntry(activeEntryId: String) {
@@ -326,10 +334,21 @@ fun PlaylistDetailScreen(
                                 }
                             },
                             defaultNavigationIcon = {
-                                IconButton(onClick = onBack) {
-                                    Icon(
-                                        imageVector = MiuixIcons.Back,
-                                        contentDescription = stringResource(R.string.back),
+                                Row {
+                                    IconButton(onClick = onBack) {
+                                        Icon(
+                                            imageVector = MiuixIcons.Back,
+                                            contentDescription = stringResource(R.string.back),
+                                        )
+                                    }
+                                    ShufflePlayButton(
+                                        enabled = displayedTracks.any { item -> item.available } && !isDragging,
+                                        onClick = {
+                                            onShufflePlay(
+                                                displayedTracks.filter { item -> item.available }
+                                                    .map { item -> item.track },
+                                            )
+                                        },
                                     )
                                 }
                             },
@@ -363,6 +382,7 @@ fun PlaylistDetailScreen(
                             defaultActions = {
                                 LibrarySearchButton(
                                     visible = searchVisible,
+                                    scrollBehavior = scrollBehavior,
                                     onClick = {
                                         searchVisible = !searchVisible
                                         searchFocused = searchVisible
@@ -371,10 +391,7 @@ fun PlaylistDetailScreen(
                                 )
                                 PlaylistSortButton(
                                     config = sortConfig,
-                                    onConfigChange = { config ->
-                                        sortFieldOrdinal = config.field.ordinal
-                                        sortDescending = config.descending
-                                    },
+                                    onConfigChange = onSortConfigChange,
                                 )
                                 PlaylistActionsButton(
                                     onRename = { showRename = true },
@@ -384,50 +401,27 @@ fun PlaylistDetailScreen(
                         )
                     },
                     bottomContent = {
-                        Box(
-                            modifier = Modifier.onSizeChanged {
-                                bottomContentHeightPx = it.height
+                        LibrarySearchBar(
+                            visible = searchVisible,
+                            focused = searchFocused,
+                            query = query,
+                            label = stringResource(R.string.search_hint),
+                            onQueryChange = { query = it },
+                            onFocusedChange = { searchFocused = it },
+                            onVisibleChange = { visible ->
+                                searchVisible = visible
+                                if (!visible) {
+                                    searchFocused = false
+                                    query = ""
+                                }
                             },
-                        ) {
-                            LibrarySearchBar(
-                                visible = searchVisible,
-                                focused = searchFocused,
-                                query = query,
-                                label = stringResource(R.string.search_hint),
-                                onQueryChange = { query = it },
-                                onFocusedChange = { searchFocused = it },
-                                onVisibleChange = { visible ->
-                                    searchVisible = visible
-                                    if (!visible) {
-                                        searchFocused = false
-                                        query = ""
-                                    }
-                                },
-                            )
-                        }
+                        )
                     },
                 )
             }
         },
     ) { padding ->
-        val bottomContentHeight = with(density) { bottomContentHeightPx.toDp() }
-        val currentBarPadding =
-            (padding.calculateTopPadding() - bottomContentHeight).coerceAtLeast(0.dp)
-        val heightOffset = with(density) {
-            scrollBehavior.state.heightOffset.toDp()
-        }
-        val measuredExpandedBarPadding =
-            (currentBarPadding - heightOffset).coerceAtLeast(currentBarPadding)
-        SideEffect {
-            if (
-                fixedExpandedBarPadding == null &&
-                scrollBehavior.state.heightOffsetLimit != -Float.MAX_VALUE
-            ) {
-                fixedExpandedBarPadding = measuredExpandedBarPadding
-            }
-        }
-        val indexTopPadding =
-            (fixedExpandedBarPadding ?: measuredExpandedBarPadding) + bottomContentHeight
+        val indexTopPadding = fixedAlphabetIndexTopPadding()
         val indexBottomPadding = maxOf(
             padding.calculateBottomPadding(),
             bottomContentPadding,
@@ -439,7 +433,7 @@ fun PlaylistDetailScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(backdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
+                .then(backdrop?.let { Modifier.onGloballyPositioned { coordinates -> backdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier),
         ) {
             LazyColumn(
                 modifier = Modifier
@@ -456,6 +450,7 @@ fun PlaylistDetailScreen(
                     bottom = maxOf(
                         padding.calculateBottomPadding(),
                         bottomContentPadding,
+                        locateBottomPadding,
                     ) + 12.dp,
                 ),
                 overscrollEffect = null,
@@ -563,10 +558,9 @@ fun PlaylistDetailScreen(
                     },
                     scrollToItem = listState::scrollToItem,
                     sections = sections,
-                    showScrollTop = showScrollTop,
                     onTargetIndexChanged = { _, restoreLargeTitle ->
                         val topBarState = scrollBehavior.state
-                        if (restoreLargeTitle) {
+                        if (restoreLargeTitle && !scrollBehavior.isPinned) {
                             topBarState.heightOffset = 0f
                             topBarState.contentOffset = 0f
                         } else if (topBarState.heightOffsetLimit != -Float.MAX_VALUE) {
@@ -579,11 +573,20 @@ fun PlaylistDetailScreen(
                         .padding(
                             top = indexTopPadding + 4.dp,
                             end = padding.calculateEndPadding(layoutDirection),
-                            bottom = indexBottomPadding + 12.dp,
+                            bottom = LocalAlphabetIndexBottomPadding.current,
                         )
                         .fillMaxHeight(),
                 )
             }
+            MusicLocationAction(
+                visible = locateActionVisible,
+                currentIndex = currentIndex,
+                listState = listState,
+                scrollBehavior = scrollBehavior,
+                miniPlayerBounds = miniPlayerBounds,
+                playerContentBounds = playerContentBounds,
+                contentPadding = padding,
+            )
         }
     }
 
@@ -609,6 +612,7 @@ fun PlaylistDetailScreen(
         onExternalEditReturned = onExternalEditReturned,
         showMusicTagEditor = showMusicTagEditor,
         showLyricoEditor = showLyricoEditor,
+        showLunaBeatEditor = showLunaBeatEditor,
     )
     OverlayDialog(
         show = showRemoveSelectedConfirm,

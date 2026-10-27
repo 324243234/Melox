@@ -25,6 +25,8 @@ internal data class LyricCenteringEvent(
     val previewing: Boolean,
     val geometry: List<Any>,
     val translationRevision: Int = 0,
+    val active: Boolean = true,
+    val focusLineIndices: List<Int> = emptyList(),
 )
 
 internal data class LyricVisualRow(val index: Int, val top: Float, val height: Int)
@@ -131,10 +133,13 @@ internal class LyricRowMotion {
         visibleOrder: List<Int> = emptyList(),
         cascade: Boolean = false,
     ) {
-        val delays = if (cascade) lyricCascadeDelays(visibleOrder) else emptyMap()
+        // Distant seeks can dispose the old visible rows before the spring starts.
+        val retainedVisibleOrder = visibleOrder.filter { it in rows }
+        val delays = if (cascade) lyricCascadeDelays(retainedVisibleOrder) else emptyMap()
+        val lastVisibleIndex = retainedVisibleOrder.maxOrNull()
         val running = (rows.map { (index, row) ->
             val delay = delays[index] ?: if (
-                cascade && visibleOrder.isNotEmpty() && index > visibleOrder.max()
+                cascade && lastVisibleIndex != null && index > lastVisibleIndex
             ) delays.values.maxOrNull() ?: 0L else 0L
             RunningRow(row, stiffness, delay * 1_000_000L)
         } + RunningRow(reference, stiffness, 0L))

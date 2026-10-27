@@ -7,6 +7,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,7 +24,7 @@ import top.yukonga.miuix.kmp.theme.ThemeController
 
 private const val PLAYBACK_ARTWORK_COLOR_TRANSITION_DURATION_MILLIS = 600
 
-private data class ThemePaletteTarget(
+internal data class ThemePaletteTarget(
     val colorSchemeMode: ColorSchemeMode,
     val keyColor: Color?,
     val isDark: Boolean,
@@ -44,11 +45,7 @@ fun MeloxTheme(
         source = settings.dynamicColorSource,
         playbackArtworkColor = playbackArtworkColor,
     )
-    val isDark = when (settings.themeMode) {
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
-        ThemeMode.LIGHT -> false
-        ThemeMode.DARK -> true
-    }
+    val isDark = isInDarkTheme(settings.themeMode)
     val paletteTarget = ThemePaletteTarget(
         colorSchemeMode = colorSchemeMode,
         keyColor = dynamicKeyColor,
@@ -65,40 +62,73 @@ fun MeloxTheme(
             keyColor = dynamicKeyColor,
         )
     }
-    // Read the controller directly, as in the official theme, before caching animation state.
-    val targetColors = controller.currentColors()
-    val animatedColors = rememberAnimatedThemeColors(
-        targetColors = targetColors,
-        target = paletteTarget,
-    )
     MiuixTheme(controller = controller) {
-        // Keep the outer Monet mode in the composition while overriding its colors with the
-        // interpolated palette. Miuix components therefore retain their dynamic-color styling.
+        // Keep the content tree stable and retain the controller's Monet component defaults.
+        // Only artwork transitions need an independent palette snapshot.
+        val targetColors = if (paletteTarget.animateArtworkChanges) {
+            controller.currentColors()
+        } else {
+            MiuixTheme.colorScheme
+        }
         MiuixTheme(
-            colors = animatedColors,
+            colors = rememberAnimatedThemeColors(targetColors, paletteTarget),
             content = content,
         )
     }
 }
 
 @Composable
-private fun rememberAnimatedThemeColors(
+internal fun rememberPlaybackContentColor(
+    settings: AppSettings,
+    playbackArtworkColor: Color?,
+    backgroundDark: Boolean,
+    hasItem: Boolean,
+    dynamicColorSupported: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S,
+): Color {
+    if (backgroundDark) return Color.White
+    if (!hasItem || !settings.dynamicColorEnabled || !dynamicColorSupported) return Color(0xFF282828)
+
+    val keyColor = resolveDynamicColorSeed(
+        dynamicColorEnabled = true,
+        source = settings.dynamicColorSource,
+        playbackArtworkColor = playbackArtworkColor,
+    )
+    val controller = remember(keyColor) {
+        ThemeController(colorSchemeMode = ColorSchemeMode.MonetLight, keyColor = keyColor)
+    }
+    val target = ThemePaletteTarget(
+        colorSchemeMode = ColorSchemeMode.MonetLight,
+        keyColor = keyColor,
+        isDark = false,
+        animateArtworkChanges = settings.dynamicColorSource == DynamicColorSource.PLAYBACK_ARTWORK,
+    )
+    return rememberAnimatedThemeColors(controller.currentColors(), target).primary
+}
+
+@Composable
+internal fun rememberAnimatedThemeColors(
     targetColors: Colors,
     target: ThemePaletteTarget,
 ): Colors {
+    if (!target.animateArtworkChanges) return targetColors
+
     var displayedColors by remember(target.colorSchemeMode, target.isDark, target.animateArtworkChanges) {
-        mutableStateOf(targetColors)
+        mutableStateOf<Colors?>(null)
     }
     var previousTarget by remember(target.colorSchemeMode, target.isDark, target.animateArtworkChanges) {
         mutableStateOf(target)
     }
+    var previousColors by remember(target.colorSchemeMode, target.isDark, target.animateArtworkChanges) {
+        mutableStateOf(targetColors)
+    }
 
     LaunchedEffect(target) {
-        val startColors = displayedColors
+        val startColors = displayedColors ?: previousColors
         val shouldAnimate = target.shouldAnimateFrom(previousTarget)
+        displayedColors = if (shouldAnimate) startColors else null
         previousTarget = target
+        previousColors = targetColors
         if (!shouldAnimate) {
-            displayedColors = targetColors
             return@LaunchedEffect
         }
         animate(
@@ -111,10 +141,32 @@ private fun rememberAnimatedThemeColors(
         ) { progress, _ ->
             displayedColors = lerpThemeColors(startColors, targetColors, progress)
         }
-        displayedColors = targetColors
+        displayedColors = null
     }
-    return if (target.animateArtworkChanges) displayedColors else targetColors
+    SideEffect {
+        // Refresh the next transition's source without turning a platform palette update
+        // into an artwork transition or replacing an interrupted transition's source.
+        if (displayedColors == null && previousTarget == target) {
+            previousColors = targetColors
+        }
+    }
+    return displayedColors ?: if (target.shouldAnimateFrom(previousTarget)) {
+        previousColors
+    } else {
+        targetColors
+    }
 }
+
+@Composable
+internal fun isInDarkTheme(themeMode: ThemeMode): Boolean =
+    effectiveThemeMode(themeMode, isSystemInDarkTheme()) == ThemeMode.DARK
+
+internal fun effectiveThemeMode(themeMode: ThemeMode, systemDark: Boolean): ThemeMode =
+    if (themeMode == ThemeMode.SYSTEM) {
+        if (systemDark) ThemeMode.DARK else ThemeMode.LIGHT
+    } else {
+        themeMode
+    }
 
 private fun ThemePaletteTarget.shouldAnimateFrom(previous: ThemePaletteTarget): Boolean =
     animateArtworkChanges &&

@@ -1,6 +1,7 @@
 package com.melox.player.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -28,7 +29,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
@@ -46,6 +46,7 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.nav.transition.NavSettleSpec
 
 @Composable
 internal fun IosLikeFloatingPlayerScaffold(
@@ -54,12 +55,13 @@ internal fun IosLikeFloatingPlayerScaffold(
     navigationItems: List<NavigationItem>,
     blurEnabled: Boolean,
     liquidGlassEnabled: Boolean,
+    smallPlayerBar: Boolean,
     effectsSupported: Boolean,
     isDark: Boolean,
     showNavigation: Boolean,
+    navigationHideMotion: NavSettleSpec.Tween?,
     playerNavigationOffset: () -> Float,
     miniPlayer: @Composable (MiniPlayerChrome) -> Unit,
-    backdropRefreshSignal: () -> Float,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val surfaceColor = MiuixTheme.colorScheme.surface
@@ -74,29 +76,29 @@ internal fun IosLikeFloatingPlayerScaffold(
     val portraitReferenceWidth = with(density) {
         minOf(windowSize.width, windowSize.height).toDp()
     }
-    val landscapeBottomPadding = if (isMiuixWideLayout(windowWidth, windowHeight)) {
-        floatingBottomBarBottomPadding(
-            navigationBarBottomInset = navigationBarBottomInset,
-        )
+    val ordinaryPortrait = windowHeight >= windowWidth &&
+        !isMiuixWideLayout(windowWidth, windowHeight)
+    val navigationBottomPadding = if (ordinaryPortrait) {
+        floatingNavigationBarBottomPadding(navigationBarBottomInset)
     } else {
-        null
+        floatingBottomBarBottomPadding(navigationBarBottomInset)
     }
     val hiddenNavigationBottomPadding = floatingMiniPlayerBottomPaddingWhenNavigationIsHidden(
         navigationBarBottomInset = navigationBarBottomInset,
-        isPortrait = windowSize.height >= windowSize.width,
+        isPortrait = ordinaryPortrait,
     )
-    val navigationBottomPadding = landscapeBottomPadding
-        ?: floatingNavigationBarBottomPadding(navigationBarBottomInset)
     val miniPlayerNavigationGap by animateDpAsState(
         targetValue = if (showNavigation) 0.dp else {
-            landscapeBottomPadding ?: hiddenNavigationBottomPadding
+            hiddenNavigationBottomPadding
         },
-        animationSpec = tween(if (showNavigation) 280 else 240),
+        animationSpec = navigationBarAnimationSpec(showNavigation, navigationHideMotion),
         label = "floatingMiniPlayerNavigationGap",
     )
     val miniPlayerNavigationShadowOffset by animateDpAsState(
-        targetValue = if (showNavigation) FLOATING_NAVIGATION_BAR_SHADOW_PADDING else 0.dp,
-        animationSpec = tween(if (showNavigation) 280 else 240),
+        targetValue = if (showNavigation) FLOATING_NAVIGATION_BAR_SHADOW_PADDING else {
+            (FLOATING_MINI_PLAYER_BOTTOM_PADDING - navigationBottomPadding).coerceAtLeast(0.dp)
+        },
+        animationSpec = navigationBarAnimationSpec(showNavigation, navigationHideMotion),
         label = "floatingMiniPlayerNavigationShadowOffset",
     )
     val effectsActive = effectsSupported && (blurEnabled || liquidGlassEnabled)
@@ -118,7 +120,10 @@ internal fun IosLikeFloatingPlayerScaffold(
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp - FLOATING_NAVIGATION_BAR_SHADOW_PADDING),
+                    .padding(
+                        horizontal = (if (ordinaryPortrait) 16.dp else 24.dp) -
+                            FLOATING_NAVIGATION_BAR_SHADOW_PADDING,
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 val availableBarWidth = floatingBottomBarAvailableWidth(
@@ -157,6 +162,7 @@ internal fun IosLikeFloatingPlayerScaffold(
                                 liquidGlassActive = liquidGlassEnabled && effectsSupported,
                                 isDark = isDark,
                                 floatingHighlight = floatingHighlight,
+                                smallPlayerBar = smallPlayerBar,
                             ),
                         )
                     }
@@ -171,15 +177,27 @@ internal fun IosLikeFloatingPlayerScaffold(
                             clip = false,
                         ) + fadeIn(tween(180)),
                         exit = slideOutVertically(
-                            animationSpec = tween(240),
+                            animationSpec = navigationBarAnimationSpec(false, navigationHideMotion),
                             targetOffsetY = { it },
                         ) + shrinkVertically(
-                            animationSpec = tween(240),
+                            animationSpec = navigationBarAnimationSpec(false, navigationHideMotion),
                             clip = false,
-                        ) + fadeOut(tween(140)),
+                        ) + if (navigationHideMotion == null) {
+                            fadeOut(tween(140))
+                        } else {
+                            ExitTransition.None
+                        },
                     ) {
                         Box(
-                            modifier = Modifier.padding(FLOATING_NAVIGATION_BAR_SHADOW_PADDING),
+                            modifier = Modifier.padding(
+                                start = FLOATING_NAVIGATION_BAR_SHADOW_PADDING,
+                                top = FLOATING_NAVIGATION_BAR_SHADOW_PADDING,
+                                end = FLOATING_NAVIGATION_BAR_SHADOW_PADDING,
+                                bottom = minOf(
+                                    FLOATING_NAVIGATION_BAR_SHADOW_PADDING,
+                                    navigationBottomPadding,
+                                ),
+                            ),
                         ) {
                             LiquidGlassNavigationBar(
                                 items = navigationItems,
@@ -203,11 +221,6 @@ internal fun IosLikeFloatingPlayerScaffold(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .drawWithContent {
-                    @Suppress("UNUSED_VARIABLE")
-                    val refreshFrame = backdropRefreshSignal()
-                    drawContent()
-                }
                 .then(
                     backdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier,
                 ),
@@ -220,30 +233,29 @@ internal fun IosLikeFloatingPlayerScaffold(
 internal fun floatingMiniPlayerBottomPaddingWhenNavigationIsHidden(
     navigationBarBottomInset: Dp,
     isPortrait: Boolean,
-): Dp = if (isPortrait && navigationBarBottomInset == 0.dp) {
-    floatingNavigationBarBottomPadding(navigationBarBottomInset) -
-        FLOATING_MINI_PLAYER_BOTTOM_PADDING
+): Dp = ((if (isPortrait) {
+    floatingNavigationBarBottomPadding(navigationBarBottomInset)
 } else {
-    navigationBarBottomInset
-}
+    floatingBottomBarBottomPadding(navigationBarBottomInset)
+}) - FLOATING_MINI_PLAYER_BOTTOM_PADDING).coerceAtLeast(0.dp)
 
 internal fun floatingBottomBarAvailableWidth(
     windowWidth: Dp,
     windowHeight: Dp,
     contentMaxWidth: Dp,
     portraitReferenceWidth: Dp,
-): Dp = if (isMiuixWideLayout(windowWidth, windowHeight)) {
+): Dp = if (windowWidth > windowHeight || isMiuixWideLayout(windowWidth, windowHeight)) {
     contentMaxWidth
 } else {
-    (portraitReferenceWidth - 48.dp).coerceAtLeast(0.dp)
+    (portraitReferenceWidth - 32.dp).coerceAtLeast(0.dp)
 }
 
 internal fun floatingBottomBarBottomPadding(
     navigationBarBottomInset: Dp,
 ): Dp = if (navigationBarBottomInset > 0.dp) {
-    navigationBarBottomInset
+    navigationBarBottomInset + 8.dp
 } else {
-    12.dp
+    16.dp
 }
 
 private val FLOATING_NAVIGATION_BAR_SHADOW_PADDING = 10.dp

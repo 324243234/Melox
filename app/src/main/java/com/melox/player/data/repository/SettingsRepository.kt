@@ -12,6 +12,9 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.melox.player.model.LyricsTranslationLanguage
+import com.melox.player.model.LyricAnimationMode
+import com.melox.player.model.resolveLyricAnimationMode
 import com.melox.player.data.library.AlbumSortConfig
 import com.melox.player.data.library.AlbumSortField
 import com.melox.player.data.library.AlbumGridStyle
@@ -22,6 +25,9 @@ import com.melox.player.data.library.FolderSortField
 import com.melox.player.data.library.MusicSortConfig
 import com.melox.player.data.library.MusicSortField
 import com.melox.player.model.AppSettings
+import com.melox.player.model.TransientAudioFocusBehavior
+import com.melox.player.data.playlist.PlaylistSortConfig
+import com.melox.player.data.playlist.PlaylistSortField
 import com.melox.player.model.normalizeCustomBackgroundBlurPercent
 import com.melox.player.model.resolveCustomBackgroundBlurPercent
 import com.melox.player.model.normalizeCustomBackgroundDimPercent
@@ -32,6 +38,8 @@ import com.melox.player.model.normalizeCustomBackgroundCardOpacityPercent
 import com.melox.player.model.BottomBarStyle
 import com.melox.player.model.DefaultHomePage
 import com.melox.player.model.DynamicColorSource
+import com.melox.player.model.CoverShape
+import com.melox.player.model.DynamicFlowStyle
 import com.melox.player.model.LyricsSidecarFormatPriority
 import com.melox.player.model.LyricsSourcePriority
 import com.melox.player.model.NavigationTransitionStyle
@@ -105,6 +113,20 @@ class SettingsRepository(context: Context) {
                         )
                     }
                     ?: PlaybackBackgroundStyle.BLURRED_ARTWORK,
+                dynamicFlowStyle = preferences[Keys.DynamicFlowStyle]
+                    ?.let { enumValueOrDefault(it, DynamicFlowStyle.SYSTEM) }
+                    ?: DynamicFlowStyle.SYSTEM,
+                showSongListArtwork = preferences[Keys.ShowSongListArtwork] ?: true,
+                coverShape = preferences[Keys.CoverShape]
+                    ?.let { enumValueOrDefault(it, CoverShape.DEFAULT) }
+                    ?: if (preferences[Keys.CircularArtwork] == true) {
+                        CoverShape.CIRCLE
+                    } else {
+                        CoverShape.DEFAULT
+                    },
+                artworkFlipAnimation = preferences[Keys.ArtworkFlipAnimation] ?: false,
+                showSongListFileName = preferences[Keys.ShowSongListFileName] ?: false,
+                showSongListDuration = preferences[Keys.ShowSongListDuration] ?: true,
                 playbackSpeed = preferences[Keys.PlaybackSpeed]
                     ?.let(::normalizePlaybackSpeed) ?: 1f,
                 highPrecisionOutput = preferences[Keys.HighPrecisionOutput] ?: false,
@@ -112,6 +134,12 @@ class SettingsRepository(context: Context) {
                     ?.coerceIn(0, 86_399) ?: 600,
                 autoExtendSleepTimer = preferences[Keys.AutoExtendSleepTimer] ?: false,
                 playbackPauseFade = preferences[Keys.PlaybackPauseFade] ?: false,
+                audioFocusEnabled = preferences[Keys.AudioFocusEnabled] ?: true,
+                transientAudioFocusBehavior = preferences[Keys.TransientAudioFocusBehavior]
+                    ?.let { enumValueOrDefault(it, TransientAudioFocusBehavior.DUCK) }
+                    ?: TransientAudioFocusBehavior.DUCK,
+                autoPlayOnStart = preferences[Keys.AutoPlayOnStart] ?: false,
+                terminateOnTaskRemoved = preferences[Keys.TerminateOnTaskRemoved] ?: false,
                 lyricFontScale = preferences[Keys.LyricFontScale]
                     ?.coerceIn(MIN_LYRIC_FONT_SCALE, MAX_LYRIC_FONT_SCALE)
                     ?: preferences[Keys.LegacyLyricFontScale]
@@ -120,14 +148,24 @@ class SettingsRepository(context: Context) {
                 lyricFontWeight = preferences[Keys.LyricFontWeight]
                     ?.let(::normalizeLyricFontWeight)
                     ?: DEFAULT_LYRIC_FONT_WEIGHT,
-                forceWordByWordLyrics = preferences[Keys.ForceWordByWordLyrics] ?: false,
+                lyricAnimationMode = resolveLyricAnimationMode(
+                    preferences[Keys.LyricAnimationMode],
+                    preferences[Keys.LegacyForceWordByWordLyrics],
+                ),
                 lyricBlurEnabled = preferences[Keys.LyricBlurEnabled] ?: false,
                 centerLyrics = preferences[Keys.CenterLyrics] ?: false,
                 leftAlignPlayerTitle = preferences[Keys.LeftAlignPlayerTitle] ?: false,
                 hideControlsOnLyrics = preferences[Keys.HideControlsOnLyrics] ?: false,
                 showLyricsTranslation = preferences[Keys.ShowLyricsTranslation] ?: true,
+                showLyricsRomanization = preferences[Keys.ShowLyricsRomanization] ?: true,
+                lyricsTranslationLanguage = preferences[Keys.LyricsTranslationLanguage]
+                    ?.let { enumValueOrDefault(it, LyricsTranslationLanguage.AUTO) }
+                    ?: LyricsTranslationLanguage.AUTO,
+                showMiniPlayerLyrics = preferences[Keys.ShowMiniPlayerLyrics] ?: true,
+                showArtworkLyrics = preferences[Keys.ShowArtworkLyrics] ?: false,
                 showMusicTagEditor = preferences[Keys.ShowMusicTagEditor] ?: true,
                 showLyricoEditor = preferences[Keys.ShowLyricoEditor] ?: true,
+                showLunaBeatEditor = preferences[Keys.ShowLunaBeatEditor] ?: true,
                 lyricsSourcePriority = preferences[Keys.LyricsSourcePriority]
                     ?.let { storedValue ->
                         enumValueOrDefault(storedValue, LyricsSourcePriority.EMBEDDED)
@@ -141,7 +179,10 @@ class SettingsRepository(context: Context) {
                 blurEnabled = preferences[Keys.BlurEnabled] ?: true,
                 progressiveTopBarBlurEnabled =
                     preferences[Keys.ProgressiveTopBarBlurEnabled] ?: false,
+                smallPlayerBar = preferences[Keys.SmallPlayerBar] ?: false,
                 hideBottomBar = preferences[Keys.HideBottomBar] ?: false,
+                immersiveMode = preferences[Keys.ImmersiveMode] ?: false,
+                hideStatusBar = preferences[Keys.HideStatusBar] ?: false,
                 floatingBottomBar = preferences[Keys.FloatingBottomBar]
                     ?: (preferences[Keys.BottomBarStyle] != null &&
                         preferences[Keys.BottomBarStyle] != BottomBarStyle.NORMAL.name),
@@ -154,6 +195,7 @@ class SettingsRepository(context: Context) {
                         enumValueOrDefault(storedValue, NavigationTransitionStyle.MIUIX)
                     }
                     ?: NavigationTransitionStyle.MIUIX,
+                songListPullToRefresh = preferences[Keys.SongListPullToRefresh] ?: true,
                 refreshLibraryOnStart = preferences[Keys.RefreshLibraryOnStart] ?: false,
                 skipShortAudio = preferences[Keys.SkipShortAudio] ?: false,
                 customFolderUris = preferences[Keys.CustomFolderUris]
@@ -166,6 +208,7 @@ class SettingsRepository(context: Context) {
                     ?.distinctBy { it.lowercase() }
                     ?.sorted()
                     ?: emptyList(),
+                hiddenTrackUris = preferences[Keys.HiddenTrackUris].orEmpty(),
                 libraryTabIndex = preferences[Keys.LibraryTabIndex]
                     ?.coerceIn(0, LIBRARY_TAB_COUNT - 1)
                     ?: 0,
@@ -189,6 +232,12 @@ class SettingsRepository(context: Context) {
                     ?.coerceIn(FolderSortField.entries.indices)
                     ?: FolderSortField.NAME.ordinal,
                 folderSortDescending = preferences[Keys.FolderSortDescending] ?: false,
+                folderTrackSortConfigs = decodeFolderTrackSortConfigs(
+                    preferences[Keys.FolderTrackSortConfigs].orEmpty(),
+                ),
+                playlistSortConfigs = decodePlaylistSortConfigs(
+                    preferences[Keys.PlaylistSortConfigs].orEmpty(),
+                ),
                 defaultHomePage = preferences[Keys.DefaultHomePage]
                     ?.let { storedValue ->
                         enumValueOrDefault(storedValue, DefaultHomePage.HOME)
@@ -283,6 +332,38 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    suspend fun setDynamicFlowStyle(style: DynamicFlowStyle) {
+        dataStore.edit { preferences ->
+            preferences[Keys.DynamicFlowStyle] = style.name
+        }
+    }
+
+    suspend fun setShowSongListArtwork(enabled: Boolean) {
+        dataStore.edit { it[Keys.ShowSongListArtwork] = enabled }
+    }
+
+    suspend fun setCircularArtwork(enabled: Boolean) {
+        setCoverShape(if (enabled) CoverShape.CIRCLE else CoverShape.DEFAULT)
+    }
+
+    suspend fun setCoverShape(shape: CoverShape) {
+        dataStore.edit { preferences ->
+            preferences[Keys.CoverShape] = shape.name
+        }
+    }
+
+    suspend fun setArtworkFlipAnimation(enabled: Boolean) {
+        dataStore.edit { it[Keys.ArtworkFlipAnimation] = enabled }
+    }
+
+    suspend fun setShowSongListFileName(enabled: Boolean) {
+        dataStore.edit { it[Keys.ShowSongListFileName] = enabled }
+    }
+
+    suspend fun setShowSongListDuration(enabled: Boolean) {
+        dataStore.edit { it[Keys.ShowSongListDuration] = enabled }
+    }
+
     suspend fun setPlaybackSpeed(speed: Float) {
         dataStore.edit { it[Keys.PlaybackSpeed] = normalizePlaybackSpeed(speed) }
     }
@@ -303,6 +384,22 @@ class SettingsRepository(context: Context) {
         dataStore.edit { it[Keys.PlaybackPauseFade] = enabled }
     }
 
+    suspend fun setAutoPlayOnStart(enabled: Boolean) {
+        dataStore.edit { it[Keys.AutoPlayOnStart] = enabled }
+    }
+
+    suspend fun setAudioFocusEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.AudioFocusEnabled] = enabled }
+    }
+
+    suspend fun setTransientAudioFocusBehavior(behavior: TransientAudioFocusBehavior) {
+        dataStore.edit { it[Keys.TransientAudioFocusBehavior] = behavior.name }
+    }
+
+    suspend fun setTerminateOnTaskRemoved(enabled: Boolean) {
+        dataStore.edit { it[Keys.TerminateOnTaskRemoved] = enabled }
+    }
+
     suspend fun setLyricFontScale(scale: Float) {
         dataStore.edit { preferences ->
             preferences[Keys.LyricFontScale] = scale.coerceIn(
@@ -318,9 +415,10 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    suspend fun setForceWordByWordLyrics(enabled: Boolean) {
+    suspend fun setLyricAnimationMode(mode: LyricAnimationMode) {
         dataStore.edit { preferences ->
-            preferences[Keys.ForceWordByWordLyrics] = enabled
+            preferences[Keys.LyricAnimationMode] = mode.name
+            preferences.remove(Keys.LegacyForceWordByWordLyrics)
         }
     }
 
@@ -348,10 +446,26 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    suspend fun setShowMiniPlayerLyrics(enabled: Boolean) {
+        dataStore.edit { it[Keys.ShowMiniPlayerLyrics] = enabled }
+    }
+
+    suspend fun setShowArtworkLyrics(enabled: Boolean) {
+        dataStore.edit { it[Keys.ShowArtworkLyrics] = enabled }
+    }
+
     suspend fun setShowLyricsTranslation(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[Keys.ShowLyricsTranslation] = enabled
         }
+    }
+
+    suspend fun setLyricsTranslationLanguage(language: LyricsTranslationLanguage) {
+        dataStore.edit { it[Keys.LyricsTranslationLanguage] = language.name }
+    }
+
+    suspend fun setShowLyricsRomanization(enabled: Boolean) {
+        dataStore.edit { it[Keys.ShowLyricsRomanization] = enabled }
     }
 
     suspend fun setLyricsSourcePriority(priority: LyricsSourcePriority) {
@@ -366,6 +480,10 @@ class SettingsRepository(context: Context) {
 
     suspend fun setShowLyricoEditor(enabled: Boolean) {
         dataStore.edit { it[Keys.ShowLyricoEditor] = enabled }
+    }
+
+    suspend fun setShowLunaBeatEditor(enabled: Boolean) {
+        dataStore.edit { it[Keys.ShowLunaBeatEditor] = enabled }
     }
 
     suspend fun setLyricsSidecarFormatPriority(priority: LyricsSidecarFormatPriority) {
@@ -393,9 +511,27 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    suspend fun setSmallPlayerBar(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.SmallPlayerBar] = enabled
+        }
+    }
+
     suspend fun setHideBottomBar(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[Keys.HideBottomBar] = enabled
+        }
+    }
+
+    suspend fun setImmersiveMode(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.ImmersiveMode] = enabled
+        }
+    }
+
+    suspend fun setHideStatusBar(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.HideStatusBar] = enabled
         }
     }
 
@@ -429,6 +565,12 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    suspend fun setSongListPullToRefresh(enabled: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[Keys.SongListPullToRefresh] = enabled
+        }
+    }
+
     suspend fun setRefreshLibraryOnStart(enabled: Boolean) {
         dataStore.edit { preferences ->
             preferences[Keys.RefreshLibraryOnStart] = enabled
@@ -455,20 +597,15 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    suspend fun addBlockedFolderPath(path: String) {
-        val normalized = path.trim().replace('\\', '/').trimEnd('/').ifEmpty { "/" }
+    suspend fun setBlockedFolderPaths(paths: List<String>) {
         dataStore.edit { preferences ->
-            preferences[Keys.BlockedFolderPaths] =
-                preferences[Keys.BlockedFolderPaths].orEmpty() + normalized
+            preferences[Keys.BlockedFolderPaths] = paths.toSet()
         }
     }
 
-    suspend fun removeBlockedFolderPath(path: String) {
+    suspend fun setHiddenTrackUris(contentUris: Set<String>) {
         dataStore.edit { preferences ->
-            preferences[Keys.BlockedFolderPaths] = preferences[Keys.BlockedFolderPaths]
-                .orEmpty()
-                .filterNot { it.equals(path, ignoreCase = true) }
-                .toSet()
+            preferences[Keys.HiddenTrackUris] = contentUris
         }
     }
 
@@ -514,6 +651,28 @@ class SettingsRepository(context: Context) {
         }
     }
 
+    suspend fun setFolderTrackSortConfig(folderKey: String, config: MusicSortConfig) {
+        dataStore.edit { preferences ->
+            val configs = decodeFolderTrackSortConfigs(
+                preferences[Keys.FolderTrackSortConfigs].orEmpty(),
+            ).toMutableMap()
+            if (config == MusicSortConfig()) configs.remove(folderKey)
+            else configs[folderKey] = config
+            preferences[Keys.FolderTrackSortConfigs] = encodeFolderTrackSortConfigs(configs)
+        }
+    }
+
+    suspend fun setPlaylistSortConfig(playlistId: String, config: PlaylistSortConfig) {
+        dataStore.edit { preferences ->
+            val configs = decodePlaylistSortConfigs(
+                preferences[Keys.PlaylistSortConfigs].orEmpty(),
+            ).toMutableMap()
+            if (config == PlaylistSortConfig()) configs.remove(playlistId)
+            else configs[playlistId] = config
+            preferences[Keys.PlaylistSortConfigs] = encodePlaylistSortConfigs(configs)
+        }
+    }
+
     private object Keys {
         val ThemeMode = stringPreferencesKey("theme_mode")
         val DynamicColorEnabled = booleanPreferencesKey("dynamic_color_enabled")
@@ -525,22 +684,39 @@ class SettingsRepository(context: Context) {
         val CustomBackgroundCardOpacityPercent = intPreferencesKey("custom_background_card_opacity_percent")
         val DynamicColorSource = stringPreferencesKey("dynamic_color_source")
         val PlaybackBackgroundStyle = stringPreferencesKey("playback_background_style")
+        val DynamicFlowStyle = stringPreferencesKey("dynamic_flow_style")
+        val ShowSongListArtwork = booleanPreferencesKey("show_song_list_artwork")
+        val CircularArtwork = booleanPreferencesKey("circular_artwork")
+        val CoverShape = stringPreferencesKey("cover_shape")
+        val ArtworkFlipAnimation = booleanPreferencesKey("artwork_flip_animation")
+        val ShowSongListFileName = booleanPreferencesKey("show_song_list_file_name")
+        val ShowSongListDuration = booleanPreferencesKey("show_song_list_duration")
         val PlaybackSpeed = floatPreferencesKey("playback_speed")
         val HighPrecisionOutput = booleanPreferencesKey("high_precision_output")
         val SleepTimerSeconds = intPreferencesKey("sleep_timer_seconds")
         val AutoExtendSleepTimer = booleanPreferencesKey("auto_extend_sleep_timer")
         val PlaybackPauseFade = booleanPreferencesKey("playback_pause_fade")
+        val AudioFocusEnabled = booleanPreferencesKey("audio_focus_enabled")
+        val TransientAudioFocusBehavior = stringPreferencesKey("transient_audio_focus_behavior")
+        val AutoPlayOnStart = booleanPreferencesKey("auto_play_on_start")
+        val TerminateOnTaskRemoved = booleanPreferencesKey("terminate_on_task_removed")
         val LyricFontScale = floatPreferencesKey("lyric_font_scale_v2")
         val LegacyLyricFontScale = floatPreferencesKey("lyric_font_scale")
         val LyricFontWeight = intPreferencesKey("lyric_font_weight")
-        val ForceWordByWordLyrics = booleanPreferencesKey("force_word_by_word_lyrics")
+        val LyricAnimationMode = stringPreferencesKey("lyric_animation_mode")
+        val LegacyForceWordByWordLyrics = booleanPreferencesKey("force_word_by_word_lyrics")
         val LyricBlurEnabled = booleanPreferencesKey("lyric_blur_enabled")
         val CenterLyrics = booleanPreferencesKey("center_lyrics")
         val LeftAlignPlayerTitle = booleanPreferencesKey("left_align_player_title")
         val HideControlsOnLyrics = booleanPreferencesKey("hide_controls_on_lyrics")
         val ShowLyricsTranslation = booleanPreferencesKey("show_lyrics_translation")
+        val ShowLyricsRomanization = booleanPreferencesKey("show_lyrics_romanization")
+        val LyricsTranslationLanguage = stringPreferencesKey("lyrics_translation_language")
+        val ShowMiniPlayerLyrics = booleanPreferencesKey("show_mini_player_lyrics")
+        val ShowArtworkLyrics = booleanPreferencesKey("show_artwork_lyrics")
         val ShowMusicTagEditor = booleanPreferencesKey("show_music_tag_editor")
         val ShowLyricoEditor = booleanPreferencesKey("show_lyrico_editor")
+        val ShowLunaBeatEditor = booleanPreferencesKey("show_luna_beat_editor")
         val LyricsSourcePriority = stringPreferencesKey("lyrics_source_priority")
         val LyricsSidecarFormatPriority = stringPreferencesKey("lyrics_sidecar_format_priority")
         val BottomBarStyle = stringPreferencesKey("bottom_bar_style")
@@ -549,14 +725,19 @@ class SettingsRepository(context: Context) {
             booleanPreferencesKey("progressive_top_bar_blur_enabled")
         val FloatingBottomBar = booleanPreferencesKey("floating_bottom_bar")
         val NavigationRailExpanded = booleanPreferencesKey("navigation_rail_expanded")
+        val SmallPlayerBar = booleanPreferencesKey("small_player_bar")
         val HideBottomBar = booleanPreferencesKey("hide_bottom_bar")
+        val ImmersiveMode = booleanPreferencesKey("immersive_mode")
+        val HideStatusBar = booleanPreferencesKey("hide_status_bar")
         val LiquidGlass = booleanPreferencesKey("liquid_glass")
         val PredictiveBackEnabled = booleanPreferencesKey("predictive_back_enabled")
         val NavigationTransitionStyle = stringPreferencesKey("navigation_transition_style")
+        val SongListPullToRefresh = booleanPreferencesKey("song_list_pull_to_refresh")
         val RefreshLibraryOnStart = booleanPreferencesKey("refresh_library_on_start")
         val SkipShortAudio = booleanPreferencesKey("skip_short_audio")
         val CustomFolderUris = stringSetPreferencesKey("custom_folder_uris")
         val BlockedFolderPaths = stringSetPreferencesKey("blocked_folder_paths")
+        val HiddenTrackUris = stringSetPreferencesKey("hidden_track_uris")
         val DefaultHomePage = stringPreferencesKey("default_home_page")
         val LibraryTabIndex = intPreferencesKey("library_tab_index")
         val MusicSortField = intPreferencesKey("music_sort_field")
@@ -569,8 +750,40 @@ class SettingsRepository(context: Context) {
         val ArtistSortDescending = booleanPreferencesKey("artist_sort_descending")
         val FolderSortField = intPreferencesKey("folder_sort_field")
         val FolderSortDescending = booleanPreferencesKey("folder_sort_descending")
+        val FolderTrackSortConfigs = stringSetPreferencesKey("folder_track_sort_configs")
+        val PlaylistSortConfigs = stringSetPreferencesKey("playlist_sort_configs")
     }
 }
+
+internal fun encodeFolderTrackSortConfigs(configs: Map<String, MusicSortConfig>): Set<String> =
+    configs.mapTo(mutableSetOf()) { (key, config) ->
+        "${config.field.name}|${config.descending}|$key"
+    }
+
+internal fun decodeFolderTrackSortConfigs(stored: Set<String>): Map<String, MusicSortConfig> =
+    stored.mapNotNull { value ->
+        val parts = value.split('|', limit = 3)
+        if (parts.size != 3) return@mapNotNull null
+        val field = MusicSortField.entries.firstOrNull { it.name == parts[0] }
+            ?: return@mapNotNull null
+        val descending = parts[1].toBooleanStrictOrNull() ?: return@mapNotNull null
+        parts[2] to MusicSortConfig(field, descending)
+    }.toMap()
+
+internal fun encodePlaylistSortConfigs(configs: Map<String, PlaylistSortConfig>): Set<String> =
+    configs.mapTo(mutableSetOf()) { (id, config) ->
+        "${config.field.name}|${config.descending}|$id"
+    }
+
+internal fun decodePlaylistSortConfigs(stored: Set<String>): Map<String, PlaylistSortConfig> =
+    stored.mapNotNull { value ->
+        val parts = value.split('|', limit = 3)
+        if (parts.size != 3 || parts[2].isBlank()) return@mapNotNull null
+        val field = PlaylistSortField.entries.firstOrNull { it.name == parts[0] }
+            ?: return@mapNotNull null
+        val descending = parts[1].toBooleanStrictOrNull() ?: return@mapNotNull null
+        parts[2] to PlaylistSortConfig(field, descending)
+    }.toMap()
 
 private inline fun <reified T : Enum<T>> enumValueOrDefault(value: String, default: T): T =
     enumValues<T>().firstOrNull { enumValue -> enumValue.name == value } ?: default

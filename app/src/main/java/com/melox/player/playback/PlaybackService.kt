@@ -2,11 +2,17 @@
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.media.audiofx.AudioEffect
+import android.media.AudioAttributes as PlatformAudioAttributes
+import android.os.Handler
 import android.os.Bundle
 import android.os.Process
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -25,17 +31,26 @@ import com.melox.player.R
 import com.melox.player.data.playback.PlaybackSnapshotStore
 import com.melox.player.data.playback.MiniPlaybackSnapshotStore
 import com.melox.player.data.repository.SettingsRepository
+import com.melox.player.model.MusicTrack
 import com.melox.player.model.PlaybackMode
 import com.melox.player.model.PlaybackQueueItem
+import com.melox.player.model.AppSettings
 import com.melox.player.model.PlaybackSnapshot
+import com.melox.player.model.SleepTimerState
 import com.melox.player.model.PLAYBACK_SPEED_VALUES
 import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.SettableFuture
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -47,15 +62,29 @@ import java.util.concurrent.atomic.AtomicLong
 /** Owns background audio playback and exposes it to Android system media controls. */
 internal const val ACTION_CLOSE_APPLICATION_COMMAND =
     "com.melox.player.action.CLOSE_APPLICATION_COMMAND"
+internal const val ACTION_REMOVE_QUEUE_CONTENT_URIS = "com.melox.player.action.REMOVE_QUEUE_CONTENT_URIS"
+internal const val EXTRA_REMOVED_CONTENT_URIS = "removed_content_uris"
 internal const val ACTION_SET_PAUSE_FADE = "com.melox.player.action.SET_PAUSE_FADE"
 internal const val ACTION_SET_PLAYBACK_INTENT = "com.melox.player.action.SET_PLAYBACK_INTENT"
+internal const val ACTION_APPLY_STARTUP_PLAYBACK = "com.melox.player.action.APPLY_STARTUP_PLAYBACK"
+internal const val EXTRA_ALLOW_STARTUP_AUTO_PLAY = "allow_startup_auto_play"
 internal const val ACTION_SET_PLAYBACK_SPEED = "com.melox.player.action.SET_PLAYBACK_SPEED"
 internal const val ACTION_SET_HIGH_PRECISION_OUTPUT = "com.melox.player.action.SET_HIGH_PRECISION_OUTPUT"
+internal const val ACTION_START_SLEEP_TIMER = "com.melox.player.action.START_SLEEP_TIMER"
+internal const val ACTION_CANCEL_SLEEP_TIMER = "com.melox.player.action.CANCEL_SLEEP_TIMER"
+internal const val ACTION_SET_TIMER_EXTENSION = "com.melox.player.action.SET_TIMER_EXTENSION"
+internal const val ACTION_ACKNOWLEDGE_TIMER_INTERRUPTION = "com.melox.player.action.ACKNOWLEDGE_TIMER_INTERRUPTION"
+internal const val EXTRA_SLEEP_TIMER_STATE = "sleep_timer_state"
+internal const val EXTRA_TIMER_SECONDS = "timer_seconds"
+internal const val EXTRA_TIMER_EXTENSION = "timer_extension"
+internal const val EXTRA_TIMER_INTERRUPTED = "timer_interrupted"
 internal const val EXTRA_PAUSE_FADE = "pause_fade"
 internal const val EXTRA_PLAYBACK_INTENT = "playback_intent"
 internal const val EXTRA_PLAYBACK_SPEED = "playback_speed"
 internal const val EXTRA_HIGH_PRECISION_OUTPUT = "high_precision_output"
 internal const val EXTRA_FLOAT_OUTPUT_ACTIVE = "float_output_active"
+internal const val EXTRA_AUDIO_FOCUS_PAUSE_REVISION = "audio_focus_pause_revision"
+internal const val EXTRA_SNAPSHOT_RESTORE_PENDING = "snapshot_restore_pending"
 internal const val EXTRA_CLOSE_AFTER_EXTENSION = "close_after_extension"
 internal const val EXTRA_EXTENSION_EXPECTED_INDEX = "extension_expected_index"
 
@@ -68,14 +97,21 @@ class PlaybackService : MediaSessionService() {
     private lateinit var settingsRepository: SettingsRepository
     private var snapshotDebounceJob: Job? = null
     private var snapshotRestorePending = false
+    private var snapshotRestoreCancelledByQueueCommand = false
+    private var snapshotRestoreModeChanged = false
     private var snapshotRestoreSeed: PlaybackSnapshot? = null
     private val snapshotWriteMutex = Mutex()
     private val snapshotWriteSequence = AtomicLong()
     private val lastSnapshotWriteSequence = AtomicLong()
     private var lastSnapshotWriteSucceeded = false
+    private val queueProjection = PlaybackQueueProjection()
+    private var hiddenQueueContentUris: Set<String> = emptySet()
+    private val deferredRemovedContentUris = mutableSetOf<String>()
     private var artworkLoadJob: Job? = null
     private var requestedArtworkKey: PlaybackArtworkKey? = null
     private var isClosing = false
+    private var startupPlaybackApplied = false
+    private var autoPlayOnStart = false
     private val cyclePlaybackModeCommand = SessionCommand(ACTION_CYCLE_PLAYBACK_MODE, Bundle.EMPTY)
     private val closeApplicationCommand = SessionCommand(ACTION_CLOSE_APPLICATION_COMMAND, Bundle.EMPTY)
     private val pauseFadeCommand = SessionCommand(ACTION_SET_PAUSE_FADE, Bundle.EMPTY)
@@ -84,20 +120,67 @@ class PlaybackService : MediaSessionService() {
     private val highPrecisionOutputCommand = SessionCommand(ACTION_SET_HIGH_PRECISION_OUTPUT, Bundle.EMPTY)
     private var playbackVolumeFade: PlaybackVolumeFade? = null
     private var activePlayer: ExoPlayer? = null
+    private var platformFocusRequest: AudioFocusRequest? = null
+    private var audioFocusPauseRevision = 0L
+    private val audioManager by lazy { getSystemService(AudioManager::class.java) }
+    private val playbackAudioFocus by lazy {
+        PlaybackAudioFocus(
+            requestFocus = { onChange ->
+                val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(PlatformAudioAttributes.Builder()
+                        .setUsage(PlatformAudioAttributes.USAGE_MEDIA)
+                        .setContentType(PlatformAudioAttributes.CONTENT_TYPE_MUSIC).build())
+                    .setAcceptsDelayedFocusGain(true)
+                    .setWillPauseWhenDucked(true)
+                    .setOnAudioFocusChangeListener({ onChange(it) }, Handler(mainLooper))
+                    .build()
+                platformFocusRequest = request
+                audioManager.requestAudioFocus(request)
+            },
+            abandonFocus = {
+                platformFocusRequest?.let(audioManager::abandonAudioFocusRequest)
+                platformFocusRequest = null
+            },
+            isPlaybackRequested = { activePlayer?.playWhenReady == true },
+            pause = {
+                audioFocusPauseRevision++
+                playbackVolumeFade?.pauseImmediately() ?: activePlayer?.pause()
+                updateSessionExtras()
+            },
+            resume = {
+                activePlayer?.let { player ->
+                    if (!snapshotRestorePending && player.playbackState == Player.STATE_IDLE) player.prepare()
+                    player.play()
+                }
+            },
+            setVolumeMultiplier = { playbackVolumeFade?.setFocusVolumeMultiplier(it) },
+        )
+    }
     private var highPrecisionOutput = false
     private var floatOutputActive = false
+    private var audioEffectSessionId = C.AUDIO_SESSION_ID_UNSET
     private var outputGeneration = 0
     private var pauseFadeEnabled = false
     private var deferredPlaybackSpeed: Float? = null
     private var deferredHighPrecisionOutput: Boolean? = null
+    private val sleepTimer = PlaybackSleepTimer(
+        scope = serviceScope,
+        player = { activePlayer },
+        publish = { updateSessionExtras() },
+        close = { extended, expectedIndex ->
+            if (extended) closeAfterExtendedTimer(expectedIndex ?: -1) else closeApplication()
+        },
+    )
     private val playerListener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
             if (player !== activePlayer) return
-            playbackVolumeFade?.onEvents()
-            if (floatOutputActive && player.playbackParameters.speed != 1f) {
-                player.setPlaybackSpeed(1f)
-                return
+            if (events.contains(Player.EVENT_AUDIO_SESSION_ID)) {
+                updateAudioEffectSession(player.audioSessionId)
             }
+            if (player.playbackState == Player.STATE_ENDED ||
+                (!snapshotRestorePending && player.mediaItemCount == 0)
+            ) playbackAudioFocus.onUserPause()
+            sleepTimer.onPlayerEvents(player)
             if (events.contains(Player.EVENT_REPEAT_MODE_CHANGED)) {
                 refreshMediaButtonPreferences(player.currentPlaybackMode())
             }
@@ -116,6 +199,75 @@ class PlaybackService : MediaSessionService() {
         }
     }
     private val mediaSessionCallback = object : MediaSession.Callback {
+        @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+        override fun onPlayerCommandRequest(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            playerCommand: Int,
+        ): Int {
+            if (playerCommand == Player.COMMAND_PLAY_PAUSE || playerCommand == Player.COMMAND_STOP) {
+                playbackAudioFocus.onUserPause()
+            }
+            return SessionResult.RESULT_SUCCESS
+        }
+
+        override fun onPlayerInteractionFinished(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            playerCommands: Player.Commands,
+        ) {
+            if (!isClosing && session.player === activePlayer) {
+                if (playerCommands.contains(Player.COMMAND_PLAY_PAUSE) && session.player.playWhenReady) {
+                    playbackAudioFocus.onPlaybackIntentChanged(true)
+                }
+                if (snapshotRestorePending && (
+                        playerCommands.contains(Player.COMMAND_SET_REPEAT_MODE) ||
+                            playerCommands.contains(Player.COMMAND_SET_SHUFFLE_MODE)
+                    )
+                ) {
+                    snapshotRestoreModeChanged = true
+                }
+                if (snapshotRestorePending && playerCommands.contains(Player.COMMAND_CHANGE_MEDIA_ITEMS)) {
+                    snapshotRestoreCancelledByQueueCommand = true
+                }
+                session.player.resumeAfterSystemTrackSkip(playerCommands)
+            }
+        }
+
+        override fun onAddMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: List<MediaItem>,
+        ): com.google.common.util.concurrent.ListenableFuture<List<MediaItem>> =
+            resolveVisibleMediaItems(mediaItems)
+
+        override fun onSetMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: List<MediaItem>,
+            startIndex: Int,
+            startPositionMs: Long,
+        ): com.google.common.util.concurrent.ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            val result = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
+            val job = serviceScope.launch {
+                try {
+                    val visible = visibleMediaItems(mediaItems)
+                    val retainedUris = visible.mapTo(HashSet()) { it.toPlaybackQueueItem().contentUri }
+                    val sourceIndices = mediaItems.indices.filter {
+                        mediaItems[it].toPlaybackQueueItem().contentUri in retainedUris
+                    }
+                    val selection = visibleQueueStart(sourceIndices, startIndex, startPositionMs)
+                    result.set(MediaSession.MediaItemsWithStartPosition(visible, selection.first, selection.second))
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (exception: Exception) {
+                    result.setException(exception)
+                }
+            }
+            job.invokeOnCompletion { if (!result.isDone) result.cancel(false) }
+            return result
+        }
+
         override fun onConnectAsync(
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
@@ -130,10 +282,16 @@ class PlaybackService : MediaSessionService() {
                         if (controller.isTrusted) {
                             add(cyclePlaybackModeCommand)
                             add(closeApplicationCommand)
+                            add(SessionCommand(ACTION_REMOVE_QUEUE_CONTENT_URIS, Bundle.EMPTY))
                             add(pauseFadeCommand)
                             add(playbackIntentCommand)
+                            add(SessionCommand(ACTION_APPLY_STARTUP_PLAYBACK, Bundle.EMPTY))
                             add(playbackSpeedCommand)
                             add(highPrecisionOutputCommand)
+                            add(SessionCommand(ACTION_START_SLEEP_TIMER, Bundle.EMPTY))
+                            add(SessionCommand(ACTION_CANCEL_SLEEP_TIMER, Bundle.EMPTY))
+                            add(SessionCommand(ACTION_SET_TIMER_EXTENSION, Bundle.EMPTY))
+                            add(SessionCommand(ACTION_ACKNOWLEDGE_TIMER_INTERRUPTION, Bundle.EMPTY))
                         }
                     }.build(),
                 )
@@ -146,6 +304,23 @@ class PlaybackService : MediaSessionService() {
             customCommand: SessionCommand,
             args: Bundle,
         ) = when (customCommand.customAction) {
+            ACTION_APPLY_STARTUP_PLAYBACK -> {
+                if (!startupPlaybackApplied && !isClosing) {
+                    startupPlaybackApplied = true
+                    val player = session.player
+                    if (autoPlayOnStart && args.getBoolean(EXTRA_ALLOW_STARTUP_AUTO_PLAY) &&
+                        (snapshotRestorePending || player.mediaItemCount > 0)
+                    ) {
+                        // Restoration carries this intent forward; later pause/queue commands win.
+                        if (!snapshotRestorePending && player.playbackState == Player.STATE_IDLE) {
+                            player.prepare()
+                        }
+                        player.play()
+                    }
+                }
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+
             ACTION_CYCLE_PLAYBACK_MODE -> {
                 cyclePlaybackMode(session.player)
                 Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -160,6 +335,13 @@ class PlaybackService : MediaSessionService() {
                 Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
 
+            ACTION_REMOVE_QUEUE_CONTENT_URIS -> {
+                val uris = args.getStringArrayList(EXTRA_REMOVED_CONTENT_URIS).orEmpty().toSet()
+                if (snapshotRestorePending) deferredRemovedContentUris += uris
+                else session.player.removePlaybackContentUris(uris)
+                Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+
             ACTION_SET_PAUSE_FADE -> {
                 pauseFadeEnabled = args.getBoolean(EXTRA_PAUSE_FADE)
                 playbackVolumeFade?.setEnabled(pauseFadeEnabled)
@@ -167,13 +349,14 @@ class PlaybackService : MediaSessionService() {
             }
 
             ACTION_SET_PLAYBACK_INTENT -> {
+                if (!args.getBoolean(EXTRA_PLAYBACK_INTENT)) playbackAudioFocus.onUserPause()
                 playbackVolumeFade?.requestPlaybackIntent(args.getBoolean(EXTRA_PLAYBACK_INTENT))
                 Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
 
             ACTION_SET_PLAYBACK_SPEED -> {
                 val speed = args.getFloat(EXTRA_PLAYBACK_SPEED, 1f)
-                if (speed in PLAYBACK_SPEED_VALUES && (!floatOutputActive || speed == 1f)) {
+                if (speed in PLAYBACK_SPEED_VALUES) {
                     if (snapshotRestorePending) deferredPlaybackSpeed = speed
                     else activePlayer?.setPlaybackSpeed(speed)
                     Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -189,6 +372,30 @@ class PlaybackService : MediaSessionService() {
                 Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
 
+            ACTION_START_SLEEP_TIMER -> {
+                val seconds = args.getInt(EXTRA_TIMER_SECONDS)
+                if (seconds in 1..86_399) {
+                    sleepTimer.autoExtend = args.getBoolean(EXTRA_TIMER_EXTENSION)
+                    sleepTimer.start(seconds)
+                    timerCommandResult()
+                } else Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
+            }
+
+            ACTION_CANCEL_SLEEP_TIMER -> {
+                sleepTimer.cancel(interrupted = args.getBoolean(EXTRA_TIMER_INTERRUPTED))
+                timerCommandResult()
+            }
+
+            ACTION_SET_TIMER_EXTENSION -> {
+                sleepTimer.autoExtend = args.getBoolean(EXTRA_TIMER_EXTENSION)
+                timerCommandResult()
+            }
+
+            ACTION_ACKNOWLEDGE_TIMER_INTERRUPTION -> {
+                sleepTimer.acknowledgeInterruption()
+                timerCommandResult()
+            }
+
             else -> Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
         }
     }
@@ -202,12 +409,33 @@ class PlaybackService : MediaSessionService() {
         snapshotStore = PlaybackSnapshotStore(this)
         miniSnapshotStore = MiniPlaybackSnapshotStore(this)
         settingsRepository = SettingsRepository(this)
+        val startupSettings = runBlocking(Dispatchers.IO) { settingsRepository.loadSettings() }
+        highPrecisionOutput = startupSettings.highPrecisionOutput
+        pauseFadeEnabled = startupSettings.playbackPauseFade
+        autoPlayOnStart = startupSettings.autoPlayOnStart
+        sleepTimer.autoExtend = startupSettings.autoExtendSleepTimer
         val startupSnapshot = miniSnapshotStore.load()
+            ?.withoutContentUris(startupSettings.hiddenTrackUris)
+            ?.takeIf { it.queue.isNotEmpty() }
+        hiddenQueueContentUris = startupSettings.hiddenTrackUris
         snapshotRestoreSeed = startupSnapshot
+        snapshotRestorePending = true
         PlaybackModeMemory.set(startupSnapshot?.playbackMode ?: PlaybackMode.ORDER)
         val player = createPlayer(highPrecisionOutput)
         activePlayer = player
-        playbackVolumeFade = PlaybackVolumeFade(player, serviceScope)
+        player.setPlaybackSpeed(startupSettings.playbackSpeed)
+        playbackVolumeFade = PlaybackVolumeFade(player, serviceScope).apply {
+            setEnabled(pauseFadeEnabled)
+        }
+        playbackAudioFocus.updateSettings(
+            startupSettings.audioFocusEnabled, startupSettings.transientAudioFocusBehavior,
+        )
+        serviceScope.launch {
+            settingsRepository.settings
+                .map { it.audioFocusEnabled to it.transientAudioFocusBehavior }
+                .distinctUntilChanged()
+                .collect { (enabled, behavior) -> playbackAudioFocus.updateSettings(enabled, behavior) }
+        }
         startupSnapshot?.let { snapshot ->
             player.setMediaItems(
                 snapshot.queue.map(PlaybackQueueItem::toMediaItem),
@@ -218,6 +446,16 @@ class PlaybackService : MediaSessionService() {
             player.repeatMode = snapshot.playbackMode.toPlayerRepeatMode()
         }
         restoreSnapshot(player, startupSnapshot)
+        serviceScope.launch {
+            settingsRepository.settings
+                .playbackExclusionUpdates()
+                .collectLatest { uris ->
+                    hiddenQueueContentUris = uris
+                    if (!snapshotRestorePending) {
+                        activePlayer?.removePlaybackContentUris(hiddenQueueContentUris)
+                    }
+                }
+        }
         val sessionActivity = PendingIntent.getActivity(
             this,
             0,
@@ -228,7 +466,7 @@ class PlaybackService : MediaSessionService() {
         )
         mediaSession = MediaSession.Builder(this, player)
             .setSessionActivity(sessionActivity)
-            .setSessionExtras(Bundle().apply { putBoolean(EXTRA_FLOAT_OUTPUT_ACTIVE, false) })
+            .setSessionExtras(sessionExtras())
             .setCallback(mediaSessionCallback)
             .setMediaButtonPreferences(mediaButtonPreferences(player.currentPlaybackMode()))
             .build()
@@ -247,15 +485,20 @@ class PlaybackService : MediaSessionService() {
     ): MediaSession? = mediaSession
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        val terminate = runBlocking(Dispatchers.IO) {
+            settingsRepository.loadSettings().terminateOnTaskRemoved
+        }
         mediaSession?.player?.let { player ->
             if (player.shouldPersistCurrentSnapshot()) {
                 persistSnapshotBlocking(player)
             }
         }
-        super.onTaskRemoved(rootIntent)
+        if (terminate) closeApplication() else super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
+        updateAudioEffectSession(C.AUDIO_SESSION_ID_UNSET)
+        playbackAudioFocus.release()
         playbackVolumeFade?.release()
         playbackVolumeFade = null
         mediaSession?.run {
@@ -270,6 +513,30 @@ class PlaybackService : MediaSessionService() {
         mediaSession = null
         (application as MeloxApplication).fairMemoryManager.savePlayback = null
         super.onDestroy()
+    }
+
+    private fun resolveVisibleMediaItems(
+        mediaItems: List<MediaItem>,
+    ): com.google.common.util.concurrent.ListenableFuture<List<MediaItem>> {
+        val result = SettableFuture.create<List<MediaItem>>()
+        val job = serviceScope.launch {
+            try {
+                result.set(visibleMediaItems(mediaItems))
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (exception: Exception) {
+                result.setException(exception)
+            }
+        }
+        job.invokeOnCompletion { if (!result.isDone) result.cancel(false) }
+        return result
+    }
+
+    private suspend fun visibleMediaItems(mediaItems: List<MediaItem>): List<MediaItem> {
+        if (mediaItems.any { it.localConfiguration == null }) throw UnsupportedOperationException()
+        val settings = settingsRepository.loadSettings()
+        if (settings.hiddenTrackUris.isEmpty()) return mediaItems
+        return mediaItems.filterNot { it.toPlaybackQueueItem().contentUri in settings.hiddenTrackUris }
     }
 
     private fun createPlayer(highPrecision: Boolean): ExoPlayer {
@@ -288,13 +555,30 @@ class PlaybackService : MediaSessionService() {
                     .setUsage(C.USAGE_MEDIA)
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                     .build(),
-                true,
+                false,
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
             .apply {
                 setWakeMode(C.WAKE_MODE_LOCAL)
                 addListener(playerListener)
+                val owner = this
+                addListener(object : Player.Listener {
+                    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                        if (owner === activePlayer) {
+                            if (!playWhenReady) sleepTimer.onPlayerEvents(owner)
+                            playbackVolumeFade?.onPlayWhenReadyChanged(playWhenReady, reason)
+                            playbackAudioFocus.onPlaybackIntentChanged(playWhenReady)
+                        }
+                    }
+
+                    override fun onMediaItemTransition(
+                        mediaItem: androidx.media3.common.MediaItem?,
+                        reason: Int,
+                    ) {
+                        if (owner === activePlayer) sleepTimer.onMediaItemTransition(reason)
+                    }
+                })
             }
     }
 
@@ -317,6 +601,7 @@ class PlaybackService : MediaSessionService() {
         val keepPlaying = oldPlayer.playWhenReady && oldFade?.hasPendingPause != true
         val shouldPrepare = oldPlayer.playbackState != Player.STATE_IDLE && items.isNotEmpty()
         nextPlayer.playWhenReady = keepPlaying
+        updateAudioEffectSession(C.AUDIO_SESSION_ID_UNSET)
         session.setPlayer(nextPlayer)
         activePlayer = nextPlayer
         highPrecisionOutput = enabled
@@ -325,6 +610,7 @@ class PlaybackService : MediaSessionService() {
         oldFade?.release()
         playbackVolumeFade = PlaybackVolumeFade(nextPlayer, serviceScope).apply {
             setEnabled(pauseFadeEnabled)
+            setFocusVolumeMultiplier(playbackAudioFocus.volumeMultiplier)
         }
         oldPlayer.removeListener(playerListener)
         oldPlayer.release()
@@ -338,20 +624,45 @@ class PlaybackService : MediaSessionService() {
         scheduleSnapshotWrite(nextPlayer, immediate = true)
     }
 
+    private fun updateAudioEffectSession(sessionId: Int) {
+        if (audioEffectSessionId == sessionId) return
+        fun notifyEffect(action: String, id: Int) {
+            if (id <= 0) return
+            try {
+                sendBroadcast(Intent(action)
+                    .putExtra(AudioEffect.EXTRA_AUDIO_SESSION, id)
+                    .putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
+                    .putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC))
+            } catch (_: SecurityException) {
+                // Some vendor effect receivers are restricted to system applications.
+            }
+        }
+        notifyEffect(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION, audioEffectSessionId)
+        audioEffectSessionId = sessionId
+        notifyEffect(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION, sessionId)
+    }
+
     private fun setFloatOutputActive(active: Boolean) {
         if (floatOutputActive == active) return
         floatOutputActive = active
-        mediaSession?.setSessionExtras(Bundle().apply {
-            putBoolean(EXTRA_FLOAT_OUTPUT_ACTIVE, active)
-        })
-        if (active && activePlayer?.playbackParameters?.speed != 1f) {
-            activePlayer?.setPlaybackSpeed(1f)
-            serviceScope.launch {
-                if (highPrecisionOutput && floatOutputActive) {
-                    settingsRepository.setPlaybackSpeed(1f)
-                }
-            }
-        }
+        updateSessionExtras()
+    }
+
+    private fun sessionExtras(): Bundle = Bundle().apply {
+        putBoolean(EXTRA_FLOAT_OUTPUT_ACTIVE, floatOutputActive)
+        putLong(EXTRA_AUDIO_FOCUS_PAUSE_REVISION, audioFocusPauseRevision)
+        putBoolean(EXTRA_SNAPSHOT_RESTORE_PENDING, snapshotRestorePending)
+        putBundle(EXTRA_SLEEP_TIMER_STATE, sleepTimer.state.toBundle())
+    }
+
+    private fun timerCommandResult() = Futures.immediateFuture(
+        SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply {
+            putBundle(EXTRA_SLEEP_TIMER_STATE, sleepTimer.state.toBundle())
+        }),
+    )
+
+    private fun updateSessionExtras() {
+        mediaSession?.setSessionExtras(sessionExtras())
     }
 
     private fun restoreSnapshot(
@@ -361,27 +672,36 @@ class PlaybackService : MediaSessionService() {
         snapshotRestorePending = true
         serviceScope.launch {
             // A controller command issued while the disk read was running wins over restoration.
-            val snapshot = withContext(Dispatchers.IO) { snapshotStore.loadUnvalidated() }
+            val savedSnapshot = withContext(Dispatchers.IO) { snapshotStore.loadUnvalidated() }
+            val settings = settingsRepository.loadSettings()
+            val snapshot = savedSnapshot?.withoutContentUris(
+                settings.hiddenTrackUris + hiddenQueueContentUris + deferredRemovedContentUris,
+            )
             if (isClosing) return@launch
-            if (!player.isAwaitingSnapshotRestore(startupSnapshot)) {
+            if (snapshotRestoreCancelledByQueueCommand || !player.isAwaitingSnapshotRestore(startupSnapshot)) {
                 completeSnapshotRestore(player)
                 return@launch
             }
-            if (snapshot == null) {
-                PlaybackModeMemory.set(PlaybackMode.ORDER)
+            val currentMode = player.currentPlaybackMode()
+            val requestedMode = currentMode.takeIf {
+                snapshotRestoreModeChanged || it != (startupSnapshot?.playbackMode ?: PlaybackMode.ORDER)
+            }
+            if (snapshot == null || snapshot.queue.isEmpty()) {
+                PlaybackModeMemory.set(requestedMode ?: snapshot?.playbackMode ?: PlaybackMode.ORDER)
                 withContext(Dispatchers.IO) { miniSnapshotStore.clear() }
+                player.pause()
                 player.clearMediaItems()
                 completeSnapshotRestore(player)
                 return@launch
             }
-            PlaybackModeMemory.set(snapshot.playbackMode)
             val previewCurrentItem = player.currentPlaybackQueue()
                 .getOrNull(player.currentMediaItemIndex)
-            val restoredCurrentIndex = previewCurrentItem?.let { currentItem ->
+            val previewIndex = previewCurrentItem?.let { currentItem ->
                 snapshot.queue.indexOfFirst { item -> item.isSameQueueSlot(currentItem) }
-            }?.takeIf { it >= 0 } ?: snapshot.currentIndex
+            }?.takeIf { it >= 0 }
+            val restoredCurrentIndex = previewIndex ?: snapshot.currentIndex
             val shouldPlay = player.playWhenReady
-            val restorePositionMs = if (previewCurrentItem != null) {
+            val restorePositionMs = if (previewIndex != null) {
                 player.currentPosition
             } else {
                 snapshot.positionMs
@@ -389,14 +709,15 @@ class PlaybackService : MediaSessionService() {
             val activeSnapshot = snapshot.copy(
                 currentIndex = restoredCurrentIndex,
                 positionMs = restorePositionMs,
-            )
+            ).withRestoredPlaybackMode(requestedMode)
+            PlaybackModeMemory.set(activeSnapshot.playbackMode)
             player.setMediaItems(
                 activeSnapshot.queue.map { it.toMediaItem() },
                 activeSnapshot.currentIndex,
                 restorePositionMs,
             )
             player.shuffleModeEnabled = false
-            player.repeatMode = snapshot.playbackMode.toPlayerRepeatMode()
+            player.repeatMode = activeSnapshot.playbackMode.toPlayerRepeatMode()
             player.prepare()
             if (shouldPlay) player.play() else player.pause()
             withContext(Dispatchers.IO) {
@@ -442,7 +763,10 @@ class PlaybackService : MediaSessionService() {
 
     private fun completeSnapshotRestore(player: Player) {
         snapshotRestorePending = false
+        snapshotRestoreModeChanged = false
         snapshotRestoreSeed = null
+        player.removePlaybackContentUris(hiddenQueueContentUris + deferredRemovedContentUris)
+        deferredRemovedContentUris.clear()
         scheduleSnapshotWrite(player, immediate = true)
         deferredHighPrecisionOutput?.let { enabled ->
             deferredHighPrecisionOutput = null
@@ -450,8 +774,9 @@ class PlaybackService : MediaSessionService() {
         }
         deferredPlaybackSpeed?.let { speed ->
             deferredPlaybackSpeed = null
-            if (!floatOutputActive || speed == 1f) activePlayer?.setPlaybackSpeed(speed)
+            activePlayer?.setPlaybackSpeed(speed)
         }
+        updateSessionExtras()
     }
 
     private fun scheduleSnapshotWrite(
@@ -564,9 +889,8 @@ class PlaybackService : MediaSessionService() {
     }
 
     private fun Player.toSnapshot(): PlaybackSnapshot {
-        val rawQueue = currentPlaybackQueue()
         val playbackMode = currentPlaybackMode()
-        val queue = rawQueue.map { item -> item.copy(playbackMode = playbackMode) }
+        val queue = queueProjection.queue(this, playbackMode)
         return PlaybackSnapshot(
             queue = queue,
             currentIndex = currentMediaItemIndex.takeIf { queue.isNotEmpty() } ?: -1,
@@ -587,20 +911,15 @@ class PlaybackService : MediaSessionService() {
         !snapshotRestorePending || !isAwaitingSnapshotRestore(snapshotRestoreSeed)
 
     private fun cyclePlaybackMode(player: Player) {
-        if (player.mediaItemCount == 0 || isClosing) return
+        if (isClosing) return
+        if (snapshotRestorePending) snapshotRestoreModeChanged = true
         val targetMode = nextPlaybackMode(player.currentPlaybackMode())
         val reordered = reorderQueueForPlaybackMode(
             queue = player.currentPlaybackQueue(),
             currentIndex = player.currentMediaItemIndex,
             targetMode = targetMode,
         )
-        PlaybackModeMemory.set(targetMode)
-        player.shuffleModeEnabled = false
-        player.repeatMode = targetMode.toPlayerRepeatMode()
-        player.applyPlaybackQueue(
-            targetQueue = reordered.queue,
-            targetCurrentIndex = reordered.currentIndex,
-        )
+        player.applyPlaybackMode(targetMode, reordered)
         refreshMediaButtonPreferences(targetMode)
     }
 
@@ -679,6 +998,16 @@ private fun PlaybackMode.notificationLabelResId(): Int = when (this) {
     PlaybackMode.RANDOM -> R.string.notification_playback_mode_shuffle
 }
 
+internal fun PlaybackSnapshot.withRestoredPlaybackMode(requestedMode: PlaybackMode?): PlaybackSnapshot {
+    if (requestedMode == null || requestedMode == playbackMode) return this
+    val reordered = reorderQueueForPlaybackMode(queue, currentIndex, requestedMode)
+    return copy(
+        queue = reordered.queue,
+        currentIndex = reordered.currentIndex,
+        playbackMode = requestedMode,
+    )
+}
+
 internal fun reconcileValidatedPlaybackSnapshot(
     restoredSnapshot: PlaybackSnapshot,
     validatedSnapshot: PlaybackSnapshot?,
@@ -722,3 +1051,45 @@ private fun PlaybackQueueItem.isSameQueueSlot(other: PlaybackQueueItem): Boolean
     mediaId == other.mediaId &&
         contentUri == other.contentUri &&
         sourceOrder == other.sourceOrder
+
+internal fun SleepTimerState.toBundle(): Bundle = Bundle().apply {
+    putBoolean("active", active)
+    putInt("remaining_seconds", remainingSeconds)
+    putInt("extension_seconds", extensionSeconds)
+    putBoolean("extending", extending)
+    putInt("interruption_notice", interruptionNotice)
+}
+
+internal fun Bundle.toSleepTimerState(): SleepTimerState = SleepTimerState(
+    active = getBoolean("active"),
+    remainingSeconds = getInt("remaining_seconds"),
+    extensionSeconds = getInt("extension_seconds"),
+    extending = getBoolean("extending"),
+    interruptionNotice = getInt("interruption_notice"),
+)
+
+internal fun Flow<AppSettings>.playbackExclusionUpdates(): Flow<Set<String>> =
+    map { it.hiddenTrackUris }.distinctUntilChanged()
+
+internal fun PlaybackSnapshot.withoutContentUris(contentUris: Set<String>): PlaybackSnapshot {
+    val retainedIndices = queue.indices.filter { queue[it].contentUri !in contentUris }
+    if (retainedIndices.size == queue.size) return this
+    if (retainedIndices.isEmpty()) return copy(queue = emptyList(), currentIndex = -1, positionMs = 0L)
+    val nextSourceIndex = retainedIndices.firstOrNull { it >= currentIndex } ?: retainedIndices.first()
+    return copy(
+        queue = retainedIndices.map(queue::get),
+        currentIndex = retainedIndices.indexOf(nextSourceIndex),
+        positionMs = positionMs.takeIf { nextSourceIndex == currentIndex } ?: 0L,
+    )
+}
+
+internal fun visibleQueueStart(
+    retainedIndices: List<Int>,
+    startIndex: Int,
+    startPositionMs: Long,
+): Pair<Int, Long> {
+    if (retainedIndices.isEmpty() || startIndex == C.INDEX_UNSET) return C.INDEX_UNSET to C.TIME_UNSET
+    val sourceIndex = retainedIndices.firstOrNull { it >= startIndex } ?: retainedIndices.first()
+    return retainedIndices.indexOf(sourceIndex) to
+        (startPositionMs.takeIf { sourceIndex == startIndex } ?: C.TIME_UNSET)
+}

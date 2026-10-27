@@ -6,11 +6,10 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Easing
 import androidx.compose.foundation.MarqueeSpacing
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -108,6 +107,7 @@ import com.melox.player.model.PlaybackUiState
 import com.melox.player.model.withTrackMetadata
 import com.melox.player.ui.isMiuixWideLayout
 import com.melox.player.ui.component.library.PlaybackArtworkFrame
+import com.melox.player.ui.component.playback.playbackArtworkBounds
 import com.melox.player.ui.component.library.PLAYBACK_ARTWORK_SHADOW_BLUR_RADIUS
 import com.melox.player.ui.component.library.TrackActionsOverlay
 import com.melox.player.ui.component.library.formatDuration
@@ -118,12 +118,18 @@ import com.melox.player.ui.component.playback.PLAYER_FULL_ARTWORK_CORNER_RADIUS
 import com.melox.player.ui.component.playback.PLAYER_FULL_ARTWORK_REQUEST_SIZE
 import com.melox.player.ui.component.playback.PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS
 import com.melox.player.ui.component.playback.PLAYER_TRACK_ARTWORK_CROSSFADE_EASING
+import com.melox.player.ui.component.playback.ArtworkFlipState
+import com.melox.player.ui.component.playback.ArtworkTransitionState
+import com.melox.player.ui.component.playback.ArtworkFlipLayer
 import com.melox.player.ui.component.playback.rememberPlaybackArtworkResource
 import com.melox.player.ui.component.playback.playerControlIconTransition
 import com.melox.player.ui.component.playback.recordPlayerLayer
 import com.melox.player.ui.component.playback.WeightedCrossfadeFrame
-import com.melox.player.ui.component.playback.weightedCrossfadeFrames
+import com.melox.player.ui.component.playback.rememberReadyArtworkTarget
+import com.melox.player.ui.component.playback.rememberArtworkCrossfadeState
+import com.melox.player.ui.component.playback.rememberArtworkFlipState
 import com.melox.player.ui.component.playback.rememberPlayerSheetVerticalDragModifier
+import com.melox.player.ui.component.playback.playerSheetPlaceholderArtworkAlpha
 import com.melox.player.ui.component.playback.artworkInsetRect
 import com.melox.player.ui.component.playback.fittedArtworkRect
 import kotlin.math.abs
@@ -151,18 +157,19 @@ import top.yukonga.miuix.kmp.utils.overScrollVertical
 internal data class ArtworkBlend(
     val frames: List<WeightedCrossfadeFrame<Bitmap>>,
     val currentBitmap: Bitmap?,
+    val flipState: ArtworkFlipState<Bitmap>? = null,
+    val isPlaceholder: Boolean = false,
 )
 
-internal fun artworkCrossfadeDurationMillis(
-    currentContentKey: Any?,
-    targetContentKey: Any?,
-    contentChangeDurationMillis: Int,
-    sameContentDurationMillis: Int?,
-): Int = if (targetContentKey == currentContentKey) {
-    sameContentDurationMillis ?: contentChangeDurationMillis
-} else {
-    contentChangeDurationMillis
-}
+internal fun ArtworkTransitionState<Bitmap>.toArtworkBlend(): ArtworkBlend = ArtworkBlend(
+    frames = frames,
+    currentBitmap = currentValue,
+    flipState = flipState,
+    isPlaceholder = isPlaceholderArtwork,
+)
+
+// This stateless comparison must not occupy a Compose remembered-lambda slot.
+private val sameArtworkBitmap: (Bitmap, Bitmap) -> Boolean = { first, second -> first === second }
 
 @Composable
 internal fun rememberArtworkBlend(
@@ -171,66 +178,40 @@ internal fun rememberArtworkBlend(
     durationMillis: Int = PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS,
     contentKey: Any? = targetBitmap,
     sameContentDurationMillis: Int? = null,
+    transitionDirection: Int = 1,
+    flipAnimationEnabled: Boolean = false,
+    targetReady: Boolean = true,
+    easing: Easing = PLAYER_TRACK_ARTWORK_CROSSFADE_EASING,
 ): ArtworkBlend {
-    var startingFrames by remember {
-        mutableStateOf<List<WeightedCrossfadeFrame<Bitmap>>>(emptyList())
+    val target = rememberReadyArtworkTarget(targetBitmap, contentKey, targetReady)
+    if (flipAnimationEnabled) {
+        val flip = rememberArtworkFlipState(
+            target = target,
+            requestedContentKey = contentKey,
+            targetReady = targetReady,
+            animate = animate,
+            direction = transitionDirection,
+            durationMillis = durationMillis,
+        )
+        val visible = flip.visibleValue
+        return ArtworkBlend(
+            frames = if (flip.isRunning) emptyList()
+                else listOfNotNull(visible?.let { WeightedCrossfadeFrame(it, 1f) }),
+            currentBitmap = visible,
+            flipState = flip.takeIf { it.isRunning },
+        )
     }
-    var currentBitmap by remember { mutableStateOf(targetBitmap) }
-    var currentContentKey by remember { mutableStateOf(contentKey) }
-    val progress = remember { Animatable(1f) }
-
-    LaunchedEffect(
-        targetBitmap,
-        animate,
-        durationMillis,
-        contentKey,
-        sameContentDurationMillis,
-    ) {
-        if (!animate) {
-            startingFrames = emptyList()
-            currentBitmap = targetBitmap
-            currentContentKey = contentKey
-            progress.snapTo(1f)
-            return@LaunchedEffect
-        }
-        if (targetBitmap === currentBitmap && progress.value >= 1f) {
-            return@LaunchedEffect
-        }
-        startingFrames = weightedCrossfadeFrames(
-            startingFrames = startingFrames,
-            currentValue = currentBitmap,
-            progress = progress.value,
-            sameValue = { first, second -> first === second },
-        )
-        val resolvedDurationMillis = artworkCrossfadeDurationMillis(
-            currentContentKey = currentContentKey,
-            targetContentKey = contentKey,
-            contentChangeDurationMillis = durationMillis,
-            sameContentDurationMillis = sameContentDurationMillis,
-        )
-        currentBitmap = targetBitmap
-        currentContentKey = contentKey
-        progress.snapTo(0f)
-        progress.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(
-                durationMillis = resolvedDurationMillis,
-                easing = PLAYER_TRACK_ARTWORK_CROSSFADE_EASING,
-            ),
-        )
-        startingFrames = emptyList()
-    }
-
-    return ArtworkBlend(
-        frames = weightedCrossfadeFrames(
-            startingFrames = startingFrames,
-            currentValue = currentBitmap,
-            progress = progress.value,
-            sameValue = { first, second -> first === second },
-        ),
-        currentBitmap = currentBitmap,
+    val fade = rememberArtworkCrossfadeState(
+        target = target,
+        animate = animate,
+        durationMillis = durationMillis,
+        sameContentDurationMillis = sameContentDurationMillis,
+        easing = easing,
+        sameValue = sameArtworkBitmap,
     )
+    return ArtworkBlend(frames = fade.frames, currentBitmap = fade.currentValue)
 }
+
 @Composable
 internal fun PlayerArtwork(
     size: Dp,
@@ -240,8 +221,15 @@ internal fun PlayerArtwork(
     sharedArtworkVisible: Boolean,
     onArtworkBoundsChanged: (Rect) -> Unit,
     onArtworkDisplaySizeChanged: (Int) -> Unit = {},
+    circularArtwork: Boolean = false,
+    squareArtwork: Boolean = false,
+    showArtwork: Boolean = true,
 ) {
+    // 方形裁剪：圆形或"圆角矩形"都裁成正方形；默认形状保留等比边长条。
+    val squareClip = circularArtwork || squareArtwork
+    val resolvedContentScale = if (squareClip) ContentScale.Crop else ContentScale.Fit
     val artworkContainerSize = size + PLAYER_ARTWORK_CONTAINER_EXPANSION
+    val placeholderArtworkAlpha = playerSheetPlaceholderArtworkAlpha(1f)
     val artworkContentSize =
         (artworkContainerSize - artworkPadding * 2f).coerceAtLeast(0.dp)
     // The playing state expands the artwork content back to the measured size.
@@ -261,10 +249,11 @@ internal fun PlayerArtwork(
                 inset = with(density) { artworkPadding.toPx() },
             )
             val visibleArtworkBounds = artworkBlend.currentBitmap?.let { bitmap ->
-                fittedArtworkRect(
+                playbackArtworkBounds(
                     bounds = insetArtworkBounds,
                     bitmapWidth = bitmap.width,
                     bitmapHeight = bitmap.height,
+                    circular = squareClip,
                 )
             } ?: insetArtworkBounds
             onArtworkBoundsChanged(visibleArtworkBounds)
@@ -290,15 +279,34 @@ internal fun PlayerArtwork(
             },
         contentAlignment = Alignment.Center,
     ) {
-        if (artworkBlend.frames.isEmpty()) {
+        if (!showArtwork) {
+            // Keep the measured slot for the player layout, but omit the cover and shadow.
+        } else if (artworkBlend.flipState != null) {
+            ArtworkFlipLayer(artworkBlend.flipState,
+                contentScale = resolvedContentScale) { face, blur ->
+                PlaybackArtworkFrame(
+                    bitmap = face,
+                    size = artworkContentSize,
+                    cornerRadius = cornerRadius,
+                    contentScale = resolvedContentScale,
+                    useSquircleClip = true,
+                    circular = circularArtwork,
+                    drawArtworkShadow = true,
+                    artworkAlpha = if (artworkBlend.flipState.visibleIsPlaceholder) placeholderArtworkAlpha else 1f,
+                    artworkEffect = blur,
+                )
+            }
+        } else if (artworkBlend.frames.isEmpty()) {
             PlaybackArtworkFrame(
                 bitmap = null,
                 size = artworkContentSize,
                 cornerRadius = cornerRadius,
                 modifier = Modifier,
-                contentScale = ContentScale.Fit,
+                contentScale = resolvedContentScale,
                 useSquircleClip = true,
+                circular = circularArtwork,
                 drawArtworkShadow = true,
+                artworkAlpha = if (artworkBlend.isPlaceholder) placeholderArtworkAlpha else 1f,
             )
         } else {
             artworkBlend.frames.forEach { frame ->
@@ -307,10 +315,11 @@ internal fun PlayerArtwork(
                     size = artworkContentSize,
                     cornerRadius = cornerRadius,
                     modifier = Modifier,
-                    contentScale = ContentScale.Fit,
+                    contentScale = resolvedContentScale,
                     useSquircleClip = true,
+                    circular = circularArtwork,
                     drawArtworkShadow = true,
-                    artworkAlpha = frame.alpha,
+                    artworkAlpha = frame.alpha * if (frame.isPlaceholder) placeholderArtworkAlpha else 1f,
                 )
             }
         }

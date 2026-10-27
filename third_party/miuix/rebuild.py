@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""Rebuild Melox's Miuix Android patch from the pinned upstream source."""
+
+import argparse
+import hashlib
+import re
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+
+UPSTREAM_COMMIT = "39c40f99844227b853f0049a0933b1f3ae6c00ba"
+PATCH_VERSION = "0.9.4.1-melox"
+RAIL_SOURCE = "miuix-ui/src/commonMain/kotlin/top/yukonga/miuix/kmp/basic/NavigationRail.kt"
+RAIL_SHA256 = "231daca7b4ba8352092a23cae6376eddbb73e97938dd9117c08c8e691d7f8e7f"
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("upstream", type=Path, help="Local clone of compose-miuix-ui/miuix")
+    args = parser.parse_args()
+    directory = Path(__file__).resolve().parent
+    project = directory.parent.parent
+    archive = subprocess.check_output(
+        ["git", "-C", str(args.upstream.resolve()), "archive", UPSTREAM_COMMIT],
+    )
+    with tempfile.TemporaryDirectory(prefix="melox-miuix-") as temporary:
+        work = Path(temporary)
+        subprocess.run(["tar", "-x", "-C", str(work)], input=archive, check=True)
+        (work / "MEMORY.md").write_text(
+            "# Patch Build Context\n\nIsolated official Miuix 0.9.4 source for Melox.\n"
+            "Preserve original public APIs and native rail drawing.\n",
+        )
+        assert hashlib.sha256((work / RAIL_SOURCE).read_bytes()).hexdigest() == RAIL_SHA256
+        subprocess.run(
+            ["git", "apply", str(directory / "navigation-rail-insets.patch")],
+            cwd=work,
+            check=True,
+        )
+        # Build only library targets; demo versioning expects a full Git checkout.
+        settings = work / "settings.gradle.kts"
+        settings.write_text(
+            "\n".join(
+                line for line in settings.read_text().splitlines()
+                if not line.startswith((
+                    'include(":example:', 'include(":docs:', 'include(":baselineprofile")',
+                ))
+            ) + "\n",
+        )
+        build = work / "miuix-ui/build.gradle.kts"
+        content = build.read_text()
+        baseline_dependency = '    baselineProfile(project(":baselineprofile"))\n'
+        assert content.count(baseline_dependency) == 1
+        build.write_text(content.replace(baseline_dependency, ""))
+        local_properties = project / "local.properties"
+        if local_properties.exists():
+            sdk = next(
+                (line for line in local_properties.read_text().splitlines()
+                 if line.startswith("sdk.dir=")),
+                None,
+            )
+            if sdk:
+                (work / "local.properties").write_text(sdk + "\n")
+        subprocess.run(
+            [str(project / "gradlew"), "-p", str(work),
+             ":miuix-ui:assembleAndroidMain", "-Prelease", "--no-configuration-cache"],
+            cwd=project,
+            check=True,
+        )
+        artifacts = list((work / "miuix-ui/build/outputs/aar").glob("*.aar"))
+        assert len(artifacts) == 1, artifacts
+        output = directory / "maven/top/yukonga/miuix/kmp/miuix-ui-android" / PATCH_VERSION
+        output.mkdir(parents=True, exist_ok=True)
+        name = f"miuix-ui-android-{PATCH_VERSION}"
+        target = output / f"{name}.aar"
+        shutil.copy2(artifacts[0], target)
+        pom = (directory / "upstream-ui-android.pom").read_text()
+        pom = re.sub(r"<!--.*?-->", "", pom, flags=re.DOTALL)
+        pom = "\n".join(line.rstrip() for line in pom.splitlines()) + "\n"
+        pom = pom.replace("<version>0.9.4</version>", f"<version>{PATCH_VERSION}</version>", 1)
+        pom = pom.replace("<name>miuix-ui</name>", "<name>Miuix UI - Melox local patch</name>")
+        (output / f"{name}.pom").write_text(pom)
+        print(f"AAR SHA-256: {hashlib.sha256(target.read_bytes()).hexdigest()}")
+        print(target)
+
+
+if __name__ == "__main__":
+    main()

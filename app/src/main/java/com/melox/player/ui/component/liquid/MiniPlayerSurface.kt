@@ -3,9 +3,11 @@ package com.melox.player.ui.component.liquid
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.unit.Dp
@@ -13,7 +15,7 @@ import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurDefaults
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
-import top.yukonga.miuix.kmp.blur.blur
+import top.yukonga.miuix.kmp.blur.effect
 import top.yukonga.miuix.kmp.blur.drawBackdrop
 import top.yukonga.miuix.kmp.blur.highlight.Highlight
 import top.yukonga.miuix.kmp.blur.textureBlur
@@ -28,8 +30,9 @@ internal fun Modifier.miniPlayerSurface(
     liquidGlassActive: Boolean,
     isDark: Boolean,
     followsNavigationBar: Boolean,
-    floatingHighlight: Highlight? = null,
+    floatingHighlight: State<Highlight>? = null,
     highlightAlpha: Float = 1f,
+    layerBlock: (GraphicsLayerScope.() -> Unit)? = null,
 ): Modifier {
     val surfaceColor = if (followsNavigationBar) {
         MiuixTheme.colorScheme.surface
@@ -38,24 +41,27 @@ internal fun Modifier.miniPlayerSurface(
     }
     val usableBackdrop = backdrop.takeIf { blurActive || liquidGlassActive }
     val resolvedHighlightAlpha = highlightAlpha.coerceIn(0f, 1f)
-    // Blur APIs accept Shape rather than the Miuix squircle modifier. Callers clip the complete
-    // surface first, so this fallback shape only bounds shader sampling before that outer mask.
+    // Glass uses the official rounded pill for sampling and clipping. Other surfaces
+    // retain their caller's outer Miuix squircle mask.
     val samplingShape = RoundedCornerShape(cornerRadius)
+    val containerBlur = rememberGlassContainerBlur()
     return then(
         when {
             usableBackdrop != null && liquidGlassActive -> Modifier.drawBackdrop(
                 backdrop = usableBackdrop,
                 shape = { samplingShape },
                 effects = {
+                    padding = maxOf(padding, 40.dp.toPx())
                     vibrancy()
-                    blur(4.dp.toPx(), 4.dp.toPx())
+                    effect(containerBlur)
                     lens(
                         refractionHeight = 24.dp.toPx(),
                         refractionAmount = 24.dp.toPx(),
                     )
                 },
+                layerBlock = layerBlock,
                 highlight = {
-                    val highlight = floatingHighlight?.copy(alpha = 0.75f) ?: if (isDark) {
+                    val highlight = floatingHighlight?.value?.copy(alpha = 0.75f) ?: if (isDark) {
                         Highlight.GlassStrokeMiddleDark
                     } else {
                         Highlight.GlassStrokeMiddleLight

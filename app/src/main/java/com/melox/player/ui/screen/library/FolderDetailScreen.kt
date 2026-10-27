@@ -2,31 +2,40 @@ package com.melox.player.ui.screen.library
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.melox.player.ui.theme.referenceMusicHighlightColors
 import com.melox.player.R
 import com.melox.player.data.library.ArtistGroup
 import com.melox.player.data.library.FolderGroup
+import com.melox.player.data.library.filterFolders
 import com.melox.player.data.library.MusicSortConfig
 import com.melox.player.data.library.MusicSortField
 import com.melox.player.data.library.createMusicSortKeys
@@ -38,7 +47,10 @@ import com.melox.player.ui.LibrarySearchBar
 import com.melox.player.ui.LibrarySearchButton
 import com.melox.player.ui.component.AdaptiveTopAppBar
 import com.melox.player.ui.component.BlurredBar
+import com.melox.player.ui.component.library.fixedAlphabetIndexTopPadding
+import com.melox.player.ui.component.library.rememberSearchTopBarScrollBehavior
 import com.melox.player.ui.component.library.MusicSortButton
+import com.melox.player.ui.component.library.ShufflePlayButton
 import com.melox.player.ui.component.library.SelectionActionsAnimatedContent
 import com.melox.player.ui.component.library.SelectionNavigationIconAnimatedContent
 import com.melox.player.ui.component.library.TrackSelectionActions
@@ -47,11 +59,15 @@ import com.melox.player.ui.component.library.toggleAllTrackSelection
 import com.melox.player.ui.component.miuixBarColor
 import com.melox.player.ui.component.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.BreadcrumbBar
+import top.yukonga.miuix.kmp.basic.BreadcrumbBarDefaults
+import top.yukonga.miuix.kmp.basic.BreadcrumbItem
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
+import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import com.melox.player.ui.component.PageScaffold
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Folder
 import top.yukonga.miuix.kmp.icon.extended.Back
 
 @Composable
@@ -63,6 +79,7 @@ fun FolderDetailScreen(
     selectionExitRequest: Int,
     onSelectionModeChange: (Boolean) -> Unit,
     onTrackClick: (List<MusicTrack>, Int) -> Unit,
+    onShufflePlay: (List<MusicTrack>) -> Unit,
     onPlayNext: (MusicTrack) -> Unit,
     onAppendToQueue: (MusicTrack) -> Unit,
     onAddToPlaylist: (MusicTrack) -> Unit,
@@ -73,6 +90,20 @@ fun FolderDetailScreen(
     onExternalEditReturned: (Long) -> Unit,
     showMusicTagEditor: Boolean,
     showLyricoEditor: Boolean,
+    showLunaBeatEditor: Boolean,
+    sortConfig: MusicSortConfig,
+    onSortConfigChange: (MusicSortConfig) -> Unit,
+    currentTrackContentUri: String? = null,
+    miniPlayerBounds: Rect = Rect.Zero,
+    playerContentBounds: Rect = Rect.Zero,
+    childFolders: List<FolderGroup> = emptyList(),
+    childSongCounts: Map<String, Int> = emptyMap(),
+    breadcrumbItems: List<BreadcrumbItem> = emptyList(),
+    titleOverride: String? = null,
+    onDirectoryClick: (String) -> Unit = {},
+    onBreadcrumbClick: (Int) -> Unit = {},
+    onBlockFolder: (String) -> Unit = {},
+    scanStatus: ScanStatus = ScanStatus.Success(folder.tracks.size),
 ) {
     var query by rememberSaveable(folder.key) { mutableStateOf("") }
     var searchVisible by rememberSaveable(folder.key) { mutableStateOf(false) }
@@ -81,25 +112,23 @@ fun FolderDetailScreen(
         mutableStateOf<Set<String>>(emptySet())
     }
     var selectionMode by remember(folder.key) { mutableStateOf(false) }
-    var sortFieldOrdinal by rememberSaveable(folder.key) {
-        mutableIntStateOf(MusicSortField.TITLE.ordinal)
+    val onDirectorySearchBack: () -> Unit = {
+        if (query.isNotEmpty()) {
+            query = ""
+        } else {
+            searchVisible = false
+            searchFocused = false
+        }
     }
-    var sortDescending by rememberSaveable(folder.key) { mutableStateOf(false) }
-    val sortConfig = MusicSortConfig(
-        field = MusicSortField.entries.getOrElse(sortFieldOrdinal) {
-            MusicSortField.TITLE
-        },
-        descending = sortDescending,
-    )
-    val scrollBehavior = MiuixScrollBehavior()
-    val listState = rememberLazyListState()
-    val backdrop = rememberBlurBackdrop()
+    val handleBack: () -> Unit = {
+        if (breadcrumbItems.isNotEmpty() && searchVisible) onDirectorySearchBack() else onBack()
+    }
+    val scrollBehavior = rememberSearchTopBarScrollBehavior(searchVisible)
+    val directoryStateHolder = rememberSaveableStateHolder()
+    val showSongActions = breadcrumbItems.isEmpty() || folder.tracks.isNotEmpty()
+    var backdropCaptureCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val backdrop = rememberBlurBackdrop(captureCoordinates = { backdropCaptureCoordinates })
     val layoutDirection = LocalLayoutDirection.current
-    val density = LocalDensity.current
-    var bottomContentHeightPx by remember { mutableIntStateOf(0) }
-    var fixedExpandedBarPadding by remember(folder.key, density) {
-        mutableStateOf<Dp?>(null)
-    }
     val displayedTracks = remember(folder.tracks, query, sortConfig) {
         sortMusicTracks(filterMusicTracks(folder.tracks, query), sortConfig)
     }
@@ -115,12 +144,14 @@ fun FolderDetailScreen(
             }
         }
     }
+    val displayedChildFolders = remember(childFolders, query) { filterFolders(childFolders, query) }
+    var pendingBlockFolder by remember(folder.key) { mutableStateOf<FolderGroup?>(null) }
     val displayedKeys = displayedTracks.map(MusicTrack::contentUri)
     BackHandler(enabled = selectionMode) {
         selectedTrackUris = emptySet()
         selectionMode = false
     }
-    LaunchedEffect(selectionMode) {
+    LaunchedEffect(folder.key, selectionMode) {
         onSelectionModeChange(selectionMode)
     }
     LaunchedEffect(selectionExitRequest) {
@@ -148,7 +179,7 @@ fun FolderDetailScreen(
                             )
                         }
                     } else {
-                        folder.name ?: stringResource(R.string.folder_unknown)
+                        titleOverride ?: folder.name ?: stringResource(R.string.folder_unknown)
                     },
                     color = backdrop.miuixBarColor(),
                     scrollBehavior = scrollBehavior,
@@ -160,11 +191,19 @@ fun FolderDetailScreen(
                                 selectionMode = false
                             },
                             defaultNavigationIcon = {
-                                IconButton(onClick = onBack) {
-                                    Icon(
-                                        imageVector = MiuixIcons.Back,
-                                        contentDescription = stringResource(R.string.back),
-                                    )
+                                Row {
+                                    IconButton(onClick = handleBack) {
+                                        Icon(
+                                            imageVector = MiuixIcons.Back,
+                                            contentDescription = stringResource(R.string.back),
+                                        )
+                                    }
+                                    if (showSongActions) {
+                                        ShufflePlayButton(
+                                            enabled = displayedTracks.isNotEmpty(),
+                                            onClick = { onShufflePlay(displayedTracks) },
+                                        )
+                                    }
                                 }
                             },
                         )
@@ -200,32 +239,28 @@ fun FolderDetailScreen(
                             },
                             defaultActions = {
                                 FolderDetailActions(
-                                searchVisible = searchVisible,
-                                sortConfig = sortConfig,
-                                onSearchVisibleChange = { visible ->
-                                    searchVisible = visible
-                                    searchFocused = visible
-                                    if (!visible) query = ""
-                                },
-                                onSortConfigChange = { config ->
-                                    sortFieldOrdinal = config.field.ordinal
-                                    sortDescending = config.descending
-                                },
+                                    scrollBehavior = scrollBehavior,
+                                    showSongSort = showSongActions,
+                                    searchVisible = searchVisible,
+                                    sortConfig = sortConfig,
+                                    onSearchVisibleChange = { visible ->
+                                        searchVisible = visible
+                                        searchFocused = visible
+                                        if (!visible) query = ""
+                                    },
+                                    onSortConfigChange = onSortConfigChange,
                                 )
                             },
                         )
                     },
                     bottomContent = {
-                        Box(
-                            modifier = Modifier.onSizeChanged {
-                                bottomContentHeightPx = it.height
-                            },
-                        ) {
+                        Column {
                             LibrarySearchBar(
                                 visible = searchVisible,
                                 focused = searchFocused,
                                 query = query,
                                 label = stringResource(R.string.search_hint),
+                                onBackRequest = onDirectorySearchBack.takeIf { breadcrumbItems.isNotEmpty() },
                                 onQueryChange = { query = it },
                                 onFocusedChange = { searchFocused = it },
                                 onVisibleChange = { visible ->
@@ -236,75 +271,137 @@ fun FolderDetailScreen(
                                     }
                                 },
                             )
+                            if (breadcrumbItems.isNotEmpty()) {
+                                // BreadcrumbBar 0.9.4 reads body2 directly; limit the override to it.
+                                MiuixTheme(textStyles = MiuixTheme.textStyles.copy(
+                                    body2 = MiuixTheme.textStyles.footnote2,
+                                )) {
+                                    val colors = MiuixTheme.colorScheme
+                                    val isDark = colors.surface.luminance() < 0.5f
+                                    val highlightColors = if (MiuixTheme.isDynamicColor) {
+                                        colors.primary to colors.primary.copy(alpha = if (isDark) 0.2f else 0.15f)
+                                    } else {
+                                        referenceMusicHighlightColors(isDark)
+                                    }
+                                    BreadcrumbBar(
+                                        items = breadcrumbItems,
+                                        onItemClick = onBreadcrumbClick,
+                                        enabled = !selectionMode,
+                                        colors = BreadcrumbBarDefaults.breadcrumbBarColors(
+                                            color = if (isDark) Color(0xFF7B7B7B) else Color(0xFF8E94AA),
+                                            backgroundColor = if (isDark) Color(0xFF262626) else Color(0xFFF3F4F8),
+                                            separatorColor = if (isDark) Color(0xFF2C2C2C) else Color(0xFFD9D9D9),
+                                            highlightColor = highlightColors.first,
+                                            highlightBackgroundColor = highlightColors.second,
+                                        ),
+                                        insideMargin = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                                    )
+                                }
+                            }
                         }
                     },
                 )
             }
         },
         ) { padding ->
-        val bottomContentHeight = with(density) { bottomContentHeightPx.toDp() }
-        val currentBarPadding =
-            (padding.calculateTopPadding() - bottomContentHeight).coerceAtLeast(0.dp)
-        val heightOffset = with(density) {
-            scrollBehavior.state.heightOffset.toDp()
+        val indexTopPadding = fixedAlphabetIndexTopPadding() + if (breadcrumbItems.isNotEmpty()) {
+            BreadcrumbBarDefaults.ItemHeight + BreadcrumbBarDefaults.InsideMargin.calculateTopPadding() +
+                BreadcrumbBarDefaults.InsideMargin.calculateBottomPadding()
+        } else {
+            0.dp
         }
-        val measuredExpandedBarPadding =
-            (currentBarPadding - heightOffset).coerceAtLeast(currentBarPadding)
-        SideEffect {
-            if (
-                fixedExpandedBarPadding == null &&
-                scrollBehavior.state.heightOffsetLimit != -Float.MAX_VALUE
-            ) {
-                fixedExpandedBarPadding = measuredExpandedBarPadding
-            }
-        }
-        val indexTopPadding =
-            (fixedExpandedBarPadding ?: measuredExpandedBarPadding) + bottomContentHeight
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(backdrop?.let { Modifier.layerBackdrop(it) } ?: Modifier),
+                .then(backdrop?.let { Modifier.onGloballyPositioned { coordinates -> backdropCaptureCoordinates = coordinates }.layerBackdrop(it) } ?: Modifier),
         ) {
-            MusicListScreen(
-                onTrackClick = onTrackClick,
-                displayedTracks = displayedTracks,
-                sectionIndexMap = sectionIndexMap,
-                scanStatus = ScanStatus.Success(folder.tracks.size),
-                currentTrackId = currentTrackId,
-                query = query,
-                sortConfig = sortConfig,
-                onPlayNext = onPlayNext,
-                onAppendToQueue = onAppendToQueue,
-                onAddToPlaylist = onAddToPlaylist,
-                onGoToAlbum = onGoToAlbum,
-                artistGroups = artistGroups,
-                onGoToArtist = onGoToArtist,
-                onExternalEditReturned = onExternalEditReturned,
-                showMusicTagEditor = showMusicTagEditor,
-                showLyricoEditor = showLyricoEditor,
-                scrollBehavior = scrollBehavior,
-                indexTopPadding = indexTopPadding,
-                listState = listState,
-                contentPadding = PaddingValues(
-                    start = padding.calculateStartPadding(layoutDirection),
-                    top = padding.calculateTopPadding(),
-                    end = padding.calculateEndPadding(layoutDirection),
-                    bottom = maxOf(
-                        padding.calculateBottomPadding(),
-                        bottomContentPadding,
+            directoryStateHolder.SaveableStateProvider(folder.key) {
+                val listState = if (breadcrumbItems.isNotEmpty()) {
+                    remember(folder.key) { LazyListState() }
+                } else {
+                    rememberLazyListState()
+                }
+                MusicListScreen(
+                    showLocateAction = true,
+                    currentTrackContentUri = currentTrackContentUri,
+                    miniPlayerBounds = miniPlayerBounds,
+                    playerContentBounds = playerContentBounds,
+                    onTrackClick = onTrackClick,
+                    displayedTracks = displayedTracks,
+                    sectionIndexMap = sectionIndexMap,
+                    scanStatus = scanStatus,
+                    currentTrackId = currentTrackId,
+                    query = query,
+                    sortConfig = sortConfig,
+                    onPlayNext = onPlayNext,
+                    onAppendToQueue = onAppendToQueue,
+                    onAddToPlaylist = onAddToPlaylist,
+                    onGoToAlbum = onGoToAlbum,
+                    artistGroups = artistGroups,
+                    onGoToArtist = onGoToArtist,
+                    onExternalEditReturned = onExternalEditReturned,
+                    showMusicTagEditor = showMusicTagEditor,
+                    showLyricoEditor = showLyricoEditor,
+                    showLunaBeatEditor = showLunaBeatEditor,
+                    scrollBehavior = scrollBehavior,
+                    indexTopPadding = indexTopPadding,
+                    listState = listState,
+                    topContentSpacing = if (breadcrumbItems.isNotEmpty()) 4.dp else 12.dp,
+                    contentPadding = PaddingValues(
+                        start = padding.calculateStartPadding(layoutDirection),
+                        top = padding.calculateTopPadding(),
+                        end = padding.calculateEndPadding(layoutDirection),
+                        bottom = maxOf(
+                            padding.calculateBottomPadding(),
+                            bottomContentPadding,
+                        ),
                     ),
-                ),
-                selectionMode = selectionMode,
-                selectedTrackUris = selectedTrackUris,
-                onSelectionChange = { selectedTrackUris = it },
-                onSelectionModeChange = { selectionMode = it },
-            )
+                    selectionMode = selectionMode,
+                    selectedTrackUris = selectedTrackUris,
+                    onSelectionChange = { selectedTrackUris = it },
+                    onSelectionModeChange = { selectionMode = it },
+                    emptyContent = if (breadcrumbItems.isNotEmpty()) {
+                        { emptyModifier ->
+                            MusicLibraryEmptyState(
+                                scanStatus = scanStatus,
+                                query = query,
+                                emptyMessageRes = R.string.folder_empty,
+                                noSearchResultsRes = R.string.folder_no_search_results,
+                                icon = MiuixIcons.Folder,
+                                modifier = emptyModifier,
+                            )
+                        }
+                    } else null,
+                    leadingItemCount = displayedChildFolders.size,
+                    leadingContent = {
+                        items(displayedChildFolders, key = { "directory:${it.key}" }) { child ->
+                            FolderListItem(
+                                folder = child,
+                                songCount = childSongCounts[child.key] ?: child.tracks.size,
+                                onClick = {
+                                    selectedTrackUris = emptySet()
+                                    selectionMode = false
+                                    onDirectoryClick(child.key)
+                                },
+                                onLongClick = { pendingBlockFolder = child },
+                            )
+                        }
+                    },
+                )
+            }
         }
     }
+    FolderHideDialog(
+        folder = pendingBlockFolder,
+        onDismiss = { pendingBlockFolder = null },
+        onBlockFolder = onBlockFolder,
+    )
 }
 
 @Composable
 private fun RowScope.FolderDetailActions(
+    scrollBehavior: ScrollBehavior,
+    showSongSort: Boolean,
     searchVisible: Boolean,
     sortConfig: MusicSortConfig,
     onSearchVisibleChange: (Boolean) -> Unit,
@@ -312,10 +409,13 @@ private fun RowScope.FolderDetailActions(
 ) {
     LibrarySearchButton(
         visible = searchVisible,
+        scrollBehavior = scrollBehavior,
         onClick = { onSearchVisibleChange(!searchVisible) },
     )
-    MusicSortButton(
-        config = sortConfig,
-        onConfigChange = onSortConfigChange,
-    )
+    if (showSongSort) {
+        MusicSortButton(
+            config = sortConfig,
+            onConfigChange = onSortConfigChange,
+        )
+    }
 }

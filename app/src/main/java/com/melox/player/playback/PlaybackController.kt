@@ -5,11 +5,13 @@ import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
+import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
@@ -22,6 +24,7 @@ import com.melox.player.model.PlaybackUiState
 import com.melox.player.model.PLAYBACK_SPEED_VALUES
 import com.melox.player.model.SleepTimerState
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -42,7 +45,7 @@ class PlaybackController(context: Context) {
     private val mainExecutor = ContextCompat.getMainExecutor(applicationContext)
     private val released = AtomicBoolean(false)
     private val playbackModeChangeInFlight = AtomicBoolean(false)
-    private val lastTrackSkipElapsedRealtimeMs = java.util.concurrent.atomic.AtomicLong(Long.MIN_VALUE)
+    private val lastTrackSkipTapElapsedRealtimeMs = AtomicLong(Long.MIN_VALUE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val initialSnapshot = MiniPlaybackSnapshotStore(applicationContext).load()
     private val mutableState = MutableStateFlow(
@@ -52,9 +55,8 @@ class PlaybackController(context: Context) {
     private var pendingPlaybackModeChange: PendingPlaybackModeChange? = null
     private var playbackModeChangeTimeoutJob: Job? = null
     private var homeRecommendationPlaybackJob: Job? = null
-    private var sleepTimerJob: Job? = null
-    private var extendedTimerItemIndex: Int? = null
     private var pendingPlaybackIntent: Boolean? = null
+    private var audioFocusPauseRevision = 0L
     private var playbackIntentTimeoutJob: Job? = null
     private val mutableSleepTimerState = MutableStateFlow(SleepTimerState())
     val sleepTimerState: StateFlow<SleepTimerState> = mutableSleepTimerState.asStateFlow()
@@ -69,34 +71,39 @@ class PlaybackController(context: Context) {
     private var speedRequestSerial = 0L
     private var homeRecommendationPlaybackRequest = 0L
     private var queueClearPending = false
+    private val queueProjection = PlaybackQueueProjection()
+    private var timerCommandSerial = 0L
+    private var timerCommandPending = false
 
     private var pendingTrackSkip: PendingTrackSkip? = null
     private var trackChangeDirection = 1
     private var playbackIteration = 0L
+    private var positionDiscontinuityRevision = 0L
 
     private val listener = object : Player.Listener {
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-            if (!playWhenReady && mutableSleepTimerState.value.extending) {
-                cancelSleepTimer(interrupted = true)
+            if (isForcedPlaybackPause(playWhenReady, reason)) {
+                pendingPlaybackIntent = null
+                playbackIntentTimeoutJob?.cancel()
+                playbackIntentTimeoutJob = null
             }
+            // Button intent must not wait for the next bundled event or position sample.
+            mutableState.value = mutableState.value.copy(
+                playWhenReady = pendingPlaybackIntent ?: playWhenReady,
+            )
+        }
+
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
+            positionDiscontinuityRevision += 1L
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            if (mutableSleepTimerState.value.extending) {
-                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
-                    reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
-                ) {
-                    closeAtTimerEnd(
-                        extended = true,
-                        advanceIfStillOnIndex = if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
-                            extendedTimerItemIndex
-                        } else null,
-                    )
-                } else {
-                    cancelSleepTimer(interrupted = true)
-                }
-            }
-            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) playbackIteration += 1L
+            // Preserve playback identity even when collectors conflate a rapid A/B/A transition.
+            playbackIteration += 1L
             val previous = mutableState.value
             val requestedDirection = pendingTrackSkip
                 ?.takeIf {
@@ -115,9 +122,6 @@ class PlaybackController(context: Context) {
         }
 
         override fun onEvents(player: Player, events: Player.Events) {
-            if (mutableSleepTimerState.value.extending && !player.playWhenReady) {
-                cancelSleepTimer(interrupted = true)
-            }
             publish(player)
             finishPlaybackModeChangeIfApplied(player)
         }
@@ -161,8 +165,19 @@ class PlaybackController(context: Context) {
         }
     }
 
+    fun applyStartupPlayback(allowAutoPlay: Boolean) = withController { controller ->
+        controller.sendCustomCommand(
+            SessionCommand(ACTION_APPLY_STARTUP_PLAYBACK, Bundle.EMPTY),
+            Bundle().apply { putBoolean(EXTRA_ALLOW_STARTUP_AUTO_PLAY, allowAutoPlay) },
+        )
+    }
+
     /** Replaces playback with the visible result set and starts at [startIndex]. */
-    fun playQueue(tracks: List<MusicTrack>, startIndex: Int) {
+    fun playQueue(
+        tracks: List<MusicTrack>,
+        startIndex: Int,
+        requestedMode: PlaybackMode? = null,
+    ) {
         if (startIndex !in tracks.indices) return
         val sourceItems = tracks.mapIndexed { index, track ->
             track.toPlaybackQueueItem(
@@ -172,7 +187,12 @@ class PlaybackController(context: Context) {
             )
         }
         withController { controller ->
-            val playbackMode = controller.currentPlaybackMode()
+            val playbackMode = requestedMode ?: controller.currentPlaybackMode()
+            if (requestedMode != null) {
+                finishPlaybackModeChange()
+                PlaybackModeMemory.set(playbackMode)
+                mutableState.value = mutableState.value.copy(playbackMode = playbackMode)
+            }
             val reordered = reorderQueueForPlaybackMode(
                 queue = sourceItems.map { it.copy(playbackMode = playbackMode) },
                 currentIndex = startIndex,
@@ -276,7 +296,6 @@ class PlaybackController(context: Context) {
 
     fun setPlaybackSpeed(speed: Float) {
         if (speed !in PLAYBACK_SPEED_VALUES) return
-        if (mutableState.value.floatOutputActive && speed != 1f) return
         val request = ++speedRequestSerial
         pendingPlaybackSpeed = speed
         mutableState.value = mutableState.value.copy(playbackSpeed = speed)
@@ -318,6 +337,9 @@ class PlaybackController(context: Context) {
 
     fun setAutoExtendSleepTimer(enabled: Boolean) {
         mutableAutoExtendSleepTimer.value = enabled
+        sendSleepTimerCommand(ACTION_SET_TIMER_EXTENSION, Bundle().apply {
+            putBoolean(EXTRA_TIMER_EXTENSION, enabled)
+        })
     }
 
     fun setPlaybackPauseFade(enabled: Boolean) {
@@ -335,89 +357,44 @@ class PlaybackController(context: Context) {
 
     fun startSleepTimer(seconds: Int) {
         if (seconds !in 1..86_399) return
-        sleepTimerJob?.cancel()
-        extendedTimerItemIndex = null
-        val endTimeMs = SystemClock.elapsedRealtime() + seconds * 1_000L
-        mutableSleepTimerState.value = SleepTimerState(active = true, remainingSeconds = seconds,
-            interruptionNotice = mutableSleepTimerState.value.interruptionNotice)
-        sleepTimerJob = scope.launch {
-            while (isActive) {
-                val tick = sleepTimerTick(endTimeMs, SystemClock.elapsedRealtime()) ?: break
-                mutableSleepTimerState.value = mutableSleepTimerState.value.copy(
-                    remainingSeconds = tick.remainingSeconds,
-                )
-                delay(tick.delayUntilNextSecondMs)
-            }
-            if (!isActive) return@launch
-            val controller = if (controllerFuture.isDone) {
-                runCatching(controllerFuture::get).getOrNull()
-            } else null
-            val mediaRemainingMs = controller?.let { it.duration - it.currentPosition }
-                ?.takeIf { it > 0L && it < 86_400_000L }
-            if (!mutableAutoExtendSleepTimer.value || controller?.isPlaying != true ||
-                mediaRemainingMs == null
-            ) {
-                closeAtTimerEnd()
-                return@launch
-            }
-            extendedTimerItemIndex = controller.currentMediaItemIndex
-            while (isActive) {
-                val remainingMediaMs = controller.duration - controller.currentPosition
-                if (remainingMediaMs <= 0L || controller.playbackState == Player.STATE_ENDED) {
-                    closeAtTimerEnd(
-                        extended = true,
-                        advanceIfStillOnIndex = extendedTimerItemIndex,
-                    )
-                    return@launch
-                }
-                mutableSleepTimerState.value = mutableSleepTimerState.value.copy(
-                    extending = true,
-                    remainingSeconds = 0,
-                    extensionSeconds = remainingExtensionSeconds(
-                        controller.duration,
-                        controller.currentPosition,
-                        controller.playbackParameters.speed,
-                    ),
-                )
-                delay(250L)
-            }
-        }
+        mutableSleepTimerState.value = SleepTimerState(
+            active = true,
+            remainingSeconds = seconds,
+            interruptionNotice = mutableSleepTimerState.value.interruptionNotice,
+        )
+        sendSleepTimerCommand(ACTION_START_SLEEP_TIMER, Bundle().apply {
+            putInt(EXTRA_TIMER_SECONDS, seconds)
+            putBoolean(EXTRA_TIMER_EXTENSION, mutableAutoExtendSleepTimer.value)
+        })
     }
 
-    fun cancelSleepTimer() = cancelSleepTimer(interrupted = false)
+    fun cancelSleepTimer(interrupted: Boolean = false) {
+        mutableSleepTimerState.value = SleepTimerState(
+            interruptionNotice = mutableSleepTimerState.value.interruptionNotice + if (interrupted) 1 else 0,
+        )
+        sendSleepTimerCommand(ACTION_CANCEL_SLEEP_TIMER, Bundle().apply {
+            putBoolean(EXTRA_TIMER_INTERRUPTED, interrupted)
+        })
+    }
 
     fun acknowledgeSleepTimerInterruption() {
         mutableSleepTimerState.value = mutableSleepTimerState.value.copy(interruptionNotice = 0)
+        sendSleepTimerCommand(ACTION_ACKNOWLEDGE_TIMER_INTERRUPTION)
     }
 
-    private fun cancelSleepTimer(interrupted: Boolean) {
-        sleepTimerJob?.cancel()
-        sleepTimerJob = null
-        extendedTimerItemIndex = null
-        val notice = mutableSleepTimerState.value.interruptionNotice + if (interrupted) 1 else 0
-        mutableSleepTimerState.value = SleepTimerState(interruptionNotice = notice)
-    }
-
-    private fun closeAtTimerEnd(
-        extended: Boolean = false,
-        advanceIfStillOnIndex: Int? = null,
-    ) {
-        sleepTimerJob?.cancel()
-        sleepTimerJob = null
-        extendedTimerItemIndex = null
-        mutableSleepTimerState.value = SleepTimerState(
-            interruptionNotice = mutableSleepTimerState.value.interruptionNotice,
-        )
+    private fun sendSleepTimerCommand(action: String, args: Bundle = Bundle.EMPTY) {
+        val serial = ++timerCommandSerial
+        timerCommandPending = true
         withController { controller ->
-            controller.sendCustomCommand(
-                SessionCommand(ACTION_CLOSE_APPLICATION_COMMAND, Bundle.EMPTY),
-                Bundle().apply {
-                    putBoolean(EXTRA_CLOSE_AFTER_EXTENSION, extended)
-                    advanceIfStillOnIndex?.let {
-                        putInt(EXTRA_EXTENSION_EXPECTED_INDEX, it)
-                    }
-                },
-            )
+            val future = controller.sendCustomCommand(SessionCommand(action, Bundle.EMPTY), args)
+            future.addListener({
+                if (serial != timerCommandSerial || released.get()) return@addListener
+                timerCommandPending = false
+                val result = runCatching { future.get() }.getOrNull()
+                val timer = result?.extras?.getBundle(EXTRA_SLEEP_TIMER_STATE)
+                    ?: controller.sessionExtras.getBundle(EXTRA_SLEEP_TIMER_STATE)
+                timer?.let { mutableSleepTimerState.value = it.toSleepTimerState() }
+            }, mainExecutor)
         }
     }
 
@@ -427,8 +404,9 @@ class PlaybackController(context: Context) {
 
     fun next() = skipTrack(1)
 
-    private fun skipTrack(direction: Int) {
-        if (!acceptTrackSkip(SystemClock.elapsedRealtime())) return
+    private fun skipTrack(direction: Int): Boolean {
+        if (!acceptTrackSkip(SystemClock.elapsedRealtime())) return false
+        var dispatched = false
         withController { controller ->
             val targetIndex = controller.adjacentMediaItemIndex(direction) ?: return@withController
             pendingTrackSkip = if (targetIndex == controller.currentMediaItemIndex) null else {
@@ -439,26 +417,17 @@ class PlaybackController(context: Context) {
             }
             controller.seekToDefaultPosition(targetIndex)
             controller.play()
+            dispatched = true
         }
+        return dispatched
     }
 
-    internal fun acceptTrackSkip(nowElapsedRealtimeMs: Long): Boolean {
-        while (true) {
-            val previous = lastTrackSkipElapsedRealtimeMs.get()
-            if (!shouldAcceptTrackSkip(previous, nowElapsedRealtimeMs)) return false
-            if (lastTrackSkipElapsedRealtimeMs.compareAndSet(previous, nowElapsedRealtimeMs)) {
-                return true
-            }
-        }
-    }
+    internal fun acceptTrackSkip(nowElapsedRealtimeMs: Long): Boolean =
+        acceptTrackSkip(lastTrackSkipTapElapsedRealtimeMs, nowElapsedRealtimeMs)
 
     fun cyclePlaybackMode() {
         if (!playbackModeChangeInFlight.compareAndSet(false, true)) return
         withController { controller ->
-            if (controller.mediaItemCount == 0) {
-                finishPlaybackModeChange()
-                return@withController
-            }
             val queue = controller.currentPlaybackQueue()
             val currentMode = controller.currentPlaybackMode()
             val targetMode = nextPlaybackMode(currentMode)
@@ -469,13 +438,8 @@ class PlaybackController(context: Context) {
             )
             beginPlaybackModeChange(targetMode, reordered.queue)
             mutableState.value = mutableState.value.copy(playbackMode = targetMode)
-            PlaybackModeMemory.set(targetMode)
-            controller.shuffleModeEnabled = false
-            controller.repeatMode = targetMode.toPlayerRepeatMode()
-            controller.applyPlaybackQueue(
-                targetQueue = reordered.queue,
-                targetCurrentIndex = reordered.currentIndex,
-            )
+            controller.applyPlaybackMode(targetMode, reordered)
+            if (queue.isEmpty()) finishPlaybackModeChange()
         }
     }
 
@@ -541,10 +505,10 @@ class PlaybackController(context: Context) {
     fun removeContentUris(contentUris: Set<String>) {
         if (contentUris.isEmpty()) return
         withController { controller ->
-            queueRemovalIndicesForContentUris(
-                queue = controller.currentPlaybackQueue(),
-                contentUris = contentUris,
-            ).forEach(controller::removeMediaItem)
+            controller.sendCustomCommand(
+                SessionCommand(ACTION_REMOVE_QUEUE_CONTENT_URIS, Bundle.EMPTY),
+                Bundle().apply { putStringArrayList(EXTRA_REMOVED_CONTENT_URIS, ArrayList(contentUris)) },
+            )
         }
     }
 
@@ -567,49 +531,61 @@ class PlaybackController(context: Context) {
         }
     }
 
+    @OptIn(UnstableApi::class)
     private fun publish(player: Player) {
         val controller = player as? MediaController
+        if (!timerCommandPending) {
+            controller?.sessionExtras?.getBundle(EXTRA_SLEEP_TIMER_STATE)?.let { timer ->
+                mutableSleepTimerState.value = timer.toSleepTimerState()
+            }
+        }
         val floatOutputActive = controller?.sessionExtras
             ?.getBoolean(EXTRA_FLOAT_OUTPUT_ACTIVE, false) ?: false
-        if (floatOutputActive) {
-            pendingPlaybackSpeed = null
-            pendingSpeedTimeoutJob?.cancel()
-        } else if (pendingPlaybackSpeed == player.playbackParameters.speed) {
+        if (pendingPlaybackSpeed == player.playbackParameters.speed) {
             pendingPlaybackSpeed = null
             pendingSpeedTimeoutJob?.cancel()
         }
-        if (pendingPlaybackIntent == player.playWhenReady) {
+        val focusPauseRevision = controller?.sessionExtras?.getLong(EXTRA_AUDIO_FOCUS_PAUSE_REVISION) ?: 0L
+        if (focusPauseRevision != audioFocusPauseRevision || pendingPlaybackIntent == player.playWhenReady) {
+            audioFocusPauseRevision = focusPauseRevision
             pendingPlaybackIntent = null
             playbackIntentTimeoutJob?.cancel()
             playbackIntentTimeoutJob = null
         }
-        val rawQueue = player.currentPlaybackQueue()
-        if (queueClearPending && rawQueue.isNotEmpty()) return
-        queueClearPending = false
         val playbackMode = displayedPlaybackMode(
             playerMode = player.currentPlaybackMode(),
             pendingMode = pendingPlaybackModeChange?.mode,
         )
-        val queue = rawQueue.map { item -> item.copy(playbackMode = playbackMode) }
+        val queue = queueProjection.queue(player, playbackMode)
+        if (queueClearPending && queue.isNotEmpty()) return
+        queueClearPending = false
         val duration = player.duration.takeIf { it != C.TIME_UNSET && it >= 0L }
             ?: queue.getOrNull(player.currentMediaItemIndex)?.durationMs
             ?: 0L
         val positionMs = player.currentPosition.coerceAtLeast(0L)
-        mutableState.value = PlaybackUiState(
+        val liveState = PlaybackUiState(
             queue = queue,
             currentIndex = player.currentMediaItemIndex.takeIf { queue.isNotEmpty() } ?: -1,
             isPlaying = pendingPlaybackIntent ?: player.isPlaying,
             playWhenReady = pendingPlaybackIntent ?: player.playWhenReady,
             positionMs = positionMs,
             playbackIteration = playbackIteration,
+            positionDiscontinuityRevision = positionDiscontinuityRevision,
             trackChangeDirection = trackChangeDirection,
             positionUpdateElapsedRealtimeMs = SystemClock.elapsedRealtime(),
             playbackSpeed = pendingPlaybackSpeed ?: player.playbackParameters.speed,
             floatOutputActive = floatOutputActive,
+            audioSessionId = player.audioSessionId,
             durationMs = duration.coerceAtLeast(0L),
             bufferedPositionMs = player.bufferedPosition.coerceAtLeast(0L),
             playbackMode = playbackMode,
             errorMessage = player.playerError?.localizedMessage,
+        )
+        mutableState.value = playbackStateDuringSnapshotRestore(
+            previous = mutableState.value,
+            live = liveState,
+            snapshotRestorePending = controller?.sessionExtras
+                ?.getBoolean(EXTRA_SNAPSHOT_RESTORE_PENDING, false) == true,
         )
     }
 
@@ -690,12 +666,13 @@ internal fun remainingExtensionSeconds(
     return kotlin.math.ceil(remainingRealMs / 1_000.0).toInt().coerceAtLeast(0)
 }
 
-internal fun shouldAcceptTrackSkip(
-    previousElapsedRealtimeMs: Long,
+internal fun acceptTrackSkip(
+    lastTapElapsedRealtimeMs: AtomicLong,
     nowElapsedRealtimeMs: Long,
-    intervalMillis: Long = 300L,
-): Boolean = previousElapsedRealtimeMs == Long.MIN_VALUE ||
-    nowElapsedRealtimeMs - previousElapsedRealtimeMs >= intervalMillis
+): Boolean {
+    val previous = lastTapElapsedRealtimeMs.getAndSet(nowElapsedRealtimeMs)
+    return previous == Long.MIN_VALUE || nowElapsedRealtimeMs - previous > 300L
+}
 
 private data class PendingTrackSkip(val mediaId: String, val direction: Int)
 
@@ -714,6 +691,18 @@ internal fun PlaybackSnapshot?.toInitialPlaybackState(): PlaybackUiState {
     )
 }
 
+internal fun playbackStateDuringSnapshotRestore(
+    previous: PlaybackUiState,
+    live: PlaybackUiState,
+    snapshotRestorePending: Boolean,
+): PlaybackUiState = if (
+    snapshotRestorePending && live.currentItem == null && previous.currentItem != null
+) {
+    previous
+} else {
+    live
+}
+
 internal fun nextQueueInsertionIndex(currentIndex: Int, itemCount: Int): Int =
     (currentIndex + 1).coerceIn(0, itemCount.coerceAtLeast(0))
 
@@ -724,13 +713,6 @@ internal fun isValidQueueMove(fromIndex: Int, toIndex: Int, itemCount: Int): Boo
     fromIndex != toIndex &&
         isValidQueueIndex(fromIndex, itemCount) &&
         isValidQueueIndex(toIndex, itemCount)
-
-internal fun queueRemovalIndicesForContentUris(
-    queue: List<PlaybackQueueItem>,
-    contentUris: Set<String>,
-): List<Int> = queue.indices
-    .filter { index -> queue[index].contentUri in contentUris }
-    .asReversed()
 
 internal fun Player.currentPlaybackQueue(): List<PlaybackQueueItem> =
     List(mediaItemCount) { index ->
@@ -811,6 +793,13 @@ internal fun Player.applyPlaybackQueue(
         replaceMediaItems(0, currentIndex, beforeCurrent)
         replaceMediaItems(targetCurrentIndex + 1, mediaItemCount, afterCurrent)
     }
+}
+
+internal fun Player.applyPlaybackMode(mode: PlaybackMode, reordered: ReorderedPlaybackQueue) {
+    PlaybackModeMemory.set(mode)
+    shuffleModeEnabled = false
+    repeatMode = mode.toPlayerRepeatMode()
+    applyPlaybackQueue(reordered.queue, reordered.currentIndex)
 }
 
 private fun Player.hasPlaybackQueueOrder(targetQueue: List<PlaybackQueueItem>): Boolean =
@@ -925,4 +914,19 @@ internal fun resolveTrackChangeDirection(
     previousIndex == queueSize - 1 && nextIndex == 0 -> 1
     nextIndex < previousIndex -> -1
     else -> 1
+}
+
+/** Remove native queue slots without preparing or seeking a surviving current item. */
+internal fun Player.removePlaybackContentUris(contentUris: Set<String>) {
+    if (contentUris.isEmpty()) return
+    val indices = (0 until mediaItemCount).filter { index ->
+        getMediaItemAt(index).toPlaybackQueueItem().contentUri in contentUris
+    }
+    if (indices.isEmpty()) return
+    if (indices.size == mediaItemCount) {
+        stop()
+        clearMediaItems()
+    } else {
+        indices.asReversed().forEach(::removeMediaItem)
+    }
 }

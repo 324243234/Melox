@@ -3,6 +3,7 @@ package com.melox.player.ui.component.playback
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.graphics.Bitmap
 import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -27,6 +28,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.FilterQuality
@@ -52,20 +55,22 @@ import com.melox.player.model.PlaybackUiState
 import com.melox.player.model.BottomBarStyle
 import com.melox.player.ui.MiniPlayerChrome
 import com.melox.player.ui.NORMAL_BAR_STROKE_ALPHA
+import com.melox.player.ui.component.animation.InteractiveHighlight
 import com.melox.player.ui.component.library.PlaybackArtworkFrame
 import com.melox.player.ui.component.library.playbackArtworkShadow
 import com.melox.player.ui.component.library.playbackArtworkCornerRadius
-import com.melox.player.ui.component.library.rememberArtworkBitmap
-import com.melox.player.ui.component.library.rememberFullPlayerArtworkBitmapPixels
-import com.melox.player.ui.component.library.rememberPlaceholderArtworkBitmap
+import com.melox.player.ui.component.library.playbackArtworkClip
 import com.melox.player.ui.component.liquid.miuixFloatingBarShadow
 import com.melox.player.ui.component.liquid.miniPlayerSurface
-import com.melox.player.ui.screen.playback.rememberArtworkBlend
+import com.melox.player.ui.screen.playback.toArtworkBlend
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import androidx.compose.runtime.saveable.Saver
 import top.yukonga.miuix.kmp.squircle.squircleClip
+import top.yukonga.miuix.kmp.squircle.isSquircleEnabled
 import top.yukonga.miuix.kmp.squircle.squircleBorder
+import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.basic.DividerDefaults
 import top.yukonga.miuix.kmp.utils.getRoundedCorner
 
@@ -73,6 +78,12 @@ internal fun playerSheetBarAlpha(progress: Float): Float {
     val handoff = (progress.coerceIn(0f, 1f) / PLAYER_LAYER_HANDOFF_END_PROGRESS)
         .coerceIn(0f, 1f)
     return 1f - easeOutCubic(handoff)
+}
+
+internal fun playerSheetPlaceholderArtworkAlpha(progress: Float): Float {
+    val handoff = (progress.coerceIn(0f, 1f) / PLAYER_LAYER_HANDOFF_END_PROGRESS)
+        .coerceIn(0f, 1f)
+    return lerp(0.3f, 0.9f, easeOutCubic(handoff))
 }
 internal fun playerSheetMiniContentAlpha(progress: Float): Float {
     val fade = (progress.coerceIn(0f, 1f) / PLAYER_MINI_CONTENT_FADE_END_PROGRESS)
@@ -101,37 +112,51 @@ internal fun playerSheetContentAlpha(progress: Float): Float {
 internal fun playerSheetGlassVisible(progress: Float): Boolean =
     progress.coerceIn(0f, 1f) < PLAYER_LAYER_HANDOFF_END_PROGRESS
 
-internal fun playerSheetUsesFullPlayerStatusBar(
-    progress: Float,
-): Boolean = progress > PLAYER_LAYER_HANDOFF_END_PROGRESS
 internal fun Modifier.recordPlayerLayer(
     layer: GraphicsLayer,
     drawInPlace: Boolean,
     recordingGeneration: Int = 0,
+    recordInPlace: Boolean = false,
+    backdrop: LayerBackdrop? = null,
     onRecorded: (generation: Int, size: IntSize) -> Unit = { _, _ -> },
 ): Modifier = drawWithContent {
-    if (drawInPlace) {
+    if (drawInPlace && !recordInPlace) {
         // Draw descendants into one target per frame across the live handoff.
         this@drawWithContent.drawContent()
     } else {
         layer.record {
             this@drawWithContent.drawContent()
         }
+        if (drawInPlace) {
+            // Prepare resized frames without drawing descendants into a second target.
+            layer.alpha = 1f
+            drawLayer(layer)
+        }
         onRecorded(recordingGeneration, layer.size)
     }
-}
+}.then(
+    // Capture inside the handoff recorder, including frames that are not drawn live.
+    if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier,
+)
 
 internal fun Modifier.recordMiniPlayerLayer(
     layer: GraphicsLayer,
     drawInPlace: Boolean,
+    drawLiveGlass: Boolean,
     recordingGeneration: Int,
     onRecorded: (generation: Int, size: IntSize) -> Unit,
 ): Modifier = drawWithContent {
     // Mini readiness must be reported even while the mini player is visible.
-    // Replay this private, untransformed source instead of drawing children twice.
     layer.record { this@drawWithContent.drawContent() }
     onRecorded(recordingGeneration, layer.size)
-    if (drawInPlace) drawLayer(layer)
+    if (drawInPlace) {
+        if (drawLiveGlass) {
+            // Keep live glass sampling on the current canvas.
+            this@drawWithContent.drawContent()
+        } else {
+            drawLayer(layer)
+        }
+    }
 }
 
 internal fun Modifier.recordPlayerContentLayer(
@@ -148,14 +173,18 @@ internal fun PlayerSheetDragInputOverlay(
     transition: PlayerSheetTransitionState,
     hasItem: Boolean,
     modifier: Modifier = Modifier,
+    collapsedCornerRadius: Dp = 18.dp,
+    liquidGlassActive: Boolean = false,
 ) {
     if (!transition.sharedLayersReady || !transition.isTransitionActive) return
     val bounds = sharedContainerRect(
-        transition.miniPlayerBounds,
+        transition.overlayMiniPlayerBounds,
         transition.fullPlayerBounds,
         transition.progress,
     )
     val density = LocalDensity.current
+    val cornerRadii = playerSheetContainerCornerRadii(transition, collapsedCornerRadius)
+    val squircleEnabled = isSquircleEnabled() && !liquidGlassActive
     val dragModifier = rememberPlayerSheetVerticalDragModifier(
         enabled = true,
         hasItem = hasItem,
@@ -174,9 +203,11 @@ internal fun PlayerSheetDragInputOverlay(
             .playerSheetHostLayer(
                 hostBounds = bounds,
                 inputBounds = bounds,
-                miniPlayerBounds = transition.miniPlayerBounds.takeIf {
+                miniPlayerBounds = transition.overlayMiniPlayerBounds.takeIf {
                     transition.miniPlayerAcceptsInput
                 },
+                inputCornerRadiusPx = with(density) { cornerRadii.topStart.dp.toPx() },
+                squircleEnabled = squircleEnabled,
             )
             .then(dragModifier)
             .pointerInput(Unit) {
@@ -191,6 +222,7 @@ internal fun PlayerSheetMiniControlsInputOverlay(
     transition: PlayerSheetTransitionState,
     hasItem: Boolean,
     normalChrome: Boolean,
+    smallPlayerBar: Boolean,
     onTogglePlayPause: () -> Unit,
     onOpenQueue: () -> Unit,
     modifier: Modifier = Modifier,
@@ -198,9 +230,9 @@ internal fun PlayerSheetMiniControlsInputOverlay(
     if (!transition.sharedLayersReady || !transition.isTransitionActive ||
         transition.progress >= PLAYER_MINI_CONTENT_FADE_END_PROGRESS
     ) return
-    val source = transition.miniPlayerBounds
-    val content = transition.miniPlayerContentBounds
-    val controls = transition.miniPlayerControlsBounds
+    val source = transition.overlayMiniPlayerBounds
+    val content = transition.overlayMiniPlayerContentBounds
+    val controls = transition.overlayMiniPlayerControlsBounds
     if (!source.isUsable() || !content.isUsable() || !controls.isUsable()) return
 
     val bounds = sharedContainerRect(source, transition.fullPlayerBounds, transition.progress)
@@ -211,9 +243,11 @@ internal fun PlayerSheetMiniControlsInputOverlay(
         controlsBounds = controls,
     )
     val density = LocalDensity.current
-    val playOffset = with(density) { (-6).dp.toPx() }
-    val queueOffset = with(density) { (if (normalChrome) 0.dp else (-2).dp).toPx() }
-    val controlSize = with(density) { 40.dp.toPx() }
+    val miniScale = transition.overlayMiniPlayerScale
+    val playOffset = miniScale * with(density) { (if (smallPlayerBar) 0.dp else (-6).dp).toPx() }
+    val queueOffset = miniScale * with(density) { miniPlayerQueueOffset(normalChrome, smallPlayerBar).toPx() }
+    val controlSizeDp = miniPlayerControlSize() * miniScale
+    val controlSize = with(density) { controlSizeDp.toPx() }
     val currentOnTogglePlayPause by rememberUpdatedState(onTogglePlayPause)
     val currentOnOpenQueue by rememberUpdatedState(onOpenQueue)
 
@@ -238,9 +272,11 @@ internal fun PlayerSheetMiniControlsInputOverlay(
                             (renderedControls.top - bounds.top).roundToInt(),
                         )
                     }
-                    .size(40.dp)
+                    .size(controlSizeDp)
                     .pointerInput(Unit) {
-                        detectTapGestures { currentOnTogglePlayPause() }
+                        detectTapGestures(
+                            onTap = { currentOnTogglePlayPause() },
+                        )
                     },
             )
         }
@@ -253,7 +289,7 @@ internal fun PlayerSheetMiniControlsInputOverlay(
                         (renderedControls.top - bounds.top).roundToInt(),
                     )
                 }
-                .size(40.dp)
+                .size(controlSizeDp)
                 .pointerInput(Unit) {
                     detectTapGestures { currentOnOpenQueue() }
                 },
@@ -273,6 +309,7 @@ internal fun PlayerSheetContentOverlay(
     fullPlayerBackgroundLayer: GraphicsLayer,
     fullPlayerContentLayer: GraphicsLayer,
     miniPlayerChrome: MiniPlayerChrome?,
+    miniPlayerInteractiveHighlight: InteractiveHighlight,
     collapsedCornerRadius: Dp,
     floatingMiniPlayer: Boolean,
     isDark: Boolean,
@@ -283,26 +320,16 @@ internal fun PlayerSheetContentOverlay(
     val progress = transition.progress
     val density = LocalDensity.current
     val contentBounds = sharedContainerRect(
-        source = transition.miniPlayerBounds,
+        source = transition.overlayMiniPlayerBounds,
         target = transition.fullPlayerBounds,
         progress = progress,
     )
     val bounds = sharedContainerRenderRect(
-        source = transition.miniPlayerBounds,
+        source = transition.overlayMiniPlayerBounds,
         target = transition.fullPlayerBounds,
         progress = progress,
     )
-    val deviceCornerRadius = getRoundedCorner()
-    val expandedCornerRadius = if (rememberPlayerWindowUsesPhysicalScreenCorners()) {
-        deviceCornerRadius
-    } else {
-        0.dp
-    }
-    val cornerRadii = sharedContainerCornerRadii(
-        source = SharedContainerCornerRadii.uniform(collapsedCornerRadius.value),
-        target = SharedContainerCornerRadii.uniform(expandedCornerRadius.value),
-        progress = progress,
-    )
+    val cornerRadii = playerSheetContainerCornerRadii(transition, collapsedCornerRadius)
     val cornerRadius = cornerRadii.topStart.dp
     val miniChromeAlpha = playerSheetBarAlpha(progress)
 
@@ -320,6 +347,16 @@ internal fun PlayerSheetContentOverlay(
                 followsNavigationBar = glassChrome.style == BottomBarStyle.NORMAL,
                 floatingHighlight = glassChrome.floatingHighlight,
                 highlightAlpha = miniChromeAlpha,
+            )
+            .then(
+                if (glassChrome.liquidGlassActive && glassChrome.backdrop != null) {
+                    with(miniPlayerInteractiveHighlight) {
+                        Modifier.drawHighlight(
+                            alpha = { miniChromeAlpha },
+                            sourceScale = transition.overlayMiniPlayerScale,
+                        )
+                    }
+                } else Modifier,
             )
             .then(
                 if (glassChrome.style == BottomBarStyle.NORMAL) {
@@ -360,11 +397,18 @@ internal fun PlayerSheetContentOverlay(
                     Modifier
                 },
             )
-            .squircleClip(
-                topStart = cornerRadii.topStart.dp,
-                topEnd = cornerRadii.topEnd.dp,
-                bottomEnd = cornerRadii.bottomEnd.dp,
-                bottomStart = cornerRadii.bottomStart.dp,
+            .then(
+                if (miniPlayerChrome?.liquidGlassActive == true && miniPlayerChrome.backdrop != null) {
+                    // Preserve the glass pill's outline after its material fades away.
+                    if (glassChrome != null) Modifier else Modifier.clip(RoundedCornerShape(cornerRadius))
+                } else {
+                    Modifier.squircleClip(
+                        topStart = cornerRadii.topStart.dp,
+                        topEnd = cornerRadii.topEnd.dp,
+                        bottomEnd = cornerRadii.bottomEnd.dp,
+                        bottomStart = cornerRadii.bottomStart.dp,
+                    )
+                },
             )
             .then(glassSurfaceModifier),
     ) {
@@ -374,8 +418,8 @@ internal fun PlayerSheetContentOverlay(
                     progress < PLAYER_MINI_CONTENT_FADE_END_PROGRESS
             ) {
                     miniPlayerContentLayer.alpha = playerSheetMiniContentAlpha(progress)
-                    val sourceBounds = transition.miniPlayerBounds
-                    val contentLayerBounds = transition.miniPlayerContentBounds
+                    val sourceBounds = transition.overlayMiniPlayerBounds
+                    val contentLayerBounds = transition.overlayMiniPlayerContentBounds
                     val contentOffset = if (contentLayerBounds.isUsable()) {
                         sharedMiniPlayerContentOffset(
                             sourcePlayerBounds = sourceBounds,
@@ -385,7 +429,7 @@ internal fun PlayerSheetContentOverlay(
                     } else {
                         Offset.Zero
                     }
-                    val controlsBounds = transition.miniPlayerControlsBounds
+                    val controlsBounds = transition.overlayMiniPlayerControlsBounds
                     if (sourceBounds.isUsable() && controlsBounds.isUsable()) {
                         val controlsLeft = controlsBounds.left - sourceBounds.left
                         val controlsTranslationX = sharedMiniPlayerControlsTranslationX(
@@ -399,6 +443,11 @@ internal fun PlayerSheetContentOverlay(
                                     left = contentOffset.x,
                                     top = contentOffset.y,
                                 )
+                                scale(
+                                    scaleX = transition.overlayMiniPlayerScale,
+                                    scaleY = transition.overlayMiniPlayerScale,
+                                    pivot = Offset.Zero,
+                                )
                             }) {
                                 drawLayer(miniPlayerContentLayer)
                             }
@@ -409,6 +458,11 @@ internal fun PlayerSheetContentOverlay(
                                     left = contentOffset.x + controlsTranslationX,
                                     top = contentOffset.y,
                                 )
+                                scale(
+                                    scaleX = transition.overlayMiniPlayerScale,
+                                    scaleY = transition.overlayMiniPlayerScale,
+                                    pivot = Offset.Zero,
+                                )
                             }) {
                                 drawLayer(miniPlayerContentLayer)
                             }
@@ -418,6 +472,11 @@ internal fun PlayerSheetContentOverlay(
                             translate(
                                 left = contentOffset.x,
                                 top = contentOffset.y,
+                            )
+                            scale(
+                                scaleX = transition.overlayMiniPlayerScale,
+                                scaleY = transition.overlayMiniPlayerScale,
+                                pivot = Offset.Zero,
                             )
                         }) {
                             drawLayer(miniPlayerContentLayer)
@@ -464,52 +523,37 @@ internal fun PlayerSheetContentOverlay(
 @Composable
 internal fun PlayerSheetArtworkOverlay(
     playback: PlaybackUiState,
+    artworkState: ArtworkTransitionState<Bitmap>,
     transition: PlayerSheetTransitionState,
     collapsedCornerRadius: Dp,
     enabled: Boolean,
     modifier: Modifier = Modifier,
+    circularArtwork: Boolean = false,
+    squareArtwork: Boolean = false,
 ) {
-    val item = playback.currentItem ?: return
+    if (playback.currentItem == null) return
     val progress = transition.progress
     val source = transition.overlayMiniArtworkBounds
     val target = transition.overlayFullArtworkBounds
-    val targetSizePx = maxOf(target.width, target.height).roundToInt()
-    val artworkBitmap = rememberArtworkBitmap(
-        contentUri = item.contentUri,
-        dateModifiedEpochSeconds = item.dateModifiedEpochSeconds,
-        fileSizeBytes = item.fileSizeBytes,
-        size = PLAYER_FULL_ARTWORK_REQUEST_SIZE,
-    )
-    val fullPlayerArtwork = rememberFullPlayerArtworkBitmapPixels(
-        contentUri = item.contentUri,
-        dateModifiedEpochSeconds = item.dateModifiedEpochSeconds,
-        fileSizeBytes = item.fileSizeBytes,
-        targetSizePx = targetSizePx.coerceAtLeast(1),
-        enabled = targetSizePx > 0,
-    )
-    val fallbackBitmap = artworkBitmap ?: rememberPlaceholderArtworkBitmap(
-        PLAYER_FULL_ARTWORK_REQUEST_SIZE,
-    )
-    val artworkBlend = rememberArtworkBlend(
-        targetBitmap = fullPlayerArtwork ?: fallbackBitmap,
-        animate = true,
-        contentKey = item.contentUri,
-        durationMillis = PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS,
-        sameContentDurationMillis = PLAYER_ARTWORK_RESOLUTION_CROSSFADE_DURATION_MILLIS,
-    )
+    val artworkBlend = artworkState.toArtworkBlend()
     val bitmap = artworkBlend.currentBitmap
-    val artworkLayerAlphas = sourceOverAlphas(artworkBlend.frames.map { it.alpha })
+    val placeholderArtworkAlpha = playerSheetPlaceholderArtworkAlpha(progress)
+    val artworkLayerAlphas = sourceOverAlphas(artworkBlend.frames.map { frame ->
+        frame.alpha * if (frame.isPlaceholder) placeholderArtworkAlpha else 1f
+    })
     val density = LocalDensity.current
+    // 方形裁剪：圆形或"圆角矩形"都按正方形铺满封面。
+    val squareClip = circularArtwork || squareArtwork
     if (!enabled || !transition.separateArtworkOverlayReady || !transition.isTransitionActive) return
     val sourceArtworkBounds = bitmap?.let {
-        fittedArtworkRect(source, it.width, it.height)
+        playbackArtworkBounds(source, it.width, it.height, squareClip)
     }
     val sourceBounds = sourceArtworkBounds ?: source
     if (!sharedArtworkTargetIsOnscreen(
         artworkBounds = target,
         viewportBounds = transition.fullPlayerBounds,
     )) return
-    val collapsedArtworkCornerRadius = bitmap?.let {
+    val collapsedArtworkCornerRadius = bitmap?.takeUnless { squareClip }?.let {
         playbackArtworkCornerRadius(
             cornerRadius = collapsedCornerRadius,
             bitmapWidth = it.width,
@@ -517,9 +561,14 @@ internal fun PlayerSheetArtworkOverlay(
             rectangularReduction = MINI_PLAYER_RECTANGULAR_ARTWORK_CORNER_REDUCTION,
         )
     } ?: collapsedCornerRadius
+    val expandedArtworkCornerRadius = if (circularArtwork) {
+        with(density) { (target.width / 2f).toDp() }
+    } else {
+        PLAYER_FULL_ARTWORK_CORNER_RADIUS
+    }
     val artworkCornerRadius = lerp(
-        collapsedArtworkCornerRadius.value,
-        PLAYER_FULL_ARTWORK_CORNER_RADIUS.value,
+        collapsedArtworkCornerRadius.value * transition.overlayMiniPlayerScale,
+        expandedArtworkCornerRadius.value,
         progress,
     )
 
@@ -557,10 +606,12 @@ internal fun PlayerSheetArtworkOverlay(
                 size = with(density) { source.width.coerceAtLeast(1f).toDp() },
                 cornerRadius = localCornerRadius,
                 modifier = Modifier,
-                contentScale = ContentScale.Fit,
+                contentScale = if (squareClip) ContentScale.Crop else ContentScale.Fit,
                 useSquircleClip = true,
                 drawArtworkShadow = true,
+                artworkAlpha = if (artworkBlend.isPlaceholder) placeholderArtworkAlpha else 1f,
                 artworkShadowAlpha = progress,
+                circular = circularArtwork,
             )
         }
     } else {
@@ -596,7 +647,28 @@ internal fun PlayerSheetArtworkOverlay(
                     translationY = frameBounds.top - targetBounds.top
                 },
         ) {
-            artworkBlend.frames.forEachIndexed { index, frame ->
+            if (artworkBlend.flipState != null) {
+                ArtworkFlipLayer(artworkBlend.flipState, Modifier.fillMaxSize(),
+                    contentScale = if (squareClip) ContentScale.Crop else ContentScale.Fit) { face, blur ->
+                    Image(
+                        bitmap = face.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize()
+                            .playbackArtworkShadow(localCornerRadius, progress, circular = circularArtwork)
+                            .playbackArtworkClip(localCornerRadius, circularArtwork)
+                            .graphicsLayer {
+                                alpha = if (artworkBlend.flipState.visibleIsPlaceholder) {
+                                    placeholderArtworkAlpha
+                                } else {
+                                    1f
+                                }
+                            }
+                            .then(blur),
+                        contentScale = if (squareClip) ContentScale.Crop else ContentScale.Fit,
+                        filterQuality = FilterQuality.High,
+                    )
+                }
+            } else artworkBlend.frames.forEachIndexed { index, frame ->
                 Image(
                     bitmap = frame.value.asImageBitmap(),
                     contentDescription = null,
@@ -604,16 +676,50 @@ internal fun PlayerSheetArtworkOverlay(
                         .fillMaxSize()
                         .playbackArtworkShadow(
                             cornerRadius = localCornerRadius,
-                            alpha = progress,
+                            alpha = if (frame.isPlaceholder) {
+                                progress * placeholderArtworkAlpha
+                            } else {
+                                progress
+                            },
+                            circular = circularArtwork,
                         )
-                        .squircleClip(localCornerRadius)
-                        .graphicsLayer { alpha = artworkLayerAlphas[index] },
-                    contentScale = ContentScale.Fit,
+                        .playbackArtworkClip(localCornerRadius, circularArtwork)
+                        .graphicsLayer {
+                            alpha = artworkLayerAlphas[index]
+                        },
+                    contentScale = if (squareClip) ContentScale.Crop else ContentScale.Fit,
                     filterQuality = FilterQuality.High,
                 )
             }
         }
     }
+}
+
+@Composable
+private fun playerSheetContainerCornerRadii(
+    transition: PlayerSheetTransitionState,
+    collapsedCornerRadius: Dp,
+): SharedContainerCornerRadii {
+    val density = LocalDensity.current
+    val deviceCornerRadius = getRoundedCorner()
+    val expandedCornerRadius = if (rememberPlayerWindowUsesPhysicalScreenCorners()) {
+        deviceCornerRadius
+    } else {
+        0.dp
+    }
+    val sourceBounds = transition.overlayMiniPlayerBounds
+    val sourceRadius = with(density) {
+        sharedContainerSourceCornerRadius(
+            nominalRadius = collapsedCornerRadius.value * transition.overlayMiniPlayerScale,
+            sourceWidth = sourceBounds.width.toDp().value,
+            sourceHeight = sourceBounds.height.toDp().value,
+        )
+    }
+    return sharedContainerCornerRadii(
+        source = SharedContainerCornerRadii.uniform(sourceRadius),
+        target = SharedContainerCornerRadii.uniform(expandedCornerRadius.value),
+        progress = transition.progress,
+    )
 }
 
 @Composable

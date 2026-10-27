@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import com.melox.player.ui.usesMiuixSmallTopAppBar
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
@@ -20,10 +21,11 @@ internal fun AdaptiveTopAppBar(
     actions: @Composable RowScope.() -> Unit = {},
     bottomContent: @Composable () -> Unit = {},
 ) {
+    val barModifier = modifier.stableTopAppBarInsets(color)
     if (usesMiuixSmallTopAppBar()) {
         SmallTopAppBar(
             title = title,
-            modifier = modifier,
+            modifier = barModifier,
             color = color,
             navigationIcon = navigationIcon,
             actions = actions,
@@ -33,7 +35,7 @@ internal fun AdaptiveTopAppBar(
     } else {
         TopAppBar(
             title = title,
-            modifier = modifier,
+            modifier = barModifier,
             color = color,
             navigationIcon = navigationIcon,
             actions = actions,
@@ -42,3 +44,9 @@ internal fun AdaptiveTopAppBar(
         )
     }
 }
+
+@Composable
+internal fun expandedTopBarBottomContentGap(
+    scrollBehavior: ScrollBehavior,
+    expandedGap: Dp,
+): Dp = expandedGap * (1f - scrollBehavior.state.collapsedFraction.coerceIn(0f, 1f))

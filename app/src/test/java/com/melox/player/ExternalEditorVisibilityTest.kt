@@ -9,13 +9,18 @@ import org.junit.Test
 
 class ExternalEditorVisibilityTest {
     @Test
-    fun defaultSettingsShowBothEditorsInTheExistingOrder() {
+    fun defaultSettingsEnableAllEditors() {
         val settings = AppSettings()
         assertTrue(settings.showMusicTagEditor)
         assertTrue(settings.showLyricoEditor)
+        assertTrue(settings.showLunaBeatEditor)
         assertEquals(
-            listOf(ExternalEditorKind.MusicTagEditor, ExternalEditorKind.Lyrico),
-            visibleExternalEditors(settings.showMusicTagEditor, settings.showLyricoEditor),
+            ExternalEditorKind.entries,
+            visibleExternalEditors(
+                settings.showMusicTagEditor,
+                settings.showLyricoEditor,
+                settings.showLunaBeatEditor,
+            ),
         )
     }
 
@@ -23,7 +28,11 @@ class ExternalEditorVisibilityTest {
     fun hidingMusicTagEditorPreservesLyrico() {
         assertEquals(
             listOf(ExternalEditorKind.Lyrico),
-            visibleExternalEditors(showMusicTagEditor = false, showLyricoEditor = true),
+            visibleExternalEditors(
+                showMusicTagEditor = false,
+                showLyricoEditor = true,
+                showLunaBeatEditor = false,
+            ),
         )
     }
 
@@ -31,22 +40,47 @@ class ExternalEditorVisibilityTest {
     fun hidingLyricoPreservesMusicTagEditor() {
         assertEquals(
             listOf(ExternalEditorKind.MusicTagEditor),
-            visibleExternalEditors(showMusicTagEditor = true, showLyricoEditor = false),
+            visibleExternalEditors(
+                showMusicTagEditor = true,
+                showLyricoEditor = false,
+                showLunaBeatEditor = false,
+            ),
         )
     }
 
     @Test
-    fun hidingBothEditorsRemovesBothEntries() {
-        assertTrue(visibleExternalEditors(false, false).isEmpty())
+    fun hidingAllEditorsRemovesAllEntries() {
+        assertTrue(visibleExternalEditors(false, false, false).isEmpty())
     }
 
     @Test
     fun enablingEditorsAgainRestoresTheirOrder() {
-        val settings = AppSettings(showMusicTagEditor = false, showLyricoEditor = false)
+        val settings = AppSettings(showMusicTagEditor = false, showLyricoEditor = false, showLunaBeatEditor = false)
             .copy(showMusicTagEditor = true, showLyricoEditor = true)
         assertEquals(
             listOf(ExternalEditorKind.MusicTagEditor, ExternalEditorKind.Lyrico),
-            visibleExternalEditors(settings.showMusicTagEditor, settings.showLyricoEditor),
+            visibleExternalEditors(
+                settings.showMusicTagEditor,
+                settings.showLyricoEditor,
+                settings.showLunaBeatEditor,
+            ),
         )
+    }
+
+    @Test
+    fun allSwitchCombinationsKeepOnlyEnabledEditorsInOrder() {
+        val editors = listOf(
+            ExternalEditorKind.MusicTagEditor,
+            ExternalEditorKind.Lyrico,
+            ExternalEditorKind.LunaBeat,
+        )
+        for (mask in 0..7) {
+            val enabled = List(3) { index -> mask and (1 shl index) != 0 }
+            assertEquals(
+                "Switch combination $mask",
+                editors.filterIndexed { index, _ -> enabled[index] },
+                visibleExternalEditors(enabled[0], enabled[1], enabled[2]),
+            )
+        }
     }
 }
