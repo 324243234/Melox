@@ -21,8 +21,6 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -63,7 +61,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -151,7 +148,6 @@ import com.melox.player.ui.component.playback.rememberPlayerSheetVerticalDragMod
 import com.melox.player.ui.component.liquid.rememberCombinedBackdrop
 import com.melox.player.ui.component.playback.artworkInsetRect
 import com.melox.player.ui.component.playback.fittedArtworkRect
-import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToLong
 import kotlin.math.roundToInt
@@ -421,40 +417,6 @@ internal fun FullPlayerScreen(
         initialPage = if (initialArtworkPageSelected || item == null) 0 else 1,
         pageCount = { 2 },
     )
-
-    // ====== 【保留本地：协程作用域，用于控制 Pager 翻页】 ======
-    val coroutineScope = rememberCoroutineScope()
-
-    // ====== 【保留本地：横向滑动切歌 + 单击切换面板 手势】 ======
-    val artworkGestureModifier = Modifier
-        .pointerInput(Unit) {
-            var dragOffset = 0f
-            detectHorizontalDragGestures(
-                onDragStart = { dragOffset = 0f },
-                onHorizontalDrag = { change, dragAmount ->
-                    change.consume()
-                    dragOffset += dragAmount
-                },
-                onDragEnd = {
-                    // 超过 60f 判定为有效切歌，防止误触
-                    if (dragOffset < -60f) onNext()
-                    else if (dragOffset > 60f) onPrevious()
-                    dragOffset = 0f
-                }
-            )
-        }
-        .pointerInput(Unit) {
-            detectTapGestures(
-                onTap = {
-                    // 单击封面时，平滑切换右侧面板 (0: 控制, 1: 歌词)
-                    coroutineScope.launch {
-                        val targetPage = if (pagerState.currentPage == 0) 1 else 0
-                        pagerState.animateScrollToPage(targetPage)
-                    }
-                }
-            )
-        }
-
     LaunchedEffect(lyricFontScale) {
         displayedLyricFontScale = lyricFontScale
     }
@@ -678,12 +640,9 @@ internal fun FullPlayerScreen(
                                     )
                                     Spacer(Modifier.height(LANDSCAPE_PLAYER_TITLE_TO_ARTWORK_SPACING))
                                     BoxWithConstraints(
-                                        // 【修改这里】：结合宽屏状态下的手势
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .weight(1f)
-                                            .padding(end = 48.dp)
-                                            .then(artworkGestureModifier),
+                                            .weight(1f),
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         PlayerArtwork(
@@ -769,8 +728,7 @@ internal fun FullPlayerScreen(
                                             resumeFollowRequestKey = lyricsFollowRequestKey,
                                             seekRequestKey = lyricsSeekRequestKey,
                                             seekPositionMs = lyricsSeekPositionMs,
-                                            // 【修改这里】：保留本地的 28dp 舒适留白
-                                            modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp).then(
+                                            modifier = Modifier.fillMaxSize().then(
                                                 if (lyricBackdrop != null) Modifier.layerBackdrop(lyricBackdrop)
                                                 else Modifier,
                                             ),
@@ -795,26 +753,18 @@ internal fun FullPlayerScreen(
                                 lyricsPagingEnabled = lyricsPagingEnabled && item != null,
                                 immersiveMode = immersiveMode,
                                 artworkContent = { artworkSize ->
-                                    // 【修改这里】：将点击与滑动手势附加在紧凑模式封面外层
-                                    Box(
-                                        modifier = Modifier
-                                            .padding(end = 24.dp)
-                                            .then(artworkGestureModifier),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        PlayerArtwork(
-                                            circularArtwork = circularArtwork, squareArtwork = squareArtwork,
-                                            showArtwork = item != null,
-                                            size = artworkSize,
-                                            artworkPadding = artworkPadding,
-                                            artworkBlend = artworkBlend,
-                                            cornerRadius = artworkCornerRadius,
-                                            sharedArtworkVisible = sharedArtworkVisible,
-                                            onArtworkBoundsChanged = onArtworkBoundsChanged,
-                                            onArtworkDisplaySizeChanged =
-                                                onArtworkDisplaySizeChanged,
-                                        )
-                                    }
+                                    PlayerArtwork(
+                                        circularArtwork = circularArtwork, squareArtwork = squareArtwork,
+                                        showArtwork = item != null,
+                                        size = artworkSize,
+                                        artworkPadding = artworkPadding,
+                                        artworkBlend = artworkBlend,
+                                        cornerRadius = artworkCornerRadius,
+                                        sharedArtworkVisible = sharedArtworkVisible,
+                                        onArtworkBoundsChanged = onArtworkBoundsChanged,
+                                        onArtworkDisplaySizeChanged =
+                                            onArtworkDisplaySizeChanged,
+                                    )
                                 },
                                 headerContent = { contentWidth ->
                                     PlayerHeader(
@@ -885,10 +835,8 @@ internal fun FullPlayerScreen(
                                             resumeFollowRequestKey = lyricsFollowRequestKey,
                                             seekRequestKey = lyricsSeekRequestKey,
                                             seekPositionMs = lyricsSeekPositionMs,
-                                            // 【修改这里】：保留本地的 28dp 舒适留白
                                             modifier = Modifier
                                                 .fillMaxSize()
-                                                .padding(horizontal = 28.dp)
                                                 .then(
                                                     if (lyricBackdrop != null) Modifier.layerBackdrop(lyricBackdrop)
                                                     else Modifier,
@@ -1000,8 +948,7 @@ internal fun FullPlayerScreen(
                                     resumeFollowRequestKey = lyricsFollowRequestKey,
                                     seekRequestKey = lyricsSeekRequestKey,
                                     seekPositionMs = lyricsSeekPositionMs,
-                                    // 【修改这里】：保留本地竖屏 28dp 的舒适边距
-                                    modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp),
+                                    modifier = Modifier.fillMaxSize(),
                                     lyricsBackground = lyricActionsBackground,
                                     lyricsViewportTopInset = portraitHeaderHeight,
                                     immersiveMode = immersiveMode,
@@ -1151,8 +1098,7 @@ internal fun FullPlayerScreen(
                                             resumeFollowRequestKey = lyricsFollowRequestKey,
                                             seekRequestKey = lyricsSeekRequestKey,
                                             seekPositionMs = lyricsSeekPositionMs,
-                                            // 【修改这里】：保留本地竖屏 28dp 的舒适边距
-                                            modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp),
+                                            modifier = Modifier.fillMaxSize(),
                                             lyricsBackground = lyricActionsBackground,
                                             lyricsBackdrop = lyricBackdrop,
                                             lyricsViewportTopInset = portraitHeaderHeight,
@@ -1251,4 +1197,608 @@ internal fun FullPlayerScreen(
                                             onOpenAudioSettings = { showAudioSettings = true },
                                             onOpenSleepTimer = { showSleepTimer = true },
                                             onOpenQueue = onOpenQueue,
-                                            onOpen
+                                            onOpenTrackActions = {
+                                                if (currentTrack != null) {
+                                                    showTrackActions = true
+                                                }
+                                            },
+                                        )
+                                    },
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
+                        }
+                    }
+                    if (playerLayout == PlayerLayout.PORTRAIT) {
+                        Column(
+                            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                                .then(if (!immersiveMode) dismissGestureModifier else Modifier)
+                                .playerChromeVisibility(!immersiveMode)
+                                .padding(top = headerTopPadding),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            PlayerHeader(
+                                item = item,
+                                trackChangeDirection = playback.trackChangeDirection,
+                                titleColor = emphasisControlColor,
+                                artistColor = artistControlColor,
+                                leftAligned = displayedLeftAlignPlayerTitle,
+                                titleSlotHeight = playerHeaderTitleSlotHeight,
+                                artistSlotHeight = playerHeaderArtistSlotHeight,
+                                modifier = Modifier
+                                    .width(portraitArtworkContentWidth)
+                                    .then(
+                                        rememberPlayerHeaderGestureModifier(
+                                            enabled = !immersiveMode && hideLyricsControls &&
+                                                lyricsPagingEnabled && item != null &&
+                                                pagerState.settledPage == 1 &&
+                                                !pagerState.isScrollInProgress,
+                                            playWhenReady = playback.playWhenReady,
+                                            onTogglePlayPause = onTogglePlayPause,
+                                            onPrevious = { onPrevious() },
+                                            onNext = { onNext() },
+                                        ),
+                                    ),
+                            )
+                            Spacer(Modifier.height(headerSpacing))
+                        }
+                    }
+                    }
+                }
+                TrackActionsOverlay(
+                    track = currentTrack.takeIf { showTrackActions },
+                    onDismiss = { showTrackActions = false },
+                    onPlayNext = onPlayNext,
+                    onAppendToQueue = onAppendToQueue,
+                    onAddToPlaylist = onAddToPlaylist,
+                    onGoToAlbum = onGoToAlbum,
+                    artistGroups = artistGroups,
+                    onGoToArtist = onGoToArtist,
+                    onExternalEditReturned = onExternalEditReturned,
+                    showMusicTagEditor = showMusicTagEditor,
+                    showLyricoEditor = showLyricoEditor,
+                    showLunaBeatEditor = showLunaBeatEditor,
+                )
+                PlayerSettingsSheet(
+                    show = showLyricsSettings,
+                    leftAlignPlayerTitle = displayedLeftAlignPlayerTitle,
+                    lyricFontScale = displayedLyricFontScale,
+                    lyricFontWeight = displayedLyricFontWeight,
+                    lyricAnimationMode = displayedLyricAnimationMode,
+                    lyricBlurEnabled = displayedLyricBlurEnabled,
+                    centerLyrics = displayedCenterLyrics,
+                    centerLyricsEnabled = centerLyricsEnabled,
+                    hideControlsOnLyrics = displayedHideControlsOnLyrics,
+                    onDismiss = { showLyricsSettings = false },
+                    onLeftAlignPlayerTitleChange = {
+                        displayedLeftAlignPlayerTitle = it
+                        onLeftAlignPlayerTitleChange(it)
+                    },
+                    onLyricFontScalePreview = { displayedLyricFontScale = it },
+                    onLyricFontScaleCommit = {
+                        onLyricFontScaleChange(displayedLyricFontScale)
+                    },
+                    onLyricFontWeightPreview = { displayedLyricFontWeight = it },
+                    onLyricFontWeightCommit = {
+                        onLyricFontWeightChange(displayedLyricFontWeight)
+                    },
+                    onLyricAnimationModeChange = {
+                        displayedLyricAnimationMode = it
+                        onLyricAnimationModeChange(it)
+                    },
+                    onLyricBlurEnabledChange = {
+                        displayedLyricBlurEnabled = it
+                        onLyricBlurEnabledChange(it)
+                    },
+                    onCenterLyricsChange = {
+                        displayedCenterLyrics = it
+                        onCenterLyricsChange(it)
+                    },
+                    onHideControlsOnLyricsChange = {
+                        displayedHideControlsOnLyrics = it
+                        onHideControlsOnLyricsChange(it)
+                    },
+                )
+                LyricsTranslationSheet(
+                    show = showTranslationSettings,
+                    onDismiss = { showTranslationSettings = false },
+                    showLyricsTranslation = displayedShowLyricsTranslation,
+                    showLyricsRomanization = displayedShowLyricsRomanization,
+                    lyricsTranslationLanguage = displayedLyricsTranslationLanguage,
+                    onShowLyricsTranslationChange = {
+                        displayedShowLyricsTranslation = it
+                        onShowLyricsTranslationChange(it)
+                    },
+                    onLyricsTranslationLanguageChange = {
+                        displayedLyricsTranslationLanguage = it
+                        onLyricsTranslationLanguageChange(it)
+                    },
+                    onShowLyricsRomanizationChange = {
+                        displayedShowLyricsRomanization = it
+                        onShowLyricsRomanizationChange(it)
+                    },
+                )
+                SleepTimerSheet(
+                    show = showSleepTimer,
+                    timerSeconds = sleepTimerSeconds,
+                    timerState = sleepTimerState,
+                    autoExtendSleepTimer = autoExtendSleepTimer,
+                    onAutoExtendSleepTimerChange = onAutoExtendSleepTimerChange,
+                    onDismiss = { showSleepTimer = false },
+                    onTimerSecondsChange = onSleepTimerSecondsChange,
+                    onStartTimer = onStartSleepTimer,
+                    onCancelTimer = onCancelSleepTimer,
+                )
+                AudioSettingsSheet(
+                    show = showAudioSettings,
+                    playbackSpeed = playback.playbackSpeed,
+                    audioSessionId = playback.audioSessionId,
+                    playbackPauseFade = playbackPauseFade,
+                    onPlaybackPauseFadeChange = onPlaybackPauseFadeChange,
+                    onDismiss = { showAudioSettings = false },
+                    onPlaybackSpeedChange = onPlaybackSpeedChange,
+                )
+                OverlayDialog(
+                    show = showTimerInterruption,
+                    title = stringResource(R.string.playback_timer_extension_title),
+                    summary = stringResource(R.string.playback_timer_extension_interrupted),
+                    onDismissRequest = {
+                        showTimerInterruption = false
+                        onAcknowledgeSleepTimerInterruption()
+                    },
+                ) {
+                    TextButton(
+                        text = stringResource(R.string.playback_timer_confirm),
+                        onClick = {
+                            showTimerInterruption = false
+                            onAcknowledgeSleepTimerInterruption()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+    }
+}
+
+}
+
+@Composable
+private fun PlayerSettingsSheet(
+    show: Boolean,
+    leftAlignPlayerTitle: Boolean,
+    lyricFontScale: Float,
+    lyricFontWeight: Int,
+    lyricAnimationMode: LyricAnimationMode,
+    lyricBlurEnabled: Boolean,
+    centerLyrics: Boolean,
+    centerLyricsEnabled: Boolean,
+    hideControlsOnLyrics: Boolean,
+    onDismiss: () -> Unit,
+    onLeftAlignPlayerTitleChange: (Boolean) -> Unit,
+    onLyricFontScalePreview: (Float) -> Unit,
+    onLyricFontScaleCommit: () -> Unit,
+    onLyricFontWeightPreview: (Int) -> Unit,
+    onLyricFontWeightCommit: () -> Unit,
+    onLyricAnimationModeChange: (LyricAnimationMode) -> Unit,
+    onLyricBlurEnabledChange: (Boolean) -> Unit,
+    onCenterLyricsChange: (Boolean) -> Unit,
+    onHideControlsOnLyricsChange: (Boolean) -> Unit,
+) {
+    val wideLayout = usesMiuixSmallTopAppBar()
+    val bottomPadding = WindowInsets.navigationBars
+        .asPaddingValues()
+        .calculateBottomPadding()
+    OverlayBottomSheet(
+        show = show,
+        modifier = bottomSheetGlassModifier(),
+        backgroundColor = bottomSheetMaterialColor(),
+        title = stringResource(R.string.player_settings),
+        enableWindowDim = true,
+        onDismissRequest = onDismiss,
+    ) {
+        val scrollState = rememberScrollState()
+        LyricsInterfacePreferences(
+            leftAlignPlayerTitle = leftAlignPlayerTitle,
+            centerLyrics = centerLyrics,
+            centerLyricsEnabled = centerLyricsEnabled,
+            lyricFontScale = lyricFontScale,
+            lyricFontWeight = lyricFontWeight,
+            lyricBlurEnabled = lyricBlurEnabled,
+            lyricAnimationMode = lyricAnimationMode,
+            hideControlsOnLyrics = hideControlsOnLyrics,
+            onLeftAlignPlayerTitleChange = onLeftAlignPlayerTitleChange,
+            onCenterLyricsChange = onCenterLyricsChange,
+            onLyricFontScalePreview = onLyricFontScalePreview,
+            onLyricFontScaleCommit = onLyricFontScaleCommit,
+            onLyricFontWeightPreview = onLyricFontWeightPreview,
+            onLyricFontWeightCommit = onLyricFontWeightCommit,
+            onLyricBlurEnabledChange = onLyricBlurEnabledChange,
+            onLyricAnimationModeChange = onLyricAnimationModeChange,
+            onHideControlsOnLyricsChange = onHideControlsOnLyricsChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .overScrollVertical(
+                    nestedScrollToParent = false,
+                    isEnabled = { scrollState.maxValue > 0 },
+                )
+                .verticalScroll(scrollState, overscrollEffect = null)
+                .padding(bottom = bottomPadding + 12.dp),
+            cardColor = bottomSheetCardColor(),
+            usePageMaterial = false,
+            showHideControls = !wideLayout,
+        )
+    }
+}
+
+@Composable
+private fun LyricsTranslationSheet(
+    show: Boolean,
+    showLyricsTranslation: Boolean,
+    showLyricsRomanization: Boolean,
+    lyricsTranslationLanguage: LyricsTranslationLanguage,
+    onDismiss: () -> Unit,
+    onShowLyricsTranslationChange: (Boolean) -> Unit,
+    onShowLyricsRomanizationChange: (Boolean) -> Unit,
+    onLyricsTranslationLanguageChange: (LyricsTranslationLanguage) -> Unit,
+) {
+    val scrollState = rememberScrollState()
+    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    OverlayBottomSheet(
+        show = show,
+        modifier = bottomSheetGlassModifier(),
+        backgroundColor = bottomSheetMaterialColor(),
+        title = stringResource(R.string.lyrics_translation),
+        enableWindowDim = true,
+        onDismissRequest = onDismiss,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth()
+                .overScrollVertical(
+                    nestedScrollToParent = false,
+                    isEnabled = { scrollState.maxValue > 0 },
+                )
+                .verticalScroll(scrollState, overscrollEffect = null)
+                .padding(bottom = bottomPadding + 12.dp),
+        ) {
+            Card(colors = CardDefaults.defaultColors(color = bottomSheetCardColor())) {
+                LyricsTranslationPreferences(
+                    showLyricsTranslation = showLyricsTranslation,
+                    showLyricsRomanization = showLyricsRomanization,
+                    lyricsTranslationLanguage = lyricsTranslationLanguage,
+                    onShowLyricsTranslationChange = onShowLyricsTranslationChange,
+                    onShowLyricsRomanizationChange = onShowLyricsRomanizationChange,
+                    onLyricsTranslationLanguageChange = onLyricsTranslationLanguageChange,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun TappableSliderPreference(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    title: String,
+    valueText: String,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int = 0,
+    onValueChangeFinished: (() -> Unit)? = null,
+    showKeyPoints: Boolean = false,
+    keyPoints: List<Float>? = null,
+    magnetThreshold: Float = 0.02f,
+    enabled: Boolean = true,
+    summary: String? = null,
+) {
+    val layoutDirection = LocalLayoutDirection.current
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+    val currentOnValueChangeFinished by rememberUpdatedState(onValueChangeFinished)
+    val currentEnabled by rememberUpdatedState(enabled)
+
+    BasicComponent(
+        title = title,
+        summary = summary,
+        enabled = enabled,
+        endActions = {
+            Row(
+                modifier = Modifier
+                    .padding(end = 8.dp)
+                    .align(Alignment.CenterVertically)
+                    .weight(1f, fill = false),
+            ) {
+                Text(
+                    text = valueText,
+                    fontSize = MiuixTheme.textStyles.body2.fontSize,
+                    color = if (enabled) MiuixTheme.colorScheme.onSurfaceVariantActions
+                    else MiuixTheme.colorScheme.disabledOnSecondaryVariant,
+                )
+            }
+        },
+        bottomAction = {
+            Slider(
+                value = value,
+                enabled = enabled,
+                onValueChange = { if (currentEnabled) currentOnValueChange(it) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics {
+                        if (!enabled) {
+                            disabled()
+                            setProgress { false }
+                        }
+                    }
+                    .pointerInput(enabled, valueRange, steps, keyPoints, magnetThreshold, layoutDirection) {
+                        if (!enabled) return@pointerInput
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            var pointerPosition = down.position
+                            var maxDistance = 0f
+                            while (true) {
+                                val change = awaitPointerEvent().changes
+                                    .firstOrNull { it.id == down.id }
+                                    ?: break
+                                pointerPosition = change.position
+                                maxDistance = maxOf(
+                                    maxDistance,
+                                    (pointerPosition - down.position).getDistance(),
+                                )
+                                if (!change.pressed) {
+                                    if (maxDistance < viewConfiguration.touchSlop) {
+                                        val tappedValue = sliderValueAtPosition(
+                                            positionX = pointerPosition.x,
+                                            width = size.width,
+                                            height = size.height,
+                                            valueRange = valueRange,
+                                            steps = steps,
+                                            keyPoints = keyPoints,
+                                            magnetThreshold = magnetThreshold,
+                                            reverseDirection = layoutDirection == LayoutDirection.Rtl,
+                                        )
+                                        currentOnValueChange(tappedValue)
+                                        currentOnValueChangeFinished?.invoke()
+                                    }
+                                    break
+                                }
+                            }
+                        }
+                    },
+                valueRange = valueRange,
+                steps = steps,
+                onValueChangeFinished = currentOnValueChangeFinished?.let { callback ->
+                    { if (currentEnabled) callback() }
+                },
+                showKeyPoints = showKeyPoints,
+                keyPoints = keyPoints,
+                magnetThreshold = magnetThreshold,
+            )
+        },
+    )
+}
+
+internal fun sliderValueAtPosition(
+    positionX: Float,
+    width: Int,
+    height: Int,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    keyPoints: List<Float>?,
+    magnetThreshold: Float,
+    reverseDirection: Boolean,
+): Float {
+    val thumbRadius = height / 2f
+    val availableWidth = (width - 2f * thumbRadius).coerceAtLeast(0f)
+    val visualFraction = if (availableWidth == 0f) {
+        0f
+    } else {
+        ((positionX - thumbRadius) / availableWidth).coerceIn(0f, 1f)
+    }
+    val fraction = if (reverseDirection) 1f - visualFraction else visualFraction
+    val rangeLength = valueRange.endInclusive - valueRange.start
+    if (steps > 0) {
+        val intervalCount = steps + 1
+        val stepIndex = (fraction * intervalCount).roundToInt().coerceIn(0, intervalCount)
+        return valueRange.start + rangeLength * stepIndex / intervalCount
+    }
+    val baseValue = valueRange.start + rangeLength * fraction
+    val nearestKeyPoint = keyPoints
+        ?.minByOrNull { point ->
+            abs((point - valueRange.start) / rangeLength - fraction)
+        }
+        ?: return baseValue
+    val keyPointFraction = (nearestKeyPoint - valueRange.start) / rangeLength
+    return if (abs(keyPointFraction - fraction) < magnetThreshold) {
+        nearestKeyPoint
+    } else {
+        baseValue
+    }
+}
+
+private data class PlayerHeaderContent(
+    val trackKey: String?,
+    val direction: Int,
+    val title: String,
+    val artist: String,
+)
+
+internal fun playerHeaderArtistText(artist: String): AnnotatedString = buildAnnotatedString {
+    artist.split(" / ").forEachIndexed { index, name ->
+        if (index > 0) {
+            append(' ')
+            withStyle(SpanStyle(fontWeight = FontWeight.Thin)) {
+                append('/')
+            }
+            append(' ')
+        }
+        append(name)
+    }
+}
+
+@Composable
+private fun PlayerHeader(
+    item: PlaybackQueueItem?,
+    trackChangeDirection: Int,
+    titleColor: Color,
+    artistColor: Color,
+    leftAligned: Boolean,
+    titleSlotHeight: Dp,
+    artistSlotHeight: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val header = PlayerHeaderContent(
+        trackKey = item?.contentUri,
+        direction = trackChangeDirection,
+        title = item?.title ?: stringResource(R.string.mini_player_title),
+        artist = displayArtistName(item?.artist)
+            ?: stringResource(if (item == null) R.string.mini_player_empty else R.string.music_unknown_artist),
+    )
+    val headerTransition = updateTransition(header, label = "playerHeaderTrack")
+    val alignmentProgress = animateFloatAsState(
+        targetValue = if (leftAligned) 0f else 1f,
+        animationSpec = playerTextAlignmentSpec(),
+        label = "playerHeaderAlignment",
+    )
+    val titleFadeWidthPx = with(LocalDensity.current) {
+        PLAYER_HEADER_TITLE_EDGE_FADE_WIDTH.roundToPx()
+    }
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = if (leftAligned) Alignment.Start else Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(1.dp),
+    ) {
+        Box(
+            modifier = Modifier.fillMaxWidth().heightIn(min = titleSlotHeight),
+            contentAlignment = if (leftAligned) Alignment.CenterStart else Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .expandLeftForMarquee(PLAYER_HEADER_TITLE_EDGE_FADE_WIDTH)
+                    .fillMaxWidth()
+                    .playerHeaderEdgeMask(),
+            ) {
+                headerTransition.AnimatedContent(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentKey = { it.trackKey to it.direction },
+                    transitionSpec = {
+                        slideInHorizontally(tween(PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS)) { it * targetState.direction }
+                            .togetherWith(
+                                slideOutHorizontally(tween(PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS)) { -it * targetState.direction },
+                            ).using(null)
+                    },
+                ) { target ->
+                    var titleLayout by remember(target.trackKey) {
+                        mutableStateOf<TextLayoutResult?>(null)
+                    }
+                    Box(
+                        modifier = Modifier.fillMaxWidth()
+                            .animatedPlayerTextAlignment(
+                                layout = titleLayout,
+                                progress = alignmentProgress,
+                                viewportInsetPx = titleFadeWidthPx.toFloat(),
+                            )
+                            .basicMarquee(
+                                iterations = if (headerTransition.isRunning) 0 else 1,
+                                spacing = MarqueeSpacing.fractionOfContainer(
+                                    PLAYER_HEADER_MARQUEE_SPACING_FRACTION,
+                                ),
+                            ),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        Text(
+                            text = target.title,
+                            modifier = Modifier.fillMaxWidth()
+                                .padding(start = PLAYER_HEADER_TITLE_EDGE_FADE_WIDTH),
+                            style = MiuixTheme.textStyles.title3.copy(
+                                lineHeight = PLAYER_HEADER_TITLE_LINE_HEIGHT,
+                            ),
+                            color = titleColor,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Start,
+                            maxLines = 1,
+                            overflow = TextOverflow.Clip,
+                            onTextLayout = { titleLayout = it },
+                        )
+                    }
+                }
+            }
+        }
+        Box(
+            modifier = Modifier.fillMaxWidth().heightIn(min = artistSlotHeight),
+            contentAlignment = if (leftAligned) Alignment.CenterStart else Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .expandLeftForMarquee(PLAYER_HEADER_TITLE_EDGE_FADE_WIDTH)
+                    .fillMaxWidth()
+                    .playerHeaderEdgeMask(),
+            ) {
+                headerTransition.AnimatedContent(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentKey = { it.trackKey to it.direction },
+                    transitionSpec = {
+                        slideInHorizontally(tween(PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS)) { it * targetState.direction }
+                            .togetherWith(
+                                slideOutHorizontally(tween(PLAYER_TRACK_ARTWORK_CROSSFADE_DURATION_MILLIS)) { -it * targetState.direction },
+                            ).using(null)
+                    },
+                    contentAlignment = if (leftAligned) Alignment.CenterStart else Alignment.Center,
+                ) { target ->
+                    var artistLayout by remember(target.trackKey) {
+                        mutableStateOf<TextLayoutResult?>(null)
+                    }
+                    Text(
+                        text = playerHeaderArtistText(target.artist),
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(start = PLAYER_HEADER_TITLE_EDGE_FADE_WIDTH)
+                            .animatedPlayerTextAlignment(artistLayout, alignmentProgress),
+                        style = MiuixTheme.textStyles.body2.copy(
+                            fontSize = 14.sp,
+                            lineHeight = PLAYER_HEADER_ARTIST_LINE_HEIGHT,
+                        ),
+                        color = artistColor,
+                        textAlign = TextAlign.Start,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        onTextLayout = { artistLayout = it },
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun Modifier.playerHeaderEdgeMask(): Modifier = this
+    .graphicsLayer {
+        compositingStrategy = CompositingStrategy.Offscreen
+    }
+    .drawWithContent {
+        drawContent()
+        val fadeWidth = PLAYER_HEADER_TITLE_EDGE_FADE_WIDTH.toPx()
+        val edgeFraction = (
+            fadeWidth / size.width.coerceAtLeast(1f)
+        ).coerceIn(0f, 0.18f)
+        drawRect(
+            brush = Brush.horizontalGradient(
+                0f to Color.Transparent,
+                edgeFraction to Color.Black,
+                1f - edgeFraction to Color.Black,
+                1f to Color.Transparent,
+            ),
+            blendMode = BlendMode.DstIn,
+        )
+    }
+
+private fun Modifier.expandLeftForMarquee(extra: Dp): Modifier = layout { measurable, constraints ->
+    val extraPx = extra.roundToPx()
+    val expandedConstraints = constraints.copy(
+        minWidth = constraints.minWidth + extraPx,
+        maxWidth = constraints.maxWidth + extraPx,
+    )
+    val placeable = measurable.measure(expandedConstraints)
+    layout(constraints.maxWidth, placeable.height) {
+        placeable.placeRelative(-extraPx, 0)
+    }
+}
+
+internal fun progressGestureIsDrag(
+    horizontalDistancePx: Float,
+    touchSlopPx: Float,
+): Boolean = abs(horizontalDistancePx) >= touchSlopPx
