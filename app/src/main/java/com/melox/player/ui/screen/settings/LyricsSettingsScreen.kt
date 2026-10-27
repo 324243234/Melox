@@ -30,7 +30,7 @@ import com.melox.player.model.LyricsTranslationLanguage
 import com.melox.player.model.LyricAnimationMode
 import com.melox.player.R
 import com.melox.player.model.AppSettings
-import com.melox.player.model.LyricsSidecarFormatPriority
+import com.melox.player.model.LyricsFormatPriority
 import com.melox.player.model.LyricsSourcePriority
 import com.melox.player.ui.component.AdaptiveTopAppBar
 import com.melox.player.ui.component.BlurredBar
@@ -60,7 +60,7 @@ internal fun LyricsSettingsScreen(
     scrollBehavior: ScrollBehavior,
     onBack: () -> Unit,
     onLyricsSourcePriorityChange: (LyricsSourcePriority) -> Unit,
-    onLyricsSidecarFormatPriorityChange: (LyricsSidecarFormatPriority) -> Unit,
+    onLyricsFormatPriorityChange: (LyricsFormatPriority) -> Unit,
     onOpenLyricsInterface: () -> Unit,
     onShowMiniPlayerLyricsChange: (Boolean) -> Unit,
     onShowArtworkLyricsChange: (Boolean) -> Unit,
@@ -71,8 +71,8 @@ internal fun LyricsSettingsScreen(
     var sourcePriority by remember(settings.lyricsSourcePriority) {
         mutableStateOf(settings.lyricsSourcePriority)
     }
-    var formatPriority by remember(settings.lyricsSidecarFormatPriority) {
-        mutableStateOf(settings.lyricsSidecarFormatPriority)
+    var formatPriority by remember(settings.lyricsFormatPriority) {
+        mutableStateOf(settings.lyricsFormatPriority)
     }
     var showMiniPlayerLyrics by remember(settings.showMiniPlayerLyrics) {
         mutableStateOf(settings.showMiniPlayerLyrics)
@@ -127,23 +127,23 @@ internal fun LyricsSettingsScreen(
                 )
                 OverlaySpinnerPreference(
                     items = listOf(
-                        DropdownItem(text = stringResource(R.string.lyrics_sidecar_lrc)),
-                        DropdownItem(text = stringResource(R.string.lyrics_sidecar_ttml)),
+                        DropdownItem(text = stringResource(R.string.lyrics_format_lrc)),
+                        DropdownItem(text = stringResource(R.string.lyrics_format_ttml)),
                     ),
                     selectedIndex = when (formatPriority) {
-                        LyricsSidecarFormatPriority.LRC -> 0
-                        LyricsSidecarFormatPriority.TTML -> 1
+                        LyricsFormatPriority.LRC -> 0
+                        LyricsFormatPriority.TTML -> 1
                     },
-                    title = stringResource(R.string.lyrics_sidecar_format_priority),
+                    title = stringResource(R.string.lyrics_format_priority),
                     onSelectedIndexChange = { index ->
                         val priority = if (index == 0) {
-                            LyricsSidecarFormatPriority.LRC
+                            LyricsFormatPriority.LRC
                         } else {
-                            LyricsSidecarFormatPriority.TTML
+                            LyricsFormatPriority.TTML
                         }
                         if (priority != formatPriority) {
                             formatPriority = priority
-                            onLyricsSidecarFormatPriorityChange(priority)
+                            onLyricsFormatPriorityChange(priority)
                         }
                     },
                 )

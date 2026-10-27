@@ -398,7 +398,7 @@
     <string name="lyrics_source_priority">Lyrics source priority</string>
     <string name="lyrics_source_embedded">Embedded</string>
     <string name="lyrics_source_external">External</string>
-    <string name="lyrics_sidecar_format_priority">External lyrics priority</string>
+    <string name="lyrics_format_priority">Lyrics format priority</string>
     <string name="settings_lyrics_entry_title">Lyrics</string>
     <string name="settings_lyrics_title">Lyrics</string>
     <string name="settings_custom_background_title">Main screen background</string>
@@ -423,8 +423,8 @@
     <string name="lyrics_editor_lyrico">Lyrico</string>
     <string name="lyrics_editor_luna_beat">LunaBeat</string>
     <string name="settings_lyrics_interface_title">Lyrics interface</string>
-    <string name="lyrics_sidecar_lrc">.lrc</string>
-    <string name="lyrics_sidecar_ttml">.ttml</string>
+    <string name="lyrics_format_lrc">LRC</string>
+    <string name="lyrics_format_ttml">TTML</string>
 
     <string name="about_version">%1$s</string>
     <string name="about_project_title">Project repository</string>

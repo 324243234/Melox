@@ -54,7 +54,7 @@ import com.melox.player.model.NavigationTransitionStyle
 import com.melox.player.model.LyricLine
 import com.melox.player.model.LyricsDocument
 import com.melox.player.model.LyricsFormat
-import com.melox.player.model.LyricsSidecarFormatPriority
+import com.melox.player.model.LyricsFormatPriority
 import com.melox.player.model.LyricsSource
 import com.melox.player.model.LyricsSourcePriority
 import com.melox.player.model.LyricsUiState
@@ -413,8 +413,8 @@ class UiLogicTest {
         assertFalse(settings.showArtworkLyrics)
         assertEquals(LyricsSourcePriority.EMBEDDED, settings.lyricsSourcePriority)
         assertEquals(
-            LyricsSidecarFormatPriority.LRC,
-            settings.lyricsSidecarFormatPriority,
+            LyricsFormatPriority.LRC,
+            settings.lyricsFormatPriority,
         )
         assertEquals(true, settings.blurEnabled)
         assertFalse(settings.progressiveTopBarBlurEnabled)
@@ -764,7 +764,7 @@ class UiLogicTest {
             folderPath = "/Music/Album",
             durationMs = 10_000L,
             sourcePriority = LyricsSourcePriority.EMBEDDED,
-            sidecarFormatPriority = LyricsSidecarFormatPriority.TTML,
+            formatPriority = LyricsFormatPriority.TTML,
         )
         val sidecarFirst = embeddedFirst.copy(sourcePriority = LyricsSourcePriority.SIDECAR)
         val embeddedLyrics = LyricsDocument(
@@ -800,7 +800,7 @@ class UiLogicTest {
             shouldPublishLyricsResolution(
                 previousRequest = sidecarFirst,
                 request = sidecarFirst.copy(
-                    sidecarFormatPriority = LyricsSidecarFormatPriority.LRC,
+                    formatPriority = LyricsFormatPriority.LRC,
                 ),
                 previousDocument = ttmlSidecarLyrics,
                 document = lrcSidecarLyrics,

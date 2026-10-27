@@ -92,10 +92,10 @@ enum class LyricsSourcePriority {
     SIDECAR,
 }
 
-/** Selects which supported sidecar lyric extension is attempted first. */
-enum class LyricsSidecarFormatPriority {
-    LRC,
-    TTML,
+/** Selects the preferred parsed lyric format within each source. */
+enum class LyricsFormatPriority(val format: LyricsFormat) {
+    LRC(LyricsFormat.LRC),
+    TTML(LyricsFormat.TTML),
 }
 
 enum class LyricAnimationMode {
@@ -204,8 +204,8 @@ data class AppSettings(
     val showLyricoEditor: Boolean = true,
     val showLunaBeatEditor: Boolean = true,
     val lyricsSourcePriority: LyricsSourcePriority = LyricsSourcePriority.EMBEDDED,
-    val lyricsSidecarFormatPriority: LyricsSidecarFormatPriority =
-        LyricsSidecarFormatPriority.LRC,
+    val lyricsFormatPriority: LyricsFormatPriority =
+        LyricsFormatPriority.LRC,
     val blurEnabled: Boolean = true,
     val progressiveTopBarBlurEnabled: Boolean = false,
     val smallPlayerBar: Boolean = false,

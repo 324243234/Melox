@@ -10,7 +10,7 @@ import com.melox.player.data.repository.lyricsSourceOrder
 import com.melox.player.data.repository.stableDocumentTrackId
 import com.melox.player.data.repository.stableMediaStoreTrackId
 import com.melox.player.model.LyricsFormat
-import com.melox.player.model.LyricsSidecarFormatPriority
+import com.melox.player.model.LyricsFormatPriority
 import com.melox.player.model.LyricsSource
 import com.melox.player.model.LyricsSourcePriority
 import com.melox.player.model.ScanStatus
@@ -239,7 +239,7 @@ class MusicScanLogicTest {
             ),
             exactLyricsSidecarCandidates(
                 audioFileName = "Song Name.flac",
-                formatPriority = LyricsSidecarFormatPriority.TTML,
+                formatPriority = LyricsFormatPriority.TTML,
             ),
         )
         assertFalse(

@@ -66,7 +66,7 @@ import com.melox.player.model.DefaultHomePage
 import com.melox.player.model.DynamicColorSource
 import com.melox.player.model.LocalPlaylist
 import com.melox.player.model.LyricsDocument
-import com.melox.player.model.LyricsSidecarFormatPriority
+import com.melox.player.model.LyricsFormatPriority
 import com.melox.player.model.LyricsSourcePriority
 import com.melox.player.model.MusicTrack
 import com.melox.player.model.PlaybackMode
@@ -510,7 +510,7 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
             durationMs = target.second,
             refreshRevision = refreshRevision,
             sourcePriority = loadedSettings.value.lyricsSourcePriority,
-            sidecarFormatPriority = loadedSettings.value.lyricsSidecarFormatPriority,
+            formatPriority = loadedSettings.value.lyricsFormatPriority,
         )
     }
         .distinctUntilChanged()
@@ -882,9 +882,9 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun setLyricsSidecarFormatPriority(priority: LyricsSidecarFormatPriority) {
+    fun setLyricsFormatPriority(priority: LyricsFormatPriority) {
         viewModelScope.launch {
-            settingsRepository.setLyricsSidecarFormatPriority(priority)
+            settingsRepository.setLyricsFormatPriority(priority)
         }
     }
 

@@ -2126,8 +2126,8 @@ fun MeloxApp(
                                                             onBack = navigateBack,
                                                             onLyricsSourcePriorityChange =
                                                                 viewModel::setLyricsSourcePriority,
-                                                            onLyricsSidecarFormatPriorityChange =
-                                                                viewModel::setLyricsSidecarFormatPriority,
+                                                            onLyricsFormatPriorityChange =
+                                                                viewModel::setLyricsFormatPriority,
                                                             onShowMiniPlayerLyricsChange =
                                                                 viewModel::setShowMiniPlayerLyrics,
                                                             onShowArtworkLyricsChange =

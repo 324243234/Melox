@@ -385,7 +385,7 @@
     <string name="lyrics_source_priority">歌词来源优先级</string>
     <string name="lyrics_source_embedded">内嵌</string>
     <string name="lyrics_source_external">外置</string>
-    <string name="lyrics_sidecar_format_priority">外置歌词优先级</string>
+    <string name="lyrics_format_priority">歌词格式优先级</string>
     <string name="settings_lyrics_entry_title">歌词</string>
     <string name="settings_lyrics_title">歌词</string>
     <string name="settings_custom_background_title">主界面背景</string>
@@ -410,8 +410,8 @@
     <string name="lyrics_editor_lyrico">Lyrico</string>
     <string name="lyrics_editor_luna_beat">LunaBeat</string>
     <string name="settings_lyrics_interface_title">歌词界面</string>
-    <string name="lyrics_sidecar_lrc">.lrc</string>
-    <string name="lyrics_sidecar_ttml">.ttml</string>
+    <string name="lyrics_format_lrc">LRC</string>
+    <string name="lyrics_format_ttml">TTML</string>
 
     <string name="about_version">%1$s</string>
     <string name="about_project_title">项目仓库</string>
