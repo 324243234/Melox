@@ -6,6 +6,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import com.melox.player.model.LyricLine
 import com.melox.player.model.LyricAuxiliaryText
+import com.melox.player.model.LyricWord
 import com.melox.player.model.LyricsDocument
 import com.melox.player.model.LyricsFormat
 import com.melox.player.model.LyricsSource
@@ -14,6 +15,7 @@ import com.melox.player.ui.screen.playback.LyricPlaybackClock
 import com.melox.player.ui.screen.playback.compactLyricsDocument
 import com.melox.player.ui.screen.playback.compactPrimaryLines
 import com.melox.player.ui.screen.playback.compactLyricAuxiliaryText
+import com.melox.player.ui.screen.playback.compactLyricSingleLine
 import com.melox.player.ui.screen.playback.compactLyricRowCenters
 import com.melox.player.ui.screen.playback.compactLyricIndexAtPosition
 import com.melox.player.ui.screen.playback.compactLyricScrollTarget
@@ -215,6 +217,11 @@ class LyricPlaybackClockTest {
             true, true, com.melox.player.model.LyricsTranslationLanguage.AUTO, "zh-CN"))
         assertEquals(listOf("English"), compactLyricAuxiliaryText(multilingual,
             true, false, com.melox.player.model.LyricsTranslationLanguage.ENGLISH, "zh-CN"))
+        assertEquals(listOf("Romanization", "English", "Chinese"), compactLyricAuxiliaryText(multilingual,
+            true, true, com.melox.player.model.LyricsTranslationLanguage.ALL, "zh-CN"))
+        assertEquals(listOf("reading one", "reading two", "Translation", "second line"), compactLyricAuxiliaryText(
+            both.copy(translation = "Translation\r\nsecond line", romanizations = listOf(
+                LyricAuxiliaryText("reading one"), LyricAuxiliaryText("reading two"))), true, true))
         assertEquals(listOf("Translation"), compactLyricAuxiliaryText(both, true, false))
         assertEquals(listOf("Romanization"), compactLyricAuxiliaryText(both, false, true))
         assertEquals(emptyList<String>(), compactLyricAuxiliaryText(both, false, false))
@@ -230,6 +237,41 @@ class LyricPlaybackClockTest {
     }
 
     @Test
+    fun compactOriginalHardBreaksUseOneDisplayRowWithoutChangingWordTimes() {
+        for (separator in listOf("\r\n", "\r", "\n")) {
+            val words = listOf(LyricWord(1_000, 2_000, "Original${separator}second", false))
+            val line = LyricLine("main", 1_000, 2_000, null, words, null)
+            val single = compactLyricSingleLine(line)
+            assertEquals("Original second", single.displayText)
+            assertEquals(listOf(1_000L to 2_000L), single.words.map { it.startTimeMs to it.endTimeMs })
+            assertEquals(words, line.words)
+            assertEquals("Original second", compactLyricSingleLine(line.copy(text = line.displayText, words = emptyList())).displayText)
+        }
+    }
+
+    @Test
+    fun compactVisibleWindowPreservesVariableHeightCentersDuringFractionalScrolls() {
+        val heights = listOf(20f, 52f, 36f, 68f, 20f, 44f, 84f, 36f, 20f)
+        val global = compactLyricRowCenters(heights, 6f)
+        fun centerAt(centers: FloatArray, position: Float, firstRow: Int): Float {
+            val lower = (position.toInt() - firstRow).coerceIn(centers.indices)
+            val upper = (lower + 1).coerceAtMost(centers.lastIndex)
+            return centers[lower] + (centers[upper] - centers[lower]) * (position - lower - firstRow)
+        }
+        for (focus in heights.indices) {
+            val visible = (focus - 2).coerceAtLeast(0)..(focus + 2).coerceAtMost(heights.lastIndex)
+            val local = compactLyricRowCenters(heights.slice(visible), 6f)
+            for (delta in listOf(-1.5f, -0.5f, 0f, 0.5f, 1.5f)) {
+                val position = (focus + delta).coerceIn(0f, heights.lastIndex.toFloat())
+                for (row in visible) {
+                    assertEquals(global[row] - centerAt(global, position, 0),
+                        local[row - visible.first] - centerAt(local, position, visible.first), 0.001f)
+                }
+            }
+        }
+    }
+
+    @Test
     fun compactLongLinesFollowTheCursorAndStopAtTextEdges() {
         assertEquals(0f, compactLyricScrollTarget(100f, 400f, 0f, false), 0f)
         assertEquals(-150f, compactLyricScrollTarget(100f, 400f, 200f, false), 0f)
@@ -240,6 +282,7 @@ class LyricPlaybackClockTest {
         assertEquals(0f, scroll.update(0f, 1_000, 100f, 400f), 0f)
         val next = scroll.update(-100f, 1_250, 100f, 400f)
         assertEquals(-63.212f, next, 0.001f)
+        repeat(3) { assertEquals(next, scroll.update(-100f, 1_250, 100f, 400f), 0f) }
         // A backward seek and a resize reanchor without scrolling across obsolete text.
         assertEquals(-200f, scroll.update(-200f, 500, 100f, 400f), 0f)
         assertEquals(-20f, scroll.update(-20f, 516, 200f, 400f), 0f)

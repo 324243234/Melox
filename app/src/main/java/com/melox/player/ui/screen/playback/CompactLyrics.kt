@@ -102,7 +102,16 @@ internal fun compactLyricAuxiliaryText(
 ): List<String> = listOfNotNull(
     line.romanization?.takeIf { showRomanization && it.isNotBlank() },
     line.translationFor(translationLanguage, appLanguageTag)?.takeIf { showTranslation && it.isNotBlank() },
-)
+).flatMap { caption -> caption.lines().map(String::trim).filter(String::isNotEmpty) }
+
+internal fun compactLyricSingleLine(line: LyricLine): LyricLine {
+    if (line.displayText.none { it == '\r' || it == '\n' }) return line
+    fun String.singleLine() = replace("\r\n", " ").replace('\r', ' ').replace('\n', ' ')
+    return line.copy(
+        text = line.text?.singleLine(),
+        words = line.words.map { it.copy(text = it.text.singleLine()) },
+    )
+}
 
 /** SALT spaces adjacent entries by their actual half-heights plus a shared gap. */
 internal fun compactLyricRowCenters(heights: List<Float>, gap: Float): FloatArray {
@@ -157,7 +166,9 @@ internal class CompactLyricScroll {
         val elapsed = positionMs - this.positionMs
         val sameGeometry = abs(this.viewportWidth - viewportWidth) < 0.5f &&
             abs(this.textWidth - textWidth) < 0.5f
-        offset = if (smooth && offset.isFinite() && sameGeometry && elapsed in 1..1_000) {
+        offset = if (smooth && offset.isFinite() && sameGeometry && elapsed == 0L) {
+            offset
+        } else if (smooth && offset.isFinite() && sameGeometry && elapsed in 1..1_000) {
             offset + (target - offset) * (1f - exp(-elapsed / 250f))
         } else {
             target
@@ -413,13 +424,30 @@ private fun CompactLyricsViewport(
     }
     val density = LocalDensity.current
     val appLanguageTag = LocalConfiguration.current.locales[0].toLanguageTag()
-    val auxiliary = remember(lines, showTranslation, showRomanization, translationLanguage, appLanguageTag) {
-        lines.map { compactLyricAuxiliaryText(it, showTranslation, showRomanization, translationLanguage, appLanguageTag) }
+    val visibleRows = (focus - 2).coerceAtLeast(0)..(focus + 2).coerceAtMost(lines.lastIndex)
+    val auxiliary = remember(lines, visibleRows, showTranslation, showRomanization, translationLanguage, appLanguageTag) {
+        visibleRows.map { row ->
+            compactLyricAuxiliaryText(lines[row], showTranslation, showRomanization, translationLanguage, appLanguageTag)
+        }
     }
-    val primaryHeight = with(density) { primaryStyle.lineHeight.toDp() }
-    val auxiliaryHeight = with(density) { auxiliaryStyle.lineHeight.toDp() }
-    val rowHeights = remember(auxiliary, primaryHeight, auxiliaryHeight) {
-        auxiliary.map { primaryHeight + auxiliaryHeight * it.size }
+    val measurer = rememberTextMeasurer()
+    val rowHeights = visibleRows.map { row ->
+        key(row) {
+            val line = lines[row]
+            val captions = auxiliary[row - visibleRows.first]
+            remember(line, captions, primaryStyle, auxiliaryStyle, density, measurer) {
+                val original = compactLyricSingleLine(line).animationWords().joinToString("") {
+                    it.text + if (it.hasTrailingSpace) " " else ""
+                }
+                val primaryHeight = measurer.measure(original, primaryStyle.copy(lineHeightStyle = LyricLineHeightStyle),
+                    softWrap = false).size.height
+                val auxiliaryHeight = captions.sumOf { caption ->
+                    measurer.measure(caption, auxiliaryStyle.copy(lineHeightStyle = LyricLineHeightStyle),
+                        softWrap = false).size.height
+                }
+                with(density) { (primaryHeight + auxiliaryHeight).toDp() }
+            }
+        }
     }
     val rowCenters = remember(rowHeights, density) {
         with(density) { compactLyricRowCenters(rowHeights.map { it.toPx() }, 6.dp.toPx()) }
@@ -437,22 +465,23 @@ private fun CompactLyricsViewport(
             },
     ) {
         val viewportHeight = with(density) { maxHeight.toPx() }
-        for (row in (focus - 2).coerceAtLeast(0)..(focus + 2).coerceAtMost(lines.lastIndex)) {
+        for (row in visibleRows) {
             key(row) {
+                val localRow = row - visibleRows.first
                 val line = lines[row]
                 val focused = row == index
                 val rowColor = color.copy(alpha = color.alpha * if (focused) 1f else COMPACT_LYRIC_INACTIVE_ALPHA)
                 Column(
                     modifier = Modifier.fillMaxWidth().wrapContentHeight(Alignment.Top, unbounded = true)
-                        .height(rowHeights[row])
+                        .height(rowHeights[localRow])
                         .graphicsLayer {
                             val visibleCenter = if (abs(center.value - focus) > 1.5f) focus.toFloat() else center.value
-                            val lower = visibleCenter.toInt().coerceIn(rowCenters.indices)
+                            val lower = (visibleCenter.toInt() - visibleRows.first).coerceIn(rowCenters.indices)
                             val upper = (lower + 1).coerceAtMost(rowCenters.lastIndex)
                             val centerPosition = rowCenters[lower] +
-                                (rowCenters[upper] - rowCenters[lower]) * (visibleCenter - lower)
-                            translationY = viewportHeight / 2f + rowCenters[row] - centerPosition -
-                                with(density) { rowHeights[row].toPx() } / 2f
+                                (rowCenters[upper] - rowCenters[lower]) * (visibleCenter - lower - visibleRows.first)
+                            translationY = viewportHeight / 2f + rowCenters[localRow] - centerPosition -
+                                with(density) { rowHeights[localRow].toPx() } / 2f
                         },
                     horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start,
                     verticalArrangement = Arrangement.Top,
@@ -461,7 +490,7 @@ private fun CompactLyricsViewport(
                         modifier = Modifier.fillMaxWidth(), centered = centered, focused = focused,
                         activeOpacityLimit = if (focused) activeLyricAlpha else 1f,
                         resetKey = playback.playbackIteration to playback.positionDiscontinuityRevision)
-                    auxiliary[row].forEach { text ->
+                    auxiliary[localRow].forEach { text ->
                         CompactAuxiliaryLine(line, text, auxiliaryStyle, auxiliaryColor, time, focused, centered)
                     }
                 }

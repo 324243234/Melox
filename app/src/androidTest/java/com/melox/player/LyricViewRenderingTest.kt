@@ -33,19 +33,229 @@ import com.melox.player.model.LyricWord
 import com.melox.player.model.LyricsDocument
 import com.melox.player.model.LyricsFormat
 import com.melox.player.model.LyricsSource
+import com.melox.player.model.LyricsTranslationLanguage
 import com.melox.player.ui.screen.playback.LyricsView
 import com.melox.player.ui.screen.playback.prepareLyricTextRaster
+import com.melox.player.ui.screen.playback.lyricGraphemeRanges
+import com.melox.player.ui.screen.playback.lyricPhoneticRows
+import com.melox.player.data.lyrics.LyricsParser
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.text.style.TextOverflow
 import com.melox.player.ui.theme.MeloxTheme
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LyricViewRenderingTest {
+    @Test
+    fun nativeCjkDictionaryWordsRemainWholeInAnnotatedParagraphs() {
+        val text = "撕裂、瓦解、支离、重塑、愈合"
+        val locale = java.util.Locale.SIMPLIFIED_CHINESE
+        val boundaries = com.melox.player.ui.screen.playback.lyricWordBoundaries(text, locale).toSet()
+        val groups = com.melox.player.ui.screen.playback.lyricCjkWordRanges(text, boundaries)
+        val wordStart = text.indexOf("支离")
+        assertTrue("Native dictionary did not retain the supplied word", groups.any {
+            it.first <= wordStart && it.last >= wordStart + 1
+        })
+        val measurer = TextMeasurer(
+            createFontFamilyResolver(InstrumentationRegistry.getInstrumentation().targetContext),
+            Density(1f), LayoutDirection.Ltr,
+        )
+        val style = TextStyle(fontSize = 24.sp)
+        val width = measurer.measure("甲".repeat(7), style, softWrap = false).size.width
+        val breaks = com.melox.player.ui.screen.playback.lyricAnnotationLineBreaks(text, width.toFloat(), locale) { start, end ->
+            measurer.measure(text.substring(start, end), style, softWrap = false).size.width.toFloat()
+        }!!
+        assertTrue("Annotation wrapping split the supplied dictionary word", breaks.none { it == wordStart + 1 })
+        val display = com.melox.player.ui.screen.playback.lyricLayoutText(text, breaks).text
+        val layout = measurer.measure(display, style, softWrap = false, constraints = Constraints(maxWidth = width))
+        assertEquals(breaks.size, layout.lineCount)
+        assertEquals(text, display.replace("\n", ""))
+    }
+
+    @Test
+    fun sentenceAndPreparedModesKeepMultiscriptLineMetricsAndDuetAlignment() {
+        val texts = listOf("एक तेरे सिवा कोई और\nमुझे भाता नहीं है", "مرحبا بالعالم\nسلام يا صديقي")
+        val text = mutableStateOf(texts.first())
+        lateinit var view: ComposeView
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                view = ComposeView(activity).apply {
+                    setContent {
+                        MeloxTheme(AppSettings()) {
+                            val words = listOf(LyricWord(0, 5_000, text.value, false))
+                            val document = LyricsDocument(listOf(
+                                LyricLine("v1", 0, 5_000, null, words, text.value),
+                                LyricLine("v2", 10_000, 15_000, text.value, emptyList(), null),
+                            ), LyricsFormat.TTML, LyricsSource.SIDECAR)
+                            Row(Modifier.fillMaxSize().background(Color.Black)) {
+                                for (mode in listOf(LyricAnimationMode.NEVER, LyricAnimationMode.ALWAYS)) {
+                                    LyricsView(
+                                        document = document, positionMs = 0,
+                                        positionUpdateElapsedRealtimeMs = SystemClock.elapsedRealtime(),
+                                        playbackIteration = 0, playbackSpeed = 1f,
+                                        previewPositionMs = null, isPlaying = false, onSeek = {},
+                                        contentWidth = 160.dp, lyricFontScale = 1f, lyricFontWeight = 400,
+                                        lyricAnimationMode = mode, lyricBlurEnabled = false,
+                                        centerLyrics = false,
+                                        showLyricsTranslation = true, showLyricsRomanization = false,
+                                        showBottomFade = false, applyEdgeFade = false,
+                                        resumeFollowRequestKey = 0, seekRequestKey = 0, seekPositionMs = 0,
+                                        emphasisColor = Color.White, modifier = Modifier.weight(1f).fillMaxSize(),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                activity.setContentView(view)
+            }
+            for (sample in texts) {
+                scenario.onActivity { text.value = sample }
+                val image = capture(scenario, view)
+                try {
+                    val sentence = inkBands(image, 0)
+                    val prepared = inkBands(image, 1)
+                    assertTrue("Missing multiscript rows", sentence.isNotEmpty() && prepared.isNotEmpty())
+                    assertEquals("Mode changed row count", sentence.size, prepared.size)
+                    sentence.zip(prepared).forEach { (first, second) ->
+                        assertTrue("Mode changed row top", kotlin.math.abs(first.first - second.first) <= 1)
+                        assertTrue("Mode changed row bottom", kotlin.math.abs(first.last - second.last) <= 1)
+                    }
+                    val half = image.width / 2
+                    val top = sentence.first().first
+                    val bottom = sentence.first().last
+                    fun inkStart(side: Int) = (8 until half - 8).first { x ->
+                        (top..bottom).any { y -> (image.getPixel(side * half + x, y) and 255) > 30 }
+                    }
+                    assertTrue("Mode changed duet side", kotlin.math.abs(inkStart(0) - inkStart(1)) <= 1)
+                } finally { image.recycle() }
+            }
+        }
+    }
+
+    @Test
+    fun unalignedEarthMealCaptionRetainsItsTextAndReadableOriginalRowsAtEveryFontScale() {
+        val fixture = """
+            [00:37.775]皆[00:38.151]移[00:38.335]住[00:38.535]に[00:38.727]夢[00:38.897]中[00:39.133] [00:39.309]俺[00:39.653]未[00:40.029]だ[00:40.237]地[00:40.429]球[00:40.673]
+            [00:37.775]mi n na i ju u ni mu chu u o re i ma da chi kyu u
+            [00:37.775]大家都在赶忙地移居别的星球 而我现在还在地球
+        """.trimIndent()
+        val line = LyricsParser.parse(fixture, LyricsSource.SIDECAR)!!.lines.single()
+        val measurer = TextMeasurer(
+            createFontFamilyResolver(InstrumentationRegistry.getInstrumentation().targetContext),
+            Density(1f), LayoutDirection.Ltr,
+        )
+        for ((available, fontSize) in listOf(300 to 24, 600 to 48, 900 to 72)) {
+            val primaryStyle = TextStyle(fontSize = fontSize.sp, lineHeight = (fontSize * 28f / 24f).sp)
+            val captionStyle = TextStyle(fontSize = (fontSize * 14f / 24f).sp)
+            val layout = measurer.measure(line.displayText, primaryStyle,
+                constraints = Constraints(maxWidth = available), overflow = TextOverflow.Visible)
+            val rows = (0 until layout.lineCount).map {
+                line.displayText.substring(layout.getLineStart(it), layout.getLineEnd(it))
+            }
+            val captions = lyricPhoneticRows(requireNotNull(line.romanization), rows)
+            assertEquals(line.romanization, captions.first())
+            assertTrue(captions.drop(1).all(String::isEmpty))
+            assertTrue("Verse became a vertical stack at font size $fontSize", layout.lineCount <= 4)
+            assertEquals(line.displayText, rows.joinToString(""))
+            val caption = measurer.measure(captions.first(), captionStyle,
+                constraints = Constraints(maxWidth = available))
+            assertTrue(caption.size.width <= available)
+            assertEquals(line.romanization, caption.layoutInput.text.text)
+        }
+    }
+
+    @Test
+    fun wholeParagraphShapingSurvivesTimingTagsInsideComplexGlyphsWithoutFutureWhiteEdges() {
+        val originals = listOf(
+            "एक तेरे सिवा कोई और\nमुझे भाता नहीं है",
+            "مرحبا بالعالم\noffice e\u0301 👩‍❤️‍💋‍👩",
+            "বাংলা ভাষা\nภาษาไทย",
+        )
+        val original = mutableStateOf(originals.first())
+        val position = mutableStateOf(1L)
+        val revision = mutableStateOf(1)
+        lateinit var view: ComposeView
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                view = ComposeView(activity).apply {
+                    setContent {
+                        MeloxTheme(AppSettings()) {
+                            val text = original.value
+                            val duration = text.length * 500L
+                            Row(Modifier.fillMaxSize().background(Color.Black)) {
+                                for (native in listOf(false, true)) {
+                                    val words = if (native) text.mapIndexed { index, char ->
+                                        LyricWord(index * 500L, (index + 1) * 500L, char.toString(), false)
+                                    } else emptyList()
+                                    val document = LyricsDocument(listOf(
+                                        LyricLine("", 0L, duration, text, words, null),
+                                    ), LyricsFormat.TTML, LyricsSource.SIDECAR)
+                                    Box(Modifier.weight(1f)) {
+                                        LyricsView(
+                                            document = document, positionMs = position.value,
+                                            positionUpdateElapsedRealtimeMs = SystemClock.elapsedRealtime(),
+                                            playbackIteration = 0L, playbackSpeed = 1f,
+                                            previewPositionMs = null, isPlaying = false, onSeek = {},
+                                            contentWidth = 160.dp, lyricFontScale = 1f, lyricFontWeight = 400,
+                                            lyricAnimationMode = LyricAnimationMode.ALWAYS,
+                                            lyricBlurEnabled = false, centerLyrics = false,
+                                            showLyricsTranslation = false, showLyricsRomanization = false,
+                                            showBottomFade = false, applyEdgeFade = false,
+                                            resumeFollowRequestKey = 0, seekRequestKey = revision.value,
+                                            seekPositionMs = position.value, emphasisColor = Color.White,
+                                            modifier = Modifier.fillMaxSize(),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                activity.setContentView(view)
+            }
+            for (text in originals) {
+                val duration = text.length * 500L
+                scenario.onActivity { original.value = text; position.value = duration - 1; revision.value++ }
+                val completed = capture(scenario, view)
+                try {
+                    val half = completed.width / 2
+                    val ink = (0 until completed.height).filter { y ->
+                        (8 until half - 8).any { x -> (completed.getPixel(x, y) and 255) > 30 }
+                    }
+                    assertTrue("Missing shaped paragraph for $text", ink.isNotEmpty())
+                    var differences = 0
+                    var coverage = 0
+                    for (y in ink.first()..ink.last()) for (x in 8 until half - 8) {
+                        val forced = completed.getPixel(x, y) and 255
+                        val native = completed.getPixel(x + half, y) and 255
+                        if (forced > 30 || native > 30) coverage++
+                        if ((forced > 30) != (native > 30)) differences++
+                    }
+                    assertTrue("Timing tags changed shaping for $text: $differences / $coverage",
+                        differences <= maxOf(12, coverage / 100))
+                    // Also revisit the early frame after completion, exercising reverse-seek state.
+                    scenario.onActivity { position.value = 1_000L; revision.value++ }
+                    val early = capture(scenario, view)
+                    try {
+                        val futureTop = ink.first() + (ink.last() - ink.first()) * 3 / 4
+                        val white = (futureTop..ink.last()).sumOf { y ->
+                            (8 until early.width - 8).count { x -> (early.getPixel(x, y) and 255) > 110 }
+                        }
+                        assertEquals("Future visual row has a white edge for $text", 0, white)
+                    } finally { early.recycle() }
+                } finally { completed.recycle() }
+            }
+        }
+    }
+
     private data class Fixture(
         val position: Long = 2_000,
         val mode: LyricAnimationMode = LyricAnimationMode.ALWAYS,

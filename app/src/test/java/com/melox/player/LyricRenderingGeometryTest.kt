@@ -23,6 +23,19 @@ import kotlin.math.sqrt
 
 class LyricRenderingGeometryTest {
     @Test
+    fun disabledGlyphMotionRemovesGlowScaleAndLiftThroughoutLongNotes() {
+        for (time in 1_000L..4_000L step 100) {
+            val moving = characterMotion(time, 1_000, 4_000, 0, 1)
+            for (strength in listOf(0f, 0.5f, 1f)) {
+                val still = moving.withLineStrength(strength, enabled = false)
+                assertEquals(1f, still.scale, 0f)
+                assertEquals(0f, still.offsetYPx, 0f)
+                assertEquals(0f, still.glowAlpha, 0f)
+            }
+        }
+    }
+
+    @Test
     fun duetCenterTracksUnequalCaptionHeightsAndFallsBackWhenTheGroupCannotFit() {
         for (captionHeight in listOf(0, 1, 24, 73, 120, 73, 24, 1, 0)) {
             val rows = listOf(
