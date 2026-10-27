@@ -153,8 +153,38 @@ internal val LyricLineHeightStyle = LineHeightStyle(
 )
 
 @Composable
-internal fun rememberLyricFontFamily(weight: Int): FontFamily = remember(weight) {
-    FontFamily(Typeface.create(Typeface.DEFAULT, weight.coerceIn(1, 1000), false))
+internal fun rememberLyricFontFamily(weight: Int): FontFamily {
+    // 【新增】获取上下文，读取独立开关
+    val context = androidx.compose.ui.platform.LocalContext.current
+    
+    return remember(weight) {
+        val sharedPrefs = context.getSharedPreferences("melox_custom_settings", android.content.Context.MODE_PRIVATE)
+        val useCustomFont = sharedPrefs.getBoolean("use_custom_font", true) // 默认开启
+
+        // 如果开关开启，则加载你车机的本地字体
+        if (useCustomFont) {
+            val mediumFontPath = "/storage/emulated/0/Documents/字体/SimplifiedChinese/SourceHanSansSC-Medium.otf"
+            val boldFontPath = "/storage/emulated/0/Documents/字体/SimplifiedChinese/SourceHanSansSC-Bold.otf"
+            val isBold = weight >= 600
+            val targetPath = if (isBold) boldFontPath else mediumFontPath
+            
+            try {
+                val file = java.io.File(targetPath)
+                if (file.exists() && file.canRead()) {
+                    return@remember androidx.compose.ui.text.font.FontFamily(
+                        android.graphics.Typeface.createFromFile(file)
+                    )
+                }
+            } catch (e: Exception) {
+                // 读取异常时静默走到下方的默认回退
+            }
+        }
+
+        // 如果开关关闭，或者本地文件丢失，走原作者的默认系统字体回退逻辑
+        androidx.compose.ui.text.font.FontFamily(
+            android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, weight.coerceIn(1, 1000), false)
+        )
+    }
 }
 
 internal fun lyricEdgeFadeHeights(showBottomFade: Boolean): Pair<Float, Float> =
