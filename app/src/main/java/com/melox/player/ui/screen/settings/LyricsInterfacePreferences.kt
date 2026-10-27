@@ -1,5 +1,7 @@
 package com.melox.player.ui.screen.settings
 
+import android.content.Context
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -50,6 +52,12 @@ internal fun LyricsInterfacePreferences(
     usePageMaterial: Boolean = true,
     showHideControls: Boolean = true,
 ) {
+
+   // 【新增】独立获取配置，完全脱离原作者的复杂状态管理
+    val context = LocalContext.current
+    val sharedPrefs = remember { context.getSharedPreferences("melox_custom_settings", Context.MODE_PRIVATE) }
+    var useCustomFont by remember { mutableStateOf(sharedPrefs.getBoolean("use_custom_font", true)) }
+	
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -60,6 +68,18 @@ internal fun LyricsInterfacePreferences(
             usePageMaterial = usePageMaterial,
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
+			
+			// 【新增】独立的本地字体开关，放进设置卡片的第一行
+                SwitchPreference(
+                    title = "使用本地车机定制字体",
+                    summary = "开启后使用 SourceHanSansSC 字体 (退出重进播放器生效)",
+                    checked = useCustomFont,
+                    onCheckedChange = {
+                        useCustomFont = it
+                        sharedPrefs.edit().putBoolean("use_custom_font", it).apply()
+                    },
+                )
+			
                 SwitchPreference(
                     title = stringResource(R.string.player_title_left_aligned),
                     checked = leftAlignPlayerTitle,
