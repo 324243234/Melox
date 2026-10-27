@@ -155,9 +155,9 @@ tasks.matching { task -> task.name == "assembleRelease" }.configureEach {
 }
 
 dependencies {
-    implementation(files(rootProject.file("app/libs/renderscript-intrinsics-replacement-toolkit-344be3f-16k.aar")))
-    implementation(files(rootProject.file("app/libs/media3-decoder-ffmpeg-1.11.0-ffmpeg9.0-arm64-v8a.aar")))
-	implementation(libs.androidx.activity.compose)
+    implementation(files("libs/renderscript-toolkit-blur-344be3f-arm64-16k.aar"))
+    implementation(files("libs/media3-decoder-ffmpeg-1.11.0-ffmpeg9.0-arm64-v8a.aar"))
+    implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.datastore.preferences)
