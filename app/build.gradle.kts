@@ -56,7 +56,7 @@ android {
         applicationId = "com.kugou.android.lite"
         minSdk = 28
         targetSdk = 36
-        versionCode = 4 // 保持固定版本号不递增
+        versionCode = 7 // 保持固定版本号不递增
         versionName = appVersionName
 
         ndk {
