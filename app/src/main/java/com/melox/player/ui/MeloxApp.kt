@@ -3243,6 +3243,7 @@ private fun PlaybackArtworkPrefetchEffect(
                 placeholderArtworkResId = placeholderArtworkResId,
                 includeBlurredArtwork =
                     playbackBackgroundStyle == PlaybackBackgroundStyle.BLURRED_ARTWORK,
+                foreground = index == 0,
             )
         }
     }

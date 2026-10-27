@@ -78,6 +78,7 @@ import com.melox.player.model.DynamicFlowStyle
 import com.melox.player.model.ScanStatus
 import com.melox.player.model.ThemeMode
 import com.melox.player.model.withTrackMetadata
+import com.melox.player.model.PlaybackMetadataProjection
 import com.melox.player.playback.PlaybackController
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -470,12 +471,14 @@ class MeloxViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
         .distinctUntilChanged()
+    private val playbackMetadataProjection = PlaybackMetadataProjection()
     val compactPlaybackState: StateFlow<PlaybackUiState> = combine(
         compactControllerPlaybackState,
         allLibraryTracks,
     ) { playback, tracks ->
-        playback.withTrackMetadata(tracks)
+        playbackMetadataProjection.project(playback, tracks)
     }
+        .flowOn(Dispatchers.Default)
         .distinctUntilChanged()
         .stateIn(
             scope = viewModelScope,

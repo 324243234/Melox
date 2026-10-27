@@ -155,14 +155,15 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 
 internal data class ArtworkBlend(
-    val frames: List<WeightedCrossfadeFrame<Bitmap>>,
+    // Observe changing fade weights only inside artwork consumers, not the player host.
+    val frames: () -> List<WeightedCrossfadeFrame<Bitmap>>,
     val currentBitmap: Bitmap?,
     val flipState: ArtworkFlipState<Bitmap>? = null,
     val isPlaceholder: Boolean = false,
 )
 
 internal fun ArtworkTransitionState<Bitmap>.toArtworkBlend(): ArtworkBlend = ArtworkBlend(
-    frames = frames,
+    frames = { frames },
     currentBitmap = currentValue,
     flipState = flipState,
     isPlaceholder = isPlaceholderArtwork,
@@ -195,8 +196,10 @@ internal fun rememberArtworkBlend(
         )
         val visible = flip.visibleValue
         return ArtworkBlend(
-            frames = if (flip.isRunning) emptyList()
-                else listOfNotNull(visible?.let { WeightedCrossfadeFrame(it, 1f) }),
+            frames = {
+                if (flip.isRunning) emptyList()
+                else listOfNotNull(visible?.let { WeightedCrossfadeFrame(it, 1f) })
+            },
             currentBitmap = visible,
             flipState = flip.takeIf { it.isRunning },
         )
@@ -209,7 +212,7 @@ internal fun rememberArtworkBlend(
         easing = easing,
         sameValue = sameArtworkBitmap,
     )
-    return ArtworkBlend(frames = fade.frames, currentBitmap = fade.currentValue)
+    return ArtworkBlend(frames = { fade.frames }, currentBitmap = fade.currentValue)
 }
 
 @Composable
@@ -296,7 +299,7 @@ internal fun PlayerArtwork(
                     artworkEffect = blur,
                 )
             }
-        } else if (artworkBlend.frames.isEmpty()) {
+        } else if (artworkBlend.frames().isEmpty()) {
             PlaybackArtworkFrame(
                 bitmap = null,
                 size = artworkContentSize,
@@ -309,7 +312,7 @@ internal fun PlayerArtwork(
                 artworkAlpha = if (artworkBlend.isPlaceholder) placeholderArtworkAlpha else 1f,
             )
         } else {
-            artworkBlend.frames.forEach { frame ->
+            artworkBlend.frames().forEach { frame ->
                 PlaybackArtworkFrame(
                     bitmap = frame.value,
                     size = artworkContentSize,

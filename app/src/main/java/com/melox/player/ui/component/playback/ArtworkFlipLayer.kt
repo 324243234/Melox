@@ -33,28 +33,29 @@ internal fun ArtworkFlipLayer(
     contentScale: ContentScale = ContentScale.Fit,
     content: @Composable (Bitmap, Modifier) -> Unit,
 ) {
-    val frame = state.frame
+    // Only a face change recomposes content; sample continuous motion in the layers below.
     val bitmap = state.visibleValue ?: return
     val frontBlur = rememberLegacyFlipBlur(state.front)
     val backBlur = rememberLegacyFlipBlur(state.back)
-    val blurredBitmap = if (frame.showBack) backBlur else frontBlur
     Box(
         modifier = modifier,
     ) {
         Box(Modifier.graphicsLayer {
             transformOrigin = TransformOrigin.Center
-            rotationY = frame.rotationY
+            rotationY = state.frame.rotationY
             cameraDistance = artworkFlipCameraDistance(size.width, size.height)
             // Keep the shadow outside the face bounds and on the same plane.
             clip = false
         }) {
             val blurModifier = if (Build.VERSION.SDK_INT >= 31) {
                 Modifier.graphicsLayer {
-                    val radius = minOf(size.width, size.height) * 0.08f * frame.blurFraction
+                    val radius = minOf(size.width, size.height) * 0.08f * state.frame.blurFraction
                     renderEffect = if (radius > 0.1f) BlurEffect(radius, radius, TileMode.Clamp) else null
                 }
             } else Modifier.drawWithContent {
                 drawContent()
+                val frame = state.frame
+                val blurredBitmap = if (frame.showBack) backBlur else frontBlur
                 if (blurredBitmap != null && frame.blurFraction > 0f) {
                     val scale = contentScale.computeScaleFactor(
                         Size(blurredBitmap.width.toFloat(), blurredBitmap.height.toFloat()), size,

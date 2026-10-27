@@ -5,12 +5,14 @@ import android.graphics.Color
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
+import android.os.Build
 import android.view.PixelCopy
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.BroadcastFrameClock
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
@@ -25,12 +27,16 @@ import com.melox.player.ui.component.playback.ArtworkFlipState
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Test
 import org.junit.runner.RunWith
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -58,6 +64,8 @@ class ArtworkFlipRenderingTest {
         val rotating = mutableStateOf(false)
         val circular = mutableStateOf(false)
         val scope = CoroutineScope(Dispatchers.Main + Job() + BroadcastFrameClock())
+        val faceCompositions = AtomicInteger()
+        val renderedFace = AtomicReference<Bitmap>()
         lateinit var view: ComposeView
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->
@@ -68,6 +76,10 @@ class ArtworkFlipRenderingTest {
                                 contentAlignment = Alignment.Center) {
                                 if (rotating.value) {
                                     ArtworkFlipLayer(state) { face, blur ->
+                                        SideEffect {
+                                            faceCompositions.incrementAndGet()
+                                            renderedFace.set(face)
+                                        }
                                         PlaybackArtworkFrame(face, artworkSize, artworkSize * 0.12f,
                                             useSquircleClip = true, drawArtworkShadow = true,
                                             circular = circular.value, artworkEffect = blur)
@@ -92,6 +104,7 @@ class ArtworkFlipRenderingTest {
                 rotating.value = true
             }
             val start = capture(scenario, view, "$name-start")
+            val startCompositions = faceCompositions.get()
             val restBounds = faceBounds(rest)
             val density = view.resources.displayMetrics.density
             val shadowY = restBounds.bottom + (6 * density).toInt()
@@ -107,6 +120,12 @@ class ArtworkFlipRenderingTest {
             for (progress in listOf(0.25f, 0.75f)) {
                 scenario.onActivity { scope.launch { state.progress.snapTo(progress) } }
                 val frame = capture(scenario, view, "$name-face-$progress")
+                assertSame("The visible face did not follow the half-turn boundary",
+                    if (progress < 0.5f) image else replacement, renderedFace.get())
+                if (Build.VERSION.SDK_INT >= 31 && progress < 0.5f) {
+                    assertEquals("Rotation and blur recomposed unchanged artwork content",
+                        startCompositions, faceCompositions.get())
+                }
                 val bounds = faceBounds(frame)
                 fun columnHeight(x: Int): Int = (bounds.top..bounds.bottom).count { y ->
                     isFace(frame.getPixel(x, y))

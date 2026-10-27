@@ -246,7 +246,7 @@ internal fun PlaybackArtworkBlend(
                     artworkEffect = blur,
                 )
             }
-        } else if (blend.frames.isEmpty()) {
+        } else if (blend.frames().isEmpty()) {
             PlaybackArtworkFrame(
                 bitmap = null,
                 size = size,
@@ -258,7 +258,7 @@ internal fun PlaybackArtworkBlend(
                 artworkAlpha = if (blend.isPlaceholder) placeholderAlpha else 1f,
             )
         } else {
-            blend.frames.forEach { frame ->
+            blend.frames().forEach { frame ->
                 PlaybackArtworkFrame(
                     bitmap = frame.value,
                     size = size,

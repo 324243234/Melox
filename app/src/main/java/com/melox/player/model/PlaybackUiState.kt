@@ -47,6 +47,23 @@ internal fun PlaybackUiState.withTrackMetadata(tracks: List<MusicTrack>): Playba
     return if (updatedQueue == queue) this else copy(queue = updatedQueue)
 }
 
+/** Reuse queue metadata when only the active song or transport state changes. */
+internal class PlaybackMetadataProjection {
+    private var sourceQueue: List<PlaybackQueueItem>? = null
+    private var sourceTracks: List<MusicTrack>? = null
+    private var projectedQueue = emptyList<PlaybackQueueItem>()
+
+    fun project(playback: PlaybackUiState, tracks: List<MusicTrack>): PlaybackUiState {
+        if (sourceQueue !== playback.queue || sourceTracks !== tracks) {
+            projectedQueue = playback.withTrackMetadata(tracks).queue
+            sourceQueue = playback.queue
+            sourceTracks = tracks
+        }
+        return if (projectedQueue === playback.queue) playback
+        else playback.copy(queue = projectedQueue)
+    }
+}
+
 /** Immutable projection of the service-owned Media3 player. */
 data class PlaybackUiState(
     val queue: List<PlaybackQueueItem> = emptyList(),

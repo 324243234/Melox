@@ -153,18 +153,18 @@ private fun MovingBlurredArtworkLayer(
     val endFrame = remember(animationKey, segmentIndex) {
         createKenBurnsFrame(animationKey.orEmpty(), segmentIndex + 1)
     }
-    val frame = interpolateKenBurnsFrame(
-        start = startFrame,
-        end = endFrame,
-        progress = accelerateDecelerate(phase.value),
-    )
-
     val layerAlphas = sourceOverAlphas(layerBlend.frames.map { it.alpha })
     Box(modifier = modifier) {
         layerBlend.frames.forEachIndexed { index, blendFrame ->
             MovingArtworkImage(
                 bitmap = blendFrame.value.blurredArtwork,
-                frame = frame,
+                frame = {
+                    interpolateKenBurnsFrame(
+                        start = startFrame,
+                        end = endFrame,
+                        progress = accelerateDecelerate(phase.value),
+                    )
+                },
                 alpha = layerAlphas[index],
                 modifier = Modifier.fillMaxSize(),
             )
@@ -175,7 +175,7 @@ private fun MovingBlurredArtworkLayer(
 @Composable
 private fun MovingArtworkImage(
     bitmap: Bitmap,
-    frame: KenBurnsFrame,
+    frame: () -> KenBurnsFrame,
     alpha: Float,
     modifier: Modifier = Modifier,
 ) {
@@ -190,10 +190,11 @@ private fun MovingArtworkImage(
         contentDescription = null,
         contentScale = ContentScale.Crop,
         modifier = modifier.graphicsLayer {
-            scaleX = frame.scale
-            scaleY = frame.scale
-            translationX = frame.horizontalBias * size.width * (frame.scale - 1f) * 0.5f
-            translationY = frame.verticalBias * size.height * (frame.scale - 1f) * 0.5f
+            val currentFrame = frame()
+            scaleX = currentFrame.scale
+            scaleY = currentFrame.scale
+            translationX = currentFrame.horizontalBias * size.width * (currentFrame.scale - 1f) * 0.5f
+            translationY = currentFrame.verticalBias * size.height * (currentFrame.scale - 1f) * 0.5f
             this.alpha = alpha.coerceIn(0f, 1f)
         },
     )
