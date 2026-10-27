@@ -378,12 +378,13 @@
     </string-array>
     <string name="player_title_left_aligned">Left-align title</string>
     <string name="lyrics_translation">Lyrics translation</string>
-    <string name="lyrics_romanization">Lyrics romanization</string>
+    <string name="lyrics_romanization">Show romanization</string>
     <string name="lyrics_size">Lyrics size</string>
     <string name="lyrics_size_value">%1$dsp</string>
     <string name="lyrics_weight">Lyrics weight</string>
     <string name="lyrics_weight_value">%1$d</string>
     <string name="lyrics_word_animation">Word-by-word lyric animation</string>
+    <string name="lyrics_settings_section">Lyrics settings</string>
     <string name="lyrics_animation_current_line">Timed lines only</string>
     <string name="lyrics_animation_extend_to_all">Extend to all</string>
     <string name="lyrics_animation_always">Always</string>

@@ -1462,16 +1462,16 @@ private fun LyricsTranslationSheet(
                 .verticalScroll(scrollState, overscrollEffect = null)
                 .padding(bottom = bottomPadding + 12.dp),
         ) {
-            Card(colors = CardDefaults.defaultColors(color = bottomSheetCardColor())) {
-                LyricsTranslationPreferences(
-                    showLyricsTranslation = showLyricsTranslation,
-                    showLyricsRomanization = showLyricsRomanization,
-                    lyricsTranslationLanguage = lyricsTranslationLanguage,
-                    onShowLyricsTranslationChange = onShowLyricsTranslationChange,
-                    onShowLyricsRomanizationChange = onShowLyricsRomanizationChange,
-                    onLyricsTranslationLanguageChange = onLyricsTranslationLanguageChange,
-                )
-            }
+            LyricsTranslationPreferences(
+                showLyricsTranslation = showLyricsTranslation,
+                showLyricsRomanization = showLyricsRomanization,
+                lyricsTranslationLanguage = lyricsTranslationLanguage,
+                onShowLyricsTranslationChange = onShowLyricsTranslationChange,
+                onShowLyricsRomanizationChange = onShowLyricsRomanizationChange,
+                onLyricsTranslationLanguageChange = onLyricsTranslationLanguageChange,
+                cardColor = bottomSheetCardColor(),
+                usePageMaterial = false,
+            )
         }
     }
 }

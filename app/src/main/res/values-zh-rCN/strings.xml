@@ -365,12 +365,13 @@
     </string-array>
     <string name="player_title_left_aligned">标题左对齐</string>
     <string name="lyrics_translation">歌词翻译</string>
-    <string name="lyrics_romanization">歌词罗马音</string>
+    <string name="lyrics_romanization">显示罗马音</string>
     <string name="lyrics_size">歌词大小</string>
     <string name="lyrics_size_value">%1$dsp</string>
     <string name="lyrics_weight">歌词字重</string>
     <string name="lyrics_weight_value">%1$d</string>
     <string name="lyrics_word_animation">逐字歌词动画</string>
+    <string name="lyrics_settings_section">歌词设置</string>
     <string name="lyrics_animation_current_line">仅当前行</string>
     <string name="lyrics_animation_extend_to_all">扩展至全部</string>
     <string name="lyrics_animation_always">始终</string>
