@@ -9,8 +9,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.MarqueeSpacing
@@ -89,8 +89,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontSynthesis
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontSynthesis
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
@@ -360,24 +360,34 @@ internal fun rememberRetainedLyricDocument(lyrics: LyricsUiState): LyricsUiState
     return available
 }
 
+/** Empty lyric documents use the same placeholder as an absent document. */
+internal fun lyricPagePresentation(lyrics: LyricsUiState.Available?): LyricsUiState =
+    lyrics?.takeIf { available ->
+        available.document.lines.any { !it.isBackground && it.displayText.isNotBlank() }
+    } ?: LyricsUiState.Unavailable
+
 // Identity intentionally distinguishes a fresh entrance after a rapid reversal.
-private class LyricContentFrame(val lyrics: LyricsUiState.Available?, val annotationsVisible: Boolean)
+internal class LyricContentFrame(val lyrics: LyricsUiState, val annotationsVisible: Boolean)
+
+@Composable
+internal fun rememberLyricContentFrame(lyrics: LyricsUiState, annotationsVisible: Boolean): LyricContentFrame =
+    remember(lyrics, annotationsVisible) { LyricContentFrame(lyrics, annotationsVisible) }
 
 @Composable
 internal fun LyricContentTransition(
-    lyrics: LyricsUiState.Available?,
+    lyrics: LyricsUiState,
     modifier: Modifier = Modifier,
     annotationsVisible: Boolean = false,
     contentAlignment: Alignment = Alignment.TopStart,
-    content: @Composable (LyricsUiState.Available?, Boolean, Boolean) -> Unit,
+    content: @Composable (LyricsUiState, Boolean, Boolean) -> Unit,
 ) {
-    val target = remember(lyrics, annotationsVisible) { LyricContentFrame(lyrics, annotationsVisible) }
+    val target = rememberLyricContentFrame(lyrics, annotationsVisible)
     AnimatedContent(
         targetState = target,
         modifier = modifier,
         contentAlignment = contentAlignment,
         transitionSpec = {
-            val enter = lyricContentEnterSpec(fromEmpty = initialState.lyrics == null)
+            val enter = lyricContentEnterSpec(fromEmpty = initialState.lyrics == LyricsUiState.Loading)
             ((fadeIn(enter) + scaleIn(enter, LYRIC_CONTENT_MIN_SCALE))
                 togetherWith (fadeOut(lyricContentExitSpec()) +
                     scaleOut(lyricContentExitSpec(), LYRIC_CONTENT_MIN_SCALE))).using(null)
@@ -425,6 +435,7 @@ internal fun SyncedLyrics(
         displayedLyrics?.document?.lines?.any { lyricPhonetics(it).hasAnnotations } == true
     }
     var browseAnchor by remember(displayedLyrics?.document) { mutableStateOf<LyricBrowseAnchor?>(null) }
+
     var unavailableTextLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
     val alignmentProgress = animateFloatAsState(
         targetValue = if (centerLyrics) 1f else 0f,
@@ -432,10 +443,11 @@ internal fun SyncedLyrics(
         label = "unavailableLyricsAlignment",
     )
 
-    LyricContentTransition(displayedLyrics, modifier, hasAnnotations && showLyricsRomanization,
+    LyricContentTransition(lyricPagePresentation(displayedLyrics), modifier, hasAnnotations && showLyricsRomanization,
         contentAlignment = Alignment.Center) { frame, annotated, target ->
-        val document = frame?.document
-        val current = target && frame == lyrics && currentMediaId != null && frame?.mediaId == currentMediaId
+        val available = frame as? LyricsUiState.Available
+        val document = available?.document
+        val current = target && frame == lyrics && currentMediaId != null && available?.mediaId == currentMediaId
         var retainedPosition by remember(frame) { mutableLongStateOf(positionMs) }
         // Seed each entering layout once; ongoing drag samples must not recompose the viewport.
         val initialBrowseAnchor = remember(frame) { browseAnchor }
@@ -483,24 +495,27 @@ internal fun SyncedLyrics(
                     )
                 }
             }
-        } else if (lyrics is LyricsUiState.Unavailable) {
+        } else if (frame is LyricsUiState.Unavailable) {
             val lyricFontFamily = rememberLyricFontFamily(lyricFontWeight)
-            Text(
-                text = stringResource(R.string.lyrics_unavailable),
-                modifier = Modifier.width(contentWidth)
-                    .offset(y = lyricCenterOffsetY)
-                    .animatedPlayerTextAlignment(unavailableTextLayout, alignmentProgress),
-                style = MiuixTheme.textStyles.title3.copy(
-                    fontSize = (LYRIC_PRIMARY_FONT_SIZE_SP * lyricFontScale).sp,
-                    lineHeight = (LYRIC_PRIMARY_LINE_HEIGHT_SP * lyricFontScale).sp,
-                    fontFamily = lyricFontFamily,
-                    fontWeight = FontWeight(lyricFontWeight.coerceIn(1, 1000)),
-                    fontSynthesis = FontSynthesis.None,
-                ),
-                color = controlColor.copy(alpha = 0.72f),
-                textAlign = TextAlign.Start,
-                onTextLayout = { unavailableTextLayout = it },
-            )
+            // Consume viewport constraints here so Text keeps its natural line height.
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    text = stringResource(R.string.lyrics_unavailable),
+                    modifier = Modifier.width(contentWidth)
+                        .offset(y = lyricCenterOffsetY)
+                        .animatedPlayerTextAlignment(unavailableTextLayout, alignmentProgress),
+                    style = MiuixTheme.textStyles.title3.copy(
+                        fontSize = (LYRIC_PRIMARY_FONT_SIZE_SP * lyricFontScale).sp,
+                        lineHeight = (LYRIC_PRIMARY_LINE_HEIGHT_SP * lyricFontScale).sp,
+                        fontFamily = lyricFontFamily,
+                        fontWeight = FontWeight(lyricFontWeight.coerceIn(1, 1000)),
+                        fontSynthesis = FontSynthesis.None,
+                    ),
+                    color = controlColor.copy(alpha = 0.72f),
+                    textAlign = TextAlign.Start,
+                    onTextLayout = { unavailableTextLayout = it },
+                )
+            }
         }
     }
 }

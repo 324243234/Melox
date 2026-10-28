@@ -30,6 +30,9 @@ import com.melox.player.ui.screen.playback.PLAYER_ARTWORK_VERTICAL_FOOTPRINT_EXP
 import com.melox.player.ui.screen.playback.lyricPlaybackPositionMs
 import com.melox.player.ui.screen.playback.stabilizedLyricPlaybackPositionMs
 import com.melox.player.ui.screen.playback.rememberRetainedLyricDocument
+import com.melox.player.ui.screen.playback.lyricPagePresentation
+import com.melox.player.ui.screen.playback.rememberLyricContentFrame
+import com.melox.player.ui.screen.playback.LyricContentFrame
 import com.melox.player.ui.screen.playback.rememberCompactArtworkLyricsPresence
 import com.melox.player.ui.screen.playback.fitPlayerArtworkSize
 import kotlinx.coroutines.runBlocking
@@ -37,6 +40,57 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LyricPlaybackClockTest {
+    @Test
+    fun lyricEmptyStateHasItsOwnFrameAndRetainsOutgoingContentAcrossLoads() = runBlocking {
+        val available = LyricsUiState.Available(
+            LyricsDocument(listOf(LyricLine("main", 0, 1_000, "Lyrics", emptyList(), null)),
+                LyricsFormat.LRC, LyricsSource.SIDECAR), "song")
+        val input = mutableStateOf<LyricsUiState>(LyricsUiState.Loading)
+        var rendered: LyricContentFrame? = null
+        withArtworkComposition(content = {
+            val retained = rememberRetainedLyricDocument(input.value)
+            val target = rememberLyricContentFrame(lyricPagePresentation(retained), false)
+            SideEffect { rendered = target }
+        }) {
+            frame(0)
+            val initialEmpty = requireNotNull(rendered)
+            input.value = LyricsUiState.Unavailable
+            frame(16)
+            val empty = requireNotNull(rendered)
+            assertSame(initialEmpty, empty)
+            assertEquals(LyricsUiState.Unavailable, empty.lyrics)
+            input.value = available
+            frame(32)
+            val ready = requireNotNull(rendered)
+            input.value = LyricsUiState.Loading
+            frame(48)
+            assertSame(ready, rendered)
+            input.value = LyricsUiState.Unavailable
+            frame(64)
+            assertEquals(LyricsUiState.Unavailable, requireNotNull(rendered).lyrics)
+            assertNotSame(empty, rendered)
+            // An outgoing empty frame must not depend on the latest loading state.
+            input.value = LyricsUiState.Loading
+            frame(80)
+            assertEquals(LyricsUiState.Unavailable, requireNotNull(rendered).lyrics)
+            assertEquals(LyricsUiState.Unavailable, empty.lyrics)
+        }
+    }
+
+    @Test
+    fun lyricPageTreatsEmptyBlankAndBackgroundOnlyDocumentsAsUnavailable() {
+        val line = LyricLine("main", 0, 1_000, "Lyrics", emptyList(), null)
+        val available = LyricsUiState.Available(
+            LyricsDocument(listOf(line), LyricsFormat.LRC, LyricsSource.SIDECAR), "song")
+        assertSame(available, lyricPagePresentation(available))
+        assertEquals(LyricsUiState.Unavailable, lyricPagePresentation(null))
+        for (lines in listOf(emptyList(), listOf(line.copy(text = " ")),
+            listOf(line.copy(isBackground = true)))) {
+            assertEquals(LyricsUiState.Unavailable,
+                lyricPagePresentation(available.copy(document = available.document.copy(lines = lines))))
+        }
+    }
+
     @Test
     fun artworkLyricsKeepTheResolvedLayoutDuringLoadingAndReactToConfirmedResults() = runBlocking {
         val line = LyricLine("main", 0, 1_000, "Lyrics", emptyList(), null)
