@@ -73,16 +73,7 @@ internal fun LyricsInterfacePreferences(
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
 			
-			// 【新增】独立的本地字体开关，放进设置卡片的第一行
-                SwitchPreference(
-                    title = "使用本地车机定制字体",
-                    summary = "开启后使用 SourceHanSansSC 字体 (退出重进播放器生效)",
-                    checked = useCustomFont,
-                    onCheckedChange = {
-                        useCustomFont = it
-                        sharedPrefs.edit().putBoolean("use_custom_font", it).apply()
-                    },
-                )
+			
 			
                 SwitchPreference(
                     title = stringResource(R.string.player_title_left_aligned),
@@ -125,6 +116,16 @@ internal fun LyricsInterfacePreferences(
                     summary = stringResource(R.string.lyrics_blur_summary),
                     checked = lyricBlurEnabled,
                     onCheckedChange = onLyricBlurEnabledChange,
+                )
+				// 【新增】独立的本地字体开关，放进设置卡片的第一行
+                SwitchPreference(
+                    title = "使用本地车机定制字体",
+                    summary = "开启后使用 SourceHanSansSC 字体 (退出重进播放器生效)",
+                    checked = useCustomFont,
+                    onCheckedChange = {
+                        useCustomFont = it
+                        sharedPrefs.edit().putBoolean("use_custom_font", it).apply()
+                    },
                 )
             }
         }
