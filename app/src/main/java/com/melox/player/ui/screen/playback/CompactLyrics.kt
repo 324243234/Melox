@@ -369,14 +369,15 @@ internal fun PortraitArtworkWithLyrics(
             contentAlignment = Alignment.Center,
         ) { artworkContent(maxHeight) }
         LyricContentTransition(
-            lyrics = displayedLyrics,
+            // The artwork surface has no empty-state message to transition.
+            lyrics = displayedLyrics ?: LyricsUiState.Loading,
             modifier = Modifier.align(Alignment.TopCenter).width(contentWidth)
                 .expandLeftForMarquee(CompactLyricHorizontalEdgeFadeWidth)
                 .height(geometry.lyricsHeight).offset(y = geometry.lyricsTop),
         ) { frame, _, target ->
-            val document = frame?.document
+            val document = (frame as? LyricsUiState.Available)?.document
             val lines = remember(document) { compactPrimaryLines(document) }
-            val currentDocument = target && frame != null && frame == incomingLyrics
+            val currentDocument = target && frame == incomingLyrics
             var retainedPlayback by remember(frame) { mutableStateOf(playback) }
             if (currentDocument) SideEffect { retainedPlayback = playback }
             val renderPlayback = if (currentDocument) playback else retainedPlayback.copy(isPlaying = false)
